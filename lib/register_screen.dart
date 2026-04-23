@@ -81,8 +81,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_agreedToTerms) {
-      setState(
-          () => _errorMessage = 'Please accept the terms and conditions');
+      setState(() => _errorMessage = 'Please accept the terms and conditions');
       return;
     }
 
@@ -104,7 +103,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (result.success) {
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => RoleSelectionScreen(successMessage: result.message ?? 'Account created! Welcome to TodaGo 🎉'),
+          pageBuilder: (_, __, ___) => RoleSelectionScreen(
+              successMessage:
+                  result.message ?? 'Account created! Welcome to TodaGo 🎉'),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -309,8 +310,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           color: AppColors.textHint,
                           size: 20,
                         ),
-                        onPressed: () => setState(
-                            () => _obscureConfirm = !_obscureConfirm),
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
                       ),
                       validator: (v) {
                         if (v == null || v.isEmpty) {
@@ -350,8 +351,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                             child: _agreedToTerms
                                 ? const Icon(Icons.check,
-                                    size: 14,
-                                    color: AppColors.backgroundDark)
+                                    size: 14, color: AppColors.backgroundDark)
                                 : null,
                           ),
                           const SizedBox(width: 12),

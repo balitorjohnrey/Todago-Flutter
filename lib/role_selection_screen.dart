@@ -58,12 +58,14 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 20),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 message,
-                style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500),
+                style: GoogleFonts.poppins(
+                    fontSize: 14, fontWeight: FontWeight.w500),
               ),
             ),
           ],
@@ -85,7 +87,8 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               style: GoogleFonts.poppins(fontSize: 13)),
           backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ),
       );
@@ -102,12 +105,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => const OperatorCheckScreen(),
           transitionDuration: const Duration(milliseconds: 400),
-          transitionsBuilder: (_, anim, __, child) =>
-              SlideTransition(
-                position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-                    .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-                child: child,
-              ),
+          transitionsBuilder: (_, anim, __, child) => SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+            child: child,
+          ),
         ),
       );
     } else if (_selectedRole == 'driver') {
@@ -115,12 +117,11 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => const DriverCheckScreen(),
           transitionDuration: const Duration(milliseconds: 400),
-          transitionsBuilder: (_, anim, __, child) =>
-              SlideTransition(
-                position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-                    .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-                child: child,
-              ),
+          transitionsBuilder: (_, anim, __, child) => SlideTransition(
+            position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+            child: child,
+          ),
         ),
       );
     } else {
@@ -218,10 +219,13 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     role: role,
                     isSelected: isSelected,
                     onTap: () => setState(() => _selectedRole = role['id']),
-                  ).animate().fadeIn(
+                  )
+                      .animate()
+                      .fadeIn(
                         delay: Duration(milliseconds: 250 + (i * 100)),
                         duration: 400.ms,
-                      ).slideY(begin: 0.2, end: 0),
+                      )
+                      .slideY(begin: 0.2, end: 0),
                 );
               }),
 
@@ -340,9 +344,8 @@ class _RoleCard extends StatelessWidget {
               width: 52,
               height: 52,
               decoration: BoxDecoration(
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.backgroundDark,
+                color:
+                    isSelected ? AppColors.primary : AppColors.backgroundDark,
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Icon(

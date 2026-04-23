@@ -5,7 +5,7 @@ import 'auth_service.dart';
 import 'splash_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});   // ← make sure "const" is here
+  const HomeScreen({super.key}); // ← make sure "const" is here
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();

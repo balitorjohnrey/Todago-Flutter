@@ -146,8 +146,7 @@ class _SplashScreenState extends State<SplashScreen> {
                           duration: const Duration(milliseconds: 500),
                           curve: Curves.easeOut,
                           child: ElevatedButton(
-                            onPressed: () =>
-                                _navigateTo(const LoginScreen()),
+                            onPressed: () => _navigateTo(const LoginScreen()),
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               foregroundColor: AppColors.backgroundDark,

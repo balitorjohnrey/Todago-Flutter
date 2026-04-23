@@ -65,7 +65,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
                 child: GestureDetector(
                   onTap: () => Navigator.of(context).pop(),
                   child: Container(
-                    width: 40, height: 40,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
                       color: const Color(0xFFF5F5F5),
                       borderRadius: BorderRadius.circular(12),
@@ -91,8 +92,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
                     height: 180 + (_controller.value * 40),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.primary.withOpacity(
-                          0.08 * (1 - _controller.value)),
+                      color: AppColors.primary
+                          .withOpacity(0.08 * (1 - _controller.value)),
                     ),
                   ),
                   // Middle ring
@@ -101,13 +102,14 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
                     height: 150 + (_controller.value * 20),
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      color: AppColors.primary.withOpacity(
-                          0.12 * (1 - _controller.value)),
+                      color: AppColors.primary
+                          .withOpacity(0.12 * (1 - _controller.value)),
                     ),
                   ),
                   // Main icon
                   Container(
-                    width: 120, height: 120,
+                    width: 120,
+                    height: 120,
                     decoration: BoxDecoration(
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(32),
@@ -130,7 +132,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
 
             Text('Finding Your Driver',
                 style: GoogleFonts.poppins(
-                  fontSize: 24, fontWeight: FontWeight.w800,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.backgroundDark,
                 )).animate().fadeIn(delay: 200.ms),
 
@@ -139,7 +142,9 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
             Text('Searching for the best available driver\nnear you...',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
-                  fontSize: 14, color: AppColors.textHint, height: 1.6,
+                  fontSize: 14,
+                  color: AppColors.textHint,
+                  height: 1.6,
                 )).animate().fadeIn(delay: 300.ms),
 
             const Spacer(),
@@ -160,11 +165,13 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
                   const SizedBox(width: 8),
                   Text('Average wait time: ',
                       style: GoogleFonts.poppins(
-                        fontSize: 13, color: AppColors.textHint,
+                        fontSize: 13,
+                        color: AppColors.textHint,
                       )),
                   Text('2–3 minutes',
                       style: GoogleFonts.poppins(
-                        fontSize: 13, fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.backgroundDark,
                       )),
                 ],
@@ -178,7 +185,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
               onPressed: () => Navigator.of(context).pop(),
               child: Text('Cancel Search',
                   style: GoogleFonts.poppins(
-                    fontSize: 14, color: AppColors.error,
+                    fontSize: 14,
+                    color: AppColors.error,
                     fontWeight: FontWeight.w600,
                   )),
             ).animate().fadeIn(delay: 500.ms),

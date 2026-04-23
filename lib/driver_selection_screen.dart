@@ -93,7 +93,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                         child: GestureDetector(
                           onTap: () => Navigator.of(context).pop(),
                           child: Container(
-                            width: 32, height: 32,
+                            width: 32,
+                            height: 32,
                             decoration: BoxDecoration(
                               color: const Color(0xFFF0F0F0),
                               borderRadius: BorderRadius.circular(8),
@@ -107,30 +108,36 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
 
                       // Icon
                       Container(
-                        width: 64, height: 64,
+                        width: 64,
+                        height: 64,
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: const Icon(Icons.check_circle_rounded,
                             color: AppColors.backgroundDark, size: 36),
-                      ).animate()
-                          .scale(begin: const Offset(0.6, 0.6),
+                      )
+                          .animate()
+                          .scale(
+                              begin: const Offset(0.6, 0.6),
                               end: const Offset(1.0, 1.0),
-                              duration: 500.ms, curve: Curves.elasticOut)
+                              duration: 500.ms,
+                              curve: Curves.elasticOut)
                           .fadeIn(duration: 300.ms),
 
                       const SizedBox(height: 12),
 
                       Text('Drivers Found!',
                           style: GoogleFonts.poppins(
-                            fontSize: 20, fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.backgroundDark,
                           )).animate().fadeIn(delay: 100.ms, duration: 400.ms),
 
                       Text('Select your preferred driver to continue',
                           style: GoogleFonts.poppins(
-                            fontSize: 12, color: AppColors.textHint,
+                            fontSize: 12,
+                            color: AppColors.textHint,
                           )).animate().fadeIn(delay: 150.ms, duration: 400.ms),
                     ]),
                   ),
@@ -156,13 +163,17 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                               color: Colors.white,
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: sel ? AppColors.primary : Colors.transparent,
+                                color: sel
+                                    ? AppColors.primary
+                                    : Colors.transparent,
                                 width: 2,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(sel ? 0.08 : 0.04),
-                                  blurRadius: 12, offset: const Offset(0, 4),
+                                  color: Colors.black
+                                      .withOpacity(sel ? 0.08 : 0.04),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
@@ -172,31 +183,38 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                                 // Avatar + Name row
                                 Row(children: [
                                   Container(
-                                    width: 44, height: 44,
+                                    width: 44,
+                                    height: 44,
                                     decoration: BoxDecoration(
                                       color: d['badge'] as Color,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: Center(child: Text(
+                                    child: Center(
+                                        child: Text(
                                       d['initials'] as String,
                                       style: GoogleFonts.poppins(
-                                        fontSize: 14, fontWeight: FontWeight.w800,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
                                         color: Colors.white,
                                       ),
                                     )),
                                   ),
                                   const SizedBox(width: 10),
-                                  Expanded(child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                  Expanded(
+                                      child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(d['name'] as String,
                                           style: GoogleFonts.poppins(
-                                            fontSize: 14, fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w700,
                                             color: AppColors.backgroundDark,
                                           )),
                                       Text(d['id'] as String,
                                           style: GoogleFonts.poppins(
-                                            fontSize: 10, color: AppColors.textHint,
+                                            fontSize: 10,
+                                            color: AppColors.textHint,
                                           )),
                                     ],
                                   )),
@@ -214,15 +232,18 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                                       return const Icon(Icons.star_half_rounded,
                                           size: 14, color: AppColors.primary);
                                     } else {
-                                      return const Icon(Icons.star_outline_rounded,
-                                          size: 14, color: AppColors.primary);
+                                      return const Icon(
+                                          Icons.star_outline_rounded,
+                                          size: 14,
+                                          color: AppColors.primary);
                                     }
                                   }),
                                   const SizedBox(width: 5),
                                   Text(
                                     '${d['rating']} (${d['reviews']} trips)',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 11, color: AppColors.textHint,
+                                      fontSize: 11,
+                                      color: AppColors.textHint,
                                     ),
                                   ),
                                 ]),
@@ -242,26 +263,31 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                                         color: Colors.green.withOpacity(0.1),
                                         borderRadius: BorderRadius.circular(8),
                                       ),
-                                      child: Row(mainAxisSize: MainAxisSize.min,
+                                      child: Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
-                                        const Icon(Icons.verified_rounded,
-                                            size: 11, color: Colors.green),
-                                        const SizedBox(width: 3),
-                                        Text('Verified',
-                                            style: GoogleFonts.poppins(
-                                              fontSize: 10, fontWeight: FontWeight.w700,
-                                              color: Colors.green,
-                                            )),
-                                      ]),
+                                            const Icon(Icons.verified_rounded,
+                                                size: 11, color: Colors.green),
+                                            const SizedBox(width: 3),
+                                            Text('Verified',
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.green,
+                                                )),
+                                          ]),
                                     ),
                                 ]),
                               ],
                             ),
                           ),
-                        ).animate().fadeIn(
+                        )
+                            .animate()
+                            .fadeIn(
                               delay: Duration(milliseconds: 200 + i * 80),
                               duration: 400.ms,
-                            ).slideX(begin: 0.1, end: 0);
+                            )
+                            .slideX(begin: 0.1, end: 0);
                       },
                     ),
                   ),
@@ -278,8 +304,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                     child: Column(children: [
                       _summaryRow('Service Type', widget.serviceType),
                       const SizedBox(height: 8),
-                      _summaryRow('Estimated Time',
-                          '${driver['eta']} min away'),
+                      _summaryRow(
+                          'Estimated Time', '${driver['eta']} min away'),
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 10),
                         child: Divider(color: Color(0xFFF0F0F0), height: 1),
@@ -287,13 +313,15 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       Row(children: [
                         Text('Estimated Fare',
                             style: GoogleFonts.poppins(
-                              fontSize: 14, fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
                               color: AppColors.backgroundDark,
                             )),
                         const Spacer(),
                         Text(widget.price,
                             style: GoogleFonts.poppins(
-                              fontSize: 22, fontWeight: FontWeight.w900,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
                               color: AppColors.backgroundDark,
                             )),
                       ]),
@@ -304,7 +332,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                     child: SizedBox(
-                      width: double.infinity, height: 54,
+                      width: double.infinity,
+                      height: 54,
                       child: ElevatedButton(
                         onPressed: () => Navigator.of(context).pushReplacement(
                           PageRouteBuilder(
@@ -324,12 +353,15 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                         ),
                         child: Text('Confirm Driver & Start Ride',
                             style: GoogleFonts.poppins(
-                              fontSize: 15, fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
                             )),
                       ),
                     ),
-                  ).animate().fadeIn(delay: 450.ms, duration: 400.ms)
+                  )
+                      .animate()
+                      .fadeIn(delay: 450.ms, duration: 400.ms)
                       .slideY(begin: 0.2, end: 0),
 
                   // Fare note
@@ -339,7 +371,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       'Fare may vary based on actual distance and traffic',
                       textAlign: TextAlign.center,
                       style: GoogleFonts.poppins(
-                        fontSize: 11, color: AppColors.textHint,
+                        fontSize: 11,
+                        color: AppColors.textHint,
                       ),
                     ),
                   ),
@@ -353,28 +386,36 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
   }
 
   Widget _driverStat(String value, String unit) => Row(
-    crossAxisAlignment: CrossAxisAlignment.baseline,
-    textBaseline: TextBaseline.alphabetic,
-    children: [
-      Text(value, style: GoogleFonts.poppins(
-        fontSize: 16, fontWeight: FontWeight.w800,
-        color: AppColors.backgroundDark,
-      )),
-      const SizedBox(width: 2),
-      Text(unit, style: GoogleFonts.poppins(
-        fontSize: 11, color: AppColors.textHint,
-      )),
-    ],
-  );
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(value,
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+          const SizedBox(width: 2),
+          Text(unit,
+              style: GoogleFonts.poppins(
+                fontSize: 11,
+                color: AppColors.textHint,
+              )),
+        ],
+      );
 
   Widget _summaryRow(String label, String value) => Row(children: [
-    Text(label, style: GoogleFonts.poppins(
-      fontSize: 13, color: AppColors.textHint,
-    )),
-    const Spacer(),
-    Text(value, style: GoogleFonts.poppins(
-      fontSize: 13, fontWeight: FontWeight.w700,
-      color: AppColors.backgroundDark,
-    )),
-  ]);
+        Text(label,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: AppColors.textHint,
+            )),
+        const Spacer(),
+        Text(value,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.backgroundDark,
+            )),
+      ]);
 }

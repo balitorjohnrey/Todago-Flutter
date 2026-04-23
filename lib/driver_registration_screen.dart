@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+// ignore: unused_import
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
@@ -8,7 +9,8 @@ class DriverRegistrationScreen extends StatefulWidget {
   const DriverRegistrationScreen({super.key});
 
   @override
-  State<DriverRegistrationScreen> createState() => _DriverRegistrationScreenState();
+  State<DriverRegistrationScreen> createState() =>
+      _DriverRegistrationScreenState();
 }
 
 class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
@@ -77,10 +79,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 20),
             const SizedBox(width: 10),
-            Expanded(child: Text('Registration submitted! Pending verification.',
-                style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500))),
+            Expanded(
+                child: Text('Registration submitted! Pending verification.',
+                    style: GoogleFonts.poppins(
+                        fontSize: 13, fontWeight: FontWeight.w500))),
           ],
         ),
         backgroundColor: AppColors.success,
@@ -125,7 +130,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                         GestureDetector(
                           onTap: _prevStep,
                           child: Container(
-                            width: 36, height: 36,
+                            width: 36,
+                            height: 36,
                             decoration: BoxDecoration(
                               color: AppColors.surface,
                               borderRadius: BorderRadius.circular(10),
@@ -140,12 +146,14 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                           children: [
                             Text('Driver Registration',
                                 style: GoogleFonts.poppins(
-                                  fontSize: 17, fontWeight: FontWeight.w700,
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.textPrimary,
                                 )),
                             Text('Step ${_currentStep + 1} of 3',
                                 style: GoogleFonts.poppins(
-                                  fontSize: 12, color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
                                 )),
                           ],
                         ),
@@ -155,18 +163,20 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
 
                     // Progress bar
                     Row(
-                      children: List.generate(3, (i) => Expanded(
-                        child: Container(
-                          margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: i <= _currentStep
-                                ? AppColors.primary
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      )),
+                      children: List.generate(
+                          3,
+                          (i) => Expanded(
+                                child: Container(
+                                  margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                                  height: 4,
+                                  decoration: BoxDecoration(
+                                    color: i <= _currentStep
+                                        ? AppColors.primary
+                                        : AppColors.surface,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                              )),
                     ),
                   ],
                 ),
@@ -201,10 +211,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           const SizedBox(height: 8),
           Text('Personal Information',
               style: GoogleFonts.poppins(
-                fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
               )),
           Text('Tell us about yourself',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 28),
 
           _buildLightLabel('Full Name', required: true),
@@ -258,12 +271,15 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     children: [
                       Text('Verification Required',
                           style: GoogleFonts.poppins(
-                            fontSize: 12, fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
                             color: const Color(0xFF1565C0),
                           )),
-                      Text("We'll send a verification code to your mobile number to confirm your identity.",
+                      Text(
+                          "We'll send a verification code to your mobile number to confirm your identity.",
                           style: GoogleFonts.poppins(
-                            fontSize: 11, color: const Color(0xFF1565C0),
+                            fontSize: 11,
+                            color: const Color(0xFF1565C0),
                           )),
                     ],
                   ),
@@ -291,10 +307,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           const SizedBox(height: 8),
           Text('TODA Association',
               style: GoogleFonts.poppins(
-                fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
               )),
           Text('Your official TODA registration details',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 28),
 
           _buildLightLabel('TODA Branch', required: true),
@@ -313,7 +332,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+              border:
+                  Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -325,7 +345,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     const SizedBox(width: 8),
                     Text('TODA Certification Benefits',
                         style: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
                           color: AppColors.backgroundDark,
                         )),
                   ],
@@ -333,7 +354,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                 const SizedBox(height: 10),
                 _benefitItem('Priority ride requests from verified passengers'),
                 _benefitItem('Access to exclusive TODA-only service areas'),
-                _benefitItem('Lower commission rates (10% vs 15% for non-TODA)'),
+                _benefitItem(
+                    'Lower commission rates (10% vs 15% for non-TODA)'),
               ],
             ),
           ),
@@ -359,12 +381,15 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     children: [
                       Text('Document Verification',
                           style: GoogleFonts.poppins(
-                            fontSize: 13, fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                             color: Colors.orange[800],
                           )),
-                      Text("You'll need to upload your TODA membership card and franchise documents.",
+                      Text(
+                          "You'll need to upload your TODA membership card and franchise documents.",
                           style: GoogleFonts.poppins(
-                            fontSize: 11, color: Colors.orange[700],
+                            fontSize: 11,
+                            color: Colors.orange[700],
                           )),
                     ],
                   ),
@@ -391,10 +416,13 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           const SizedBox(height: 8),
           Text('Vehicle Details',
               style: GoogleFonts.poppins(
-                fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
               )),
           Text('Your tricycle registration information',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 28),
 
           _buildLightLabel('TODA Body Number', required: true),
@@ -408,7 +436,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           ),
           const SizedBox(height: 4),
           Text('e.g., "Davao City #402" or "Panabo TODA #115"',
-              style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500])),
+              style:
+                  GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500])),
 
           const SizedBox(height: 20),
 
@@ -451,12 +480,15 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                     children: [
                       Text('Compliance Certified',
                           style: GoogleFonts.poppins(
-                            fontSize: 13, fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
                             color: Colors.green[800],
                           )),
-                      Text('TodaGo is a specialized, compliant local transport service.',
+                      Text(
+                          'TodaGo is a specialized, compliant local transport service.',
                           style: GoogleFonts.poppins(
-                            fontSize: 11, color: Colors.green[700],
+                            fontSize: 11,
+                            color: Colors.green[700],
                           )),
                     ],
                   ),
@@ -469,7 +501,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
 
           // Complete Registration button
           SizedBox(
-            width: double.infinity, height: 54,
+            width: double.infinity,
+            height: 54,
             child: ElevatedButton(
               onPressed: _isLoading ? null : _completeRegistration,
               style: ElevatedButton.styleFrom(
@@ -479,11 +512,16 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                 elevation: 0,
               ),
               child: _isLoading
-                  ? const SizedBox(width: 22, height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.white))
                   : Text('Complete Registration',
                       style: GoogleFonts.poppins(
-                        fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
                       )),
             ),
           ),
@@ -501,8 +539,10 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         children: [
           const Icon(Icons.circle, size: 6, color: Color(0xFFFFCC02)),
           const SizedBox(width: 8),
-          Expanded(child: Text(text,
-              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700]))),
+          Expanded(
+              child: Text(text,
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.grey[700]))),
         ],
       ),
     );
@@ -511,13 +551,19 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   Widget _buildLightLabel(String text, {bool required = false}) {
     return Row(
       children: [
-        Text(text, style: GoogleFonts.poppins(
-          fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey[700],
-        )),
+        Text(text,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            )),
         if (required)
-          Text(' *', style: GoogleFonts.poppins(
-            fontSize: 13, color: AppColors.error, fontWeight: FontWeight.w600,
-          )),
+          Text(' *',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              )),
       ],
     );
   }
@@ -550,26 +596,32 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.backgroundDark, width: 2),
+          borderSide:
+              const BorderSide(color: AppColors.backgroundDark, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       ),
     );
   }
 
   Widget _buildContinueButton(VoidCallback onTap) {
     return SizedBox(
-      width: double.infinity, height: 54,
+      width: double.infinity,
+      height: 54,
       child: ElevatedButton(
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.backgroundDark,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
           elevation: 0,
         ),
         child: Text('Continue',
             style: GoogleFonts.poppins(
-              fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
             )),
       ),
     );

@@ -11,11 +11,15 @@ class LocationService {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text('Location Off'),
-            content: const Text('Please enable location services to find nearby drivers.'),
+            content: const Text(
+                'Please enable location services to find nearby drivers.'),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel')),
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);
@@ -46,12 +50,15 @@ class LocationService {
         await showDialog(
           context: context,
           builder: (_) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             title: const Text('Location Denied'),
             content: const Text(
                 'Location permission is permanently denied. Please enable it in your phone settings.'),
             actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel')),
               TextButton(
                 onPressed: () {
                   Navigator.pop(context);

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../theme/app_theme.dart';
-import '../services/driver_auth_service.dart';
+import 'app_theme.dart';
+import 'driver_auth_service.dart';
 import 'driver_dashboard_screen.dart';
 import 'driver_registration_screen.dart';
 

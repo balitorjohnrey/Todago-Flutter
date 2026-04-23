@@ -33,8 +33,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate:
-                    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.todago.app',
               ),
 
@@ -55,7 +54,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   // Driver location
                   Marker(
                     point: _driver,
-                    width: 40, height: 40,
+                    width: 40,
+                    height: 40,
                     child: Container(
                       decoration: BoxDecoration(
                         color: AppColors.backgroundDark,
@@ -70,7 +70,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   // Pickup (your location)
                   Marker(
                     point: _pickup,
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     child: Container(
                       decoration: BoxDecoration(
                         color: Colors.blue,
@@ -85,7 +86,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   // Destination
                   Marker(
                     point: _destination,
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     child: const Icon(Icons.location_on_rounded,
                         color: Colors.red, size: 36),
                   ),
@@ -96,20 +98,23 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
           // ── Top ETA bar ──────────────────────────────────────────────────
           Positioned(
-            top: 0, left: 0, right: 0,
+            top: 0,
+            left: 0,
+            right: 0,
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 14),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black.withOpacity(0.12),
-                        blurRadius: 12, offset: const Offset(0, 3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 3),
                       ),
                     ],
                   ),
@@ -120,7 +125,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                       _etaItem('Distance', '3.2 km', Icons.straighten_rounded),
                       const Spacer(),
                       Container(
-                        width: 40, height: 40,
+                        width: 40,
+                        height: 40,
                         decoration: BoxDecoration(
                           color: Colors.red.withOpacity(0.1),
                           shape: BoxShape.circle,
@@ -132,7 +138,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                       ),
                     ],
                   ),
-                ).animate().fadeIn(duration: 400.ms)
+                )
+                    .animate()
+                    .fadeIn(duration: 400.ms)
                     .slideY(begin: -0.3, end: 0),
               ),
             ),
@@ -140,15 +148,17 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
           // ── Bottom driver card ────────────────────────────────────────────
           Positioned(
-            bottom: 0, left: 0, right: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
-                borderRadius:
-                    BorderRadius.vertical(top: Radius.circular(24)),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black12, blurRadius: 20,
+                    color: Colors.black12,
+                    blurRadius: 20,
                     offset: Offset(0, -4),
                   ),
                 ],
@@ -160,7 +170,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   // Handle
                   Center(
                     child: Container(
-                      width: 40, height: 4,
+                      width: 40,
+                      height: 4,
                       decoration: BoxDecoration(
                         color: Colors.grey[300],
                         borderRadius: BorderRadius.circular(2),
@@ -174,7 +185,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                     children: [
                       // Avatar
                       Container(
-                        width: 50, height: 50,
+                        width: 50,
+                        height: 50,
                         decoration: BoxDecoration(
                           color: AppColors.backgroundDark,
                           borderRadius: BorderRadius.circular(14),
@@ -182,7 +194,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                         child: Center(
                           child: Text('JR',
                               style: GoogleFonts.poppins(
-                                fontSize: 16, fontWeight: FontWeight.w800,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
                                 color: AppColors.primary,
                               )),
                         ),
@@ -196,7 +209,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                           children: [
                             Text('Juan Reyes',
                                 style: GoogleFonts.poppins(
-                                  fontSize: 16, fontWeight: FontWeight.w700,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
                                   color: AppColors.backgroundDark,
                                 )),
                             Row(
@@ -212,7 +226,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                                     )),
                                 Text(' · TRI-2024 · Panabo TODA',
                                     style: GoogleFonts.poppins(
-                                      fontSize: 11, color: AppColors.textHint,
+                                      fontSize: 11,
+                                      color: AppColors.textHint,
                                     )),
                               ],
                             ),
@@ -252,12 +267,13 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                             children: [
                               Text('Heading to',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 10, color: AppColors.textHint,
+                                    fontSize: 10,
+                                    color: AppColors.textHint,
                                   )),
-                              Text(
-                                  'Davao del Norte State College, Panabo',
+                              Text('Davao del Norte State College, Panabo',
                                   style: GoogleFonts.poppins(
-                                    fontSize: 13, fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
                                     color: AppColors.backgroundDark,
                                   )),
                             ],
@@ -271,37 +287,36 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
                   // Cancel trip button
                   SizedBox(
-                    width: double.infinity, height: 48,
+                    width: double.infinity,
+                    height: 48,
                     child: OutlinedButton(
-                      onPressed: () => Navigator.of(context)
-                          .pushAndRemoveUntil(
+                      onPressed: () => Navigator.of(context).pushAndRemoveUntil(
                         PageRouteBuilder(
                           pageBuilder: (_, __, ___) =>
                               const PassengerHomeScreen(),
-                          transitionDuration:
-                              const Duration(milliseconds: 400),
+                          transitionDuration: const Duration(milliseconds: 400),
                           transitionsBuilder: (_, anim, __, child) =>
                               FadeTransition(opacity: anim, child: child),
                         ),
                         (_) => false,
                       ),
                       style: OutlinedButton.styleFrom(
-                        side: BorderSide(
-                            color: Colors.grey[300]!, width: 1.5),
+                        side: BorderSide(color: Colors.grey[300]!, width: 1.5),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
                       child: Text('Cancel Trip',
                           style: GoogleFonts.poppins(
-                            fontSize: 14, fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
                             color: AppColors.textHint,
                           )),
                     ),
                   ),
                 ],
               ),
-            ).animate().slideY(begin: 0.3, end: 0, duration: 400.ms,
-                curve: Curves.easeOut),
+            ).animate().slideY(
+                begin: 0.3, end: 0, duration: 400.ms, curve: Curves.easeOut),
           ),
         ],
       ),
@@ -318,11 +333,13 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
           children: [
             Text(label,
                 style: GoogleFonts.poppins(
-                  fontSize: 10, color: AppColors.textHint,
+                  fontSize: 10,
+                  color: AppColors.textHint,
                 )),
             Text(value,
                 style: GoogleFonts.poppins(
-                  fontSize: 16, fontWeight: FontWeight.w800,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.backgroundDark,
                 )),
           ],
@@ -333,7 +350,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   Widget _actionBtn(IconData icon, Color color) {
     return Container(
-      width: 40, height: 40,
+      width: 40,
+      height: 40,
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),

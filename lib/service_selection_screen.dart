@@ -66,7 +66,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                   GestureDetector(
                     onTap: () => Navigator.of(context).pop(),
                     child: Container(
-                      width: 40, height: 40,
+                      width: 40,
+                      height: 40,
                       decoration: BoxDecoration(
                         color: const Color(0xFFF5F5F5),
                         borderRadius: BorderRadius.circular(12),
@@ -81,12 +82,14 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                     children: [
                       Text('Select Service',
                           style: GoogleFonts.poppins(
-                            fontSize: 20, fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
                             color: AppColors.backgroundDark,
                           )),
                       Text('Choose your ride type',
                           style: GoogleFonts.poppins(
-                            fontSize: 12, color: AppColors.textHint,
+                            fontSize: 12,
+                            color: AppColors.textHint,
                           )),
                     ],
                   ),
@@ -127,7 +130,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                             // Icon
                             AnimatedContainer(
                               duration: const Duration(milliseconds: 200),
-                              width: 52, height: 52,
+                              width: 52,
+                              height: 52,
                               decoration: BoxDecoration(
                                 color: isSelected
                                     ? AppColors.primary
@@ -193,10 +197,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                                           s['passengers'] as String,
                                           isSelected),
                                       const SizedBox(width: 8),
-                                      _infoBadge(
-                                          Icons.schedule_rounded,
-                                          'Arrives ${s['eta']}',
-                                          isSelected,
+                                      _infoBadge(Icons.schedule_rounded,
+                                          'Arrives ${s['eta']}', isSelected,
                                           green: true),
                                     ],
                                   ),
@@ -210,7 +212,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                               children: [
                                 Text(s['price'] as String,
                                     style: GoogleFonts.poppins(
-                                      fontSize: 16, fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w800,
                                       color: isSelected
                                           ? AppColors.primary
                                           : AppColors.backgroundDark,
@@ -219,10 +222,13 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                             ),
                           ],
                         ),
-                      ).animate().fadeIn(
+                      )
+                          .animate()
+                          .fadeIn(
                             delay: Duration(milliseconds: 100 + i * 80),
                             duration: 400.ms,
-                          ).slideX(begin: 0.1, end: 0),
+                          )
+                          .slideX(begin: 0.1, end: 0),
                     );
                   }),
                 ),
@@ -234,8 +240,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
               decoration: const BoxDecoration(
                 color: Colors.white,
-                border: Border(
-                    top: BorderSide(color: Color(0xFFEEEEEE))),
+                border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
               ),
               child: Column(
                 children: [
@@ -261,7 +266,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                         ),
                         Text('Change',
                             style: GoogleFonts.poppins(
-                              fontSize: 12, color: AppColors.primary,
+                              fontSize: 12,
+                              color: AppColors.primary,
                               fontWeight: FontWeight.w600,
                             )),
                       ],
@@ -269,18 +275,16 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                   ),
                   const SizedBox(height: 14),
                   SizedBox(
-                    width: double.infinity, height: 52,
+                    width: double.infinity,
+                    height: 52,
                     child: ElevatedButton(
                       onPressed: () => Navigator.of(context).push(
                         PageRouteBuilder(
                           pageBuilder: (_, __, ___) => FindingDriverScreen(
-                            serviceType:
-                                _services[_selected]['name'] as String,
-                            price:
-                                _services[_selected]['price'] as String,
+                            serviceType: _services[_selected]['name'] as String,
+                            price: _services[_selected]['price'] as String,
                           ),
-                          transitionDuration:
-                              const Duration(milliseconds: 400),
+                          transitionDuration: const Duration(milliseconds: 400),
                           transitionsBuilder: (_, anim, __, child) =>
                               FadeTransition(opacity: anim, child: child),
                         ),
@@ -293,7 +297,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                       ),
                       child: Text('Confirm Ride',
                           style: GoogleFonts.poppins(
-                            fontSize: 15, fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
                             color: Colors.white,
                           )),
                     ),
