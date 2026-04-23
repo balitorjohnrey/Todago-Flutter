@@ -52,14 +52,15 @@ class OperatorAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 201) {
-        if (data['token'] != null)
+        if (data['token'] != null) {
           await _saveSession(data['token'], data['operator']);
-        return OperatorAuthResponse(
-          success: true,
-          message: data['message'] ?? 'Operator account created!',
-          token: data['token'],
-          operator: data['operator'],
-        );
+          return OperatorAuthResponse(
+            success: true,
+            message: data['message'] ?? 'Operator account created!',
+            token: data['token'],
+            operator: data['operator'],
+          );
+        }
       }
       return OperatorAuthResponse(
           success: false, message: data['message'] ?? 'Registration failed');
@@ -89,14 +90,15 @@ class OperatorAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200) {
-        if (data['token'] != null)
+        if (data['token'] != null) {
           await _saveSession(data['token'], data['operator']);
-        return OperatorAuthResponse(
-          success: true,
-          message: 'Login successful! Welcome back 👋',
-          token: data['token'],
-          operator: data['operator'],
-        );
+          return OperatorAuthResponse(
+            success: true,
+            message: 'Login successful! Welcome back 👋',
+            token: data['token'],
+            operator: data['operator'],
+          );
+        }
       }
       return OperatorAuthResponse(
           success: false, message: data['message'] ?? 'Invalid credentials');
@@ -109,8 +111,9 @@ class OperatorAuthService {
   static Future<void> _saveSession(
       String token, Map<String, dynamic>? operator) async {
     await _storage.write(key: _tokenKey, value: token);
-    if (operator != null)
+    if (operator != null) {
       await _storage.write(key: _operatorKey, value: jsonEncode(operator));
+    }
   }
 
   static Future<String?> getToken() async =>

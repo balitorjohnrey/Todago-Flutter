@@ -50,14 +50,15 @@ class DriverAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 201) {
-        if (data['token'] != null)
+        if (data['token'] != null) {
           await _saveSession(data['token'], data['driver']);
-        return DriverAuthResponse(
-          success: true,
-          message: data['message'] ?? 'Driver account created!',
-          token: data['token'],
-          driver: data['driver'],
-        );
+          return DriverAuthResponse(
+            success: true,
+            message: data['message'] ?? 'Driver account created!',
+            token: data['token'],
+            driver: data['driver'],
+          );
+        }
       }
       return DriverAuthResponse(
           success: false, message: data['message'] ?? 'Registration failed');
@@ -87,14 +88,15 @@ class DriverAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       if (response.statusCode == 200) {
-        if (data['token'] != null)
+        if (data['token'] != null) {
           await _saveSession(data['token'], data['driver']);
-        return DriverAuthResponse(
-          success: true,
-          message: 'Login successful! Welcome back 👋',
-          token: data['token'],
-          driver: data['driver'],
-        );
+          return DriverAuthResponse(
+            success: true,
+            message: 'Login successful! Welcome back 👋',
+            token: data['token'],
+            driver: data['driver'],
+          );
+        }
       }
       return DriverAuthResponse(
           success: false, message: data['message'] ?? 'Invalid credentials');
@@ -107,8 +109,9 @@ class DriverAuthService {
   static Future<void> _saveSession(
       String token, Map<String, dynamic>? driver) async {
     await _storage.write(key: _tokenKey, value: token);
-    if (driver != null)
+    if (driver != null) {
       await _storage.write(key: _driverKey, value: jsonEncode(driver));
+    }
   }
 
   static Future<String?> getToken() async =>
