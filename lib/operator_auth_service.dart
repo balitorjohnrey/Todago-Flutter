@@ -11,7 +11,7 @@ class OperatorAuthResponse {
 }
 
 class OperatorAuthService {
-  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/auth';
+  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/operator';
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'operator_auth_token';
   static const _operatorKey = 'operator_data';
