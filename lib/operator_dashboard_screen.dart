@@ -6,6 +6,7 @@ import 'auth_service.dart';
 import 'operator_fleet_map_screen.dart';
 import 'operator_drivers_screen.dart';
 import 'operator_financials_screen.dart';
+import 'operator_subscription_screen.dart';
 import 'splash_screen.dart';
 
 class OperatorDashboardScreen extends StatefulWidget {
@@ -297,23 +298,13 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                       Expanded(child: _actionCard(
                         icon: Icons.map_rounded,
                         label: 'Live Fleet Map',
-                        onTap: () {
-                          // Added Navigation Route!
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (context) => const OperatorFleetMapScreen(),
-                          ));
-                        },
+                        onTap: () {},
                       )),
                       const SizedBox(width: 12),
                       Expanded(child: _actionCard(
                         icon: Icons.manage_accounts_rounded,
                         label: 'Driver Management',
-                        onTap: () {
-                          // Added Navigation Route!
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (context) => const OperatorDriversScreen(),
-                          ));
-                        },
+                        onTap: () {},
                       )),
                     ],
                   ).animate().fadeIn(delay: 300.ms, duration: 400.ms),
@@ -323,14 +314,15 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                   Row(
                     children: [
                       Expanded(child: _actionCard(
-                        icon: Icons.bar_chart_rounded,
-                        label: 'Analytics',
-                        onTap: () {
-                          // Added Navigation Route!
-                          Navigator.push(context, MaterialPageRoute(
-                            builder: (context) => const OperatorFinancialsScreen(),
-                          ));
-                        },
+                        icon: Icons.workspace_premium_rounded,
+                        label: 'Subscription',
+                        onTap: () => showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (_) => const OperatorSubscriptionScreen(),
+                        ),
+                        isGold: true,
                       )),
                       const SizedBox(width: 12),
                       Expanded(child: _actionCard(
@@ -412,26 +404,37 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
     required String label,
     required VoidCallback onTap,
     bool isDestructive = false,
+    bool isGold = false,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 16),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: isGold ? AppColors.primary.withOpacity(0.08) : Colors.white,
           borderRadius: BorderRadius.circular(14),
+          border: isGold ? Border.all(color: AppColors.primary.withOpacity(0.4)) : null,
           boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
               blurRadius: 8, offset: const Offset(0, 2))],
         ),
         child: Column(
           children: [
             Icon(icon,
-                color: isDestructive ? AppColors.error : AppColors.backgroundDark, size: 26),
+                color: isDestructive
+                    ? AppColors.error
+                    : isGold
+                        ? AppColors.primary
+                        : AppColors.backgroundDark,
+                size: 26),
             const SizedBox(height: 8),
             Text(label, textAlign: TextAlign.center,
                 style: GoogleFonts.poppins(
                   fontSize: 12, fontWeight: FontWeight.w600,
-                  color: isDestructive ? AppColors.error : AppColors.backgroundDark,
+                  color: isDestructive
+                      ? AppColors.error
+                      : isGold
+                          ? AppColors.primary
+                          : AppColors.backgroundDark,
                 )),
           ],
         ),
