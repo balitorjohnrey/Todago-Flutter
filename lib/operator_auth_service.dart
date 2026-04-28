@@ -11,11 +11,13 @@ class OperatorAuthResponse {
 }
 
 class OperatorAuthService {
-  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/operator';
+  // ✅ Replace with your actual Railway URL
+  static const String _baseUrl = 'https://YOUR_RAILWAY_URL.up.railway.app/api/operator';
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'operator_auth_token';
   static const _operatorKey = 'operator_data';
 
+  // Register operator — NO password, uses main account password
   static Future<OperatorAuthResponse> register({
     required String associationName,
     required String associationCode,
@@ -24,7 +26,6 @@ class OperatorAuthService {
     required String contactName,
     required String email,
     required String phone,
-    required String password,
     String? serviceArea,
     String? totalTricycles,
   }) async {
@@ -40,7 +41,6 @@ class OperatorAuthService {
           'contactName': contactName,
           'email': email.toLowerCase().trim(),
           'phone': phone.trim(),
-          'password': password,
           if (serviceArea != null) 'serviceArea': serviceArea,
           if (totalTricycles != null) 'totalTricycles': totalTricycles,
         }),
@@ -52,16 +52,17 @@ class OperatorAuthService {
         return OperatorAuthResponse(
           success: true,
           message: data['message'] ?? 'Operator account created!',
-          token: data['token'],
-          operator: data['operator'],
+          token: data['token'], operator: data['operator'],
         );
       }
       return OperatorAuthResponse(success: false, message: data['message'] ?? 'Registration failed');
     } catch (e) {
-      return OperatorAuthResponse(success: false, message: 'Connection failed. Check your internet.');
+      return OperatorAuthResponse(success: false,
+          message: 'Connection failed. Check your internet.');
     }
   }
 
+  // Login — TODA Association ID + email + main account password
   static Future<OperatorAuthResponse> login({
     required String todaAssociationId,
     required String email,
@@ -83,14 +84,14 @@ class OperatorAuthService {
         if (data['token'] != null) await _saveSession(data['token'], data['operator']);
         return OperatorAuthResponse(
           success: true,
-          message: 'Login successful! Welcome back 👋',
-          token: data['token'],
-          operator: data['operator'],
+          message: data['message'] ?? 'Login successful!',
+          token: data['token'], operator: data['operator'],
         );
       }
       return OperatorAuthResponse(success: false, message: data['message'] ?? 'Invalid credentials');
     } catch (e) {
-      return OperatorAuthResponse(success: false, message: 'Connection failed. Check your internet.');
+      return OperatorAuthResponse(success: false,
+          message: 'Connection failed. Check your internet.');
     }
   }
 

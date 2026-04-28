@@ -11,19 +11,20 @@ class DriverAuthResponse {
 }
 
 class DriverAuthService {
-  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/driver';
+  // ✅ Replace with your actual Railway URL
+  static const String _baseUrl = 'https://YOUR_RAILWAY_URL.up.railway.app/api/driver';
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'driver_auth_token';
   static const _driverKey = 'driver_data';
 
+  // Register driver — NO password field, uses main account password
   static Future<DriverAuthResponse> register({
     required String driverName,
     required String phone,
     required String licenseNo,
     required String todaBodyNumber,
-    required String password,
+    required String plateNo,
     String? email,
-    String? plateNo,
     String? vehicleColor,
     String? todaId,
   }) async {
@@ -33,12 +34,11 @@ class DriverAuthService {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'driverName': driverName,
-          'phone': phone,
-          'licenseNo': licenseNo,
-          'todaBodyNumber': todaBodyNumber,
-          'password': password,
-          if (email != null) 'email': email,
-          if (plateNo != null) 'plateNo': plateNo,
+          'phone': phone.trim(),
+          'licenseNo': licenseNo.trim(),
+          'todaBodyNumber': todaBodyNumber.trim(),
+          'plateNo': plateNo.trim(),
+          if (email != null && email.isNotEmpty) 'email': email.trim(),
           if (vehicleColor != null) 'vehicleColor': vehicleColor,
           if (todaId != null) 'todaId': todaId,
         }),
@@ -50,16 +50,17 @@ class DriverAuthService {
         return DriverAuthResponse(
           success: true,
           message: data['message'] ?? 'Driver account created!',
-          token: data['token'],
-          driver: data['driver'],
+          token: data['token'], driver: data['driver'],
         );
       }
       return DriverAuthResponse(success: false, message: data['message'] ?? 'Registration failed');
     } catch (e) {
-      return DriverAuthResponse(success: false, message: 'Connection failed. Check your internet.');
+      return DriverAuthResponse(success: false,
+          message: 'Connection failed. Check your internet.');
     }
   }
 
+  // Login — TODA body number + plate + main account password
   static Future<DriverAuthResponse> login({
     required String todaBodyNumber,
     required String plateNo,
@@ -81,14 +82,14 @@ class DriverAuthService {
         if (data['token'] != null) await _saveSession(data['token'], data['driver']);
         return DriverAuthResponse(
           success: true,
-          message: 'Login successful! Welcome back 👋',
-          token: data['token'],
-          driver: data['driver'],
+          message: data['message'] ?? 'Login successful!',
+          token: data['token'], driver: data['driver'],
         );
       }
       return DriverAuthResponse(success: false, message: data['message'] ?? 'Invalid credentials');
     } catch (e) {
-      return DriverAuthResponse(success: false, message: 'Connection failed. Check your internet.');
+      return DriverAuthResponse(success: false,
+          message: 'Connection failed. Check your internet.');
     }
   }
 
