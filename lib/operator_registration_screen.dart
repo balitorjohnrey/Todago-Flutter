@@ -80,9 +80,6 @@ class _OperatorRegistrationScreenState
       associationCode: _assocCodeCtrl.text,
       ltfrbNumber: _ltfrbCtrl.text,
       region: _regionCtrl.text,
-      contactName: _contactNameCtrl.text,
-      email: _emailCtrl.text,
-      phone: _mobileCtrl.text,
       serviceArea: _serviceAreaCtrl.text.isNotEmpty
           ? _serviceAreaCtrl.text : null,
       totalTricycles: _totalTricyclesCtrl.text.isNotEmpty
