@@ -12,7 +12,7 @@ class DriverAuthResponse {
 
 class DriverAuthService {
   // ✅ Replace with your actual Railway URL
-  static const String _baseUrl = 'https://YOUR_RAILWAY_URL.up.railway.app/api/driver';
+  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/driver';
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'driver_auth_token';
   static const _driverKey = 'driver_data';
