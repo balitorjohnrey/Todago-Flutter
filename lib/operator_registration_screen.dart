@@ -17,6 +17,7 @@ class _OperatorRegistrationScreenState
   int _currentStep = 0;
   final PageController _pageController = PageController();
   bool _isLoading = false;
+  bool _isFetchingAccount = true; // true while loading main account data
   String? _errorMessage;
 
   // Step 1 — Association Info
@@ -25,7 +26,7 @@ class _OperatorRegistrationScreenState
   final _ltfrbCtrl     = TextEditingController();
   final _regionCtrl    = TextEditingController();
 
-  // Step 2 — Contact Info (NO password)
+  // Step 2 — Contact Info (read-only, auto-filled from main account)
   final _contactNameCtrl = TextEditingController();
   final _emailCtrl       = TextEditingController();
   final _mobileCtrl      = TextEditingController();
@@ -36,54 +37,110 @@ class _OperatorRegistrationScreenState
   final _serviceAreaCtrl    = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    _loadMainAccountData();
+  }
+
+  // ── Auto-fill contact info from the signed-in main account ─────────────────
+  Future<void> _loadMainAccountData() async {
+    final user = await OperatorAuthService.fetchMainAccountData();
+
+    if (!mounted) return;
+
+    if (user == null) {
+      // Not signed in — block the flow and tell the user
+      setState(() {
+        _isFetchingAccount = false;
+        _errorMessage =
+            'You must be signed in to your main TodaGo account first. '
+            'Please go back and sign in.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isFetchingAccount  = false;
+      _contactNameCtrl.text = user['full_name'] ?? '';
+      _emailCtrl.text       = user['email']     ?? '';
+      _mobileCtrl.text      = user['phone']     ?? '';
+      _errorMessage         = null;
+    });
+  }
+
+  @override
   void dispose() {
-    _assocNameCtrl.dispose(); _assocCodeCtrl.dispose();
-    _ltfrbCtrl.dispose(); _regionCtrl.dispose();
-    _contactNameCtrl.dispose(); _emailCtrl.dispose();
-    _mobileCtrl.dispose(); _totalTricyclesCtrl.dispose();
-    _activeDriversCtrl.dispose(); _serviceAreaCtrl.dispose();
+    _assocNameCtrl.dispose();
+    _assocCodeCtrl.dispose();
+    _ltfrbCtrl.dispose();
+    _regionCtrl.dispose();
+    _contactNameCtrl.dispose();
+    _emailCtrl.dispose();
+    _mobileCtrl.dispose();
+    _totalTricyclesCtrl.dispose();
+    _activeDriversCtrl.dispose();
+    _serviceAreaCtrl.dispose();
     _pageController.dispose();
     super.dispose();
   }
 
   void _nextStep() {
     if (_currentStep < 2) {
-      setState(() { _currentStep++; _errorMessage = null; });
-      _pageController.animateToPage(_currentStep,
-          duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+      setState(() {
+        _currentStep++;
+        _errorMessage = null;
+      });
+      _pageController.animateToPage(
+        _currentStep,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
     }
   }
 
   void _prevStep() {
     if (_currentStep > 0) {
-      setState(() { _currentStep--; _errorMessage = null; });
-      _pageController.animateToPage(_currentStep,
-          duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+      setState(() {
+        _currentStep--;
+        _errorMessage = null;
+      });
+      _pageController.animateToPage(
+        _currentStep,
+        duration: const Duration(milliseconds: 350),
+        curve: Curves.easeOut,
+      );
     } else {
       Navigator.of(context).pop();
     }
   }
 
   Future<void> _submit() async {
-    if (_assocNameCtrl.text.isEmpty || _assocCodeCtrl.text.isEmpty ||
-        _ltfrbCtrl.text.isEmpty || _regionCtrl.text.isEmpty ||
-        _contactNameCtrl.text.isEmpty || _emailCtrl.text.isEmpty ||
-        _mobileCtrl.text.isEmpty) {
+    if (_assocNameCtrl.text.trim().isEmpty ||
+        _assocCodeCtrl.text.trim().isEmpty ||
+        _ltfrbCtrl.text.trim().isEmpty ||
+        _regionCtrl.text.trim().isEmpty) {
       setState(() => _errorMessage = 'Please fill in all required fields');
       return;
     }
 
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
+    // ── FIX: contactName / email / phone are NOT passed here anymore. ─────────
+    // The backend reads them from the main account via the Authorization token.
     final result = await OperatorAuthService.register(
       associationName: _assocNameCtrl.text,
       associationCode: _assocCodeCtrl.text,
-      ltfrbNumber: _ltfrbCtrl.text,
-      region: _regionCtrl.text,
-      serviceArea: _serviceAreaCtrl.text.isNotEmpty
-          ? _serviceAreaCtrl.text : null,
-      totalTricycles: _totalTricyclesCtrl.text.isNotEmpty
-          ? _totalTricyclesCtrl.text : null,
+      ltfrbNumber:     _ltfrbCtrl.text,
+      region:          _regionCtrl.text,
+      serviceArea:     _serviceAreaCtrl.text.isNotEmpty
+                           ? _serviceAreaCtrl.text
+                           : null,
+      totalTricycles:  _totalTricyclesCtrl.text.isNotEmpty
+                           ? _totalTricyclesCtrl.text
+                           : null,
     );
 
     if (!mounted) return;
@@ -94,10 +151,13 @@ class _OperatorRegistrationScreenState
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 10),
-          Expanded(child: Text(
-            result.message ?? 'Registration submitted!',
-            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
-          )),
+          Expanded(
+            child: Text(
+              result.message ?? 'Registration submitted!',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
         ]),
         backgroundColor: AppColors.success,
         behavior: SnackBarBehavior.floating,
@@ -121,107 +181,140 @@ class _OperatorRegistrationScreenState
     return Scaffold(
       backgroundColor: Colors.white,
       body: Column(children: [
-        // ── Header ────────────────────────────────────────────────────────────
+        // ── Header ─────────────────────────────────────────────────────────────
         Container(
           color: AppColors.backgroundDark,
           child: SafeArea(
             bottom: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  GestureDetector(
-                    onTap: _prevStep,
-                    child: Container(
-                      width: 36, height: 36,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    GestureDetector(
+                      onTap: _prevStep,
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.arrow_back_ios_rounded,
+                            color: Colors.white, size: 16),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Operator Registration',
+                            style: GoogleFonts.poppins(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            )),
+                        Text('Step ${_currentStep + 1} of 3',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: Colors.white54)),
+                      ],
+                    ),
+                    const Spacer(),
+                    Container(
+                      width: 36,
+                      height: 36,
                       decoration: BoxDecoration(
-                        color: AppColors.surface,
+                        color: AppColors.primary,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.arrow_back_ios_rounded,
-                          color: Colors.white, size: 16),
+                      child: const Icon(Icons.shield_rounded,
+                          color: AppColors.backgroundDark, size: 20),
                     ),
-                  ),
-                  const SizedBox(width: 14),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Operator Registration', style: GoogleFonts.poppins(
-                      fontSize: 17, fontWeight: FontWeight.w700, color: Colors.white,
-                    )),
-                    Text('Step ${_currentStep + 1} of 3', style: GoogleFonts.poppins(
-                      fontSize: 12, color: Colors.white54,
-                    )),
                   ]),
-                  const Spacer(),
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.shield_rounded,
-                        color: AppColors.backgroundDark, size: 20),
-                  ),
-                ]),
-                const SizedBox(height: 16),
-                Row(children: List.generate(3, (i) => Expanded(
-                  child: Container(
-                    margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: i <= _currentStep
-                          ? AppColors.primary : AppColors.surface,
-                      borderRadius: BorderRadius.circular(2),
+                  const SizedBox(height: 16),
+                  // Progress bar
+                  Row(
+                    children: List.generate(
+                      3,
+                      (i) => Expanded(
+                        child: Container(
+                          margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: i <= _currentStep
+                                ? AppColors.primary
+                                : AppColors.surface,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
-                ))),
-              ]),
+                ],
+              ),
             ),
           ),
         ),
 
-        // ── Password notice banner ─────────────────────────────────────────────
+        // ── Password notice banner ──────────────────────────────────────────────
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           decoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.08),
             border: Border(
-                bottom: BorderSide(color: AppColors.primary.withOpacity(0.2))),
+                bottom:
+                    BorderSide(color: AppColors.primary.withOpacity(0.2))),
           ),
           child: Row(children: [
             const Icon(Icons.info_rounded, color: AppColors.primary, size: 16),
             const SizedBox(width: 8),
-            Expanded(child: Text(
-              'Use your main TodaGo account password to log in as operator.',
-              style: GoogleFonts.poppins(
-                fontSize: 11, color: AppColors.backgroundDark,
-                fontWeight: FontWeight.w500,
+            Expanded(
+              child: Text(
+                'Use your main TodaGo account password to log in as operator.',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: AppColors.backgroundDark,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-            )),
+            ),
           ]),
         ),
 
-        // ── Error banner ──────────────────────────────────────────────────────
+        // ── Error banner ────────────────────────────────────────────────────────
         if (_errorMessage != null)
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             color: AppColors.error.withOpacity(0.08),
             child: Row(children: [
-              const Icon(Icons.error_outline, color: AppColors.error, size: 16),
+              const Icon(Icons.error_outline,
+                  color: AppColors.error, size: 16),
               const SizedBox(width: 8),
-              Expanded(child: Text(_errorMessage!, style: GoogleFonts.poppins(
-                fontSize: 12, color: AppColors.error,
-              ))),
+              Expanded(
+                child: Text(_errorMessage!,
+                    style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.error)),
+              ),
             ]),
           ),
 
+        // ── Page content ────────────────────────────────────────────────────────
         Expanded(
-          child: PageView(
-            controller: _pageController,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [_buildStep1(), _buildStep2(), _buildStep3()],
-          ),
+          child: _isFetchingAccount
+              ? const Center(child: CircularProgressIndicator())
+              : PageView(
+                  controller: _pageController,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _buildStep1(),
+                    _buildStep2(),
+                    _buildStep3(),
+                  ],
+                ),
         ),
       ]),
     );
@@ -229,203 +322,306 @@ class _OperatorRegistrationScreenState
 
   // ── Step 1: Association Info ──────────────────────────────────────────────
   Widget _buildStep1() => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 8),
-      Text('Association Information', style: GoogleFonts.poppins(
-        fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
-      )),
-      Text('Your TODA registration details', style: GoogleFonts.poppins(
-        fontSize: 13, color: Colors.grey[500],
-      )),
-      const SizedBox(height: 24),
-      _lbl('TODA Association Name', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _assocNameCtrl, hint: 'Davao-Central TODA',
-          icon: Icons.groups_rounded),
-      const SizedBox(height: 18),
-      _lbl('Association Code / TODA ID', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _assocCodeCtrl, hint: 'e.g., DCC-TODA-001',
-          icon: Icons.badge_outlined),
-      const SizedBox(height: 4),
-      Text('This is your TODA Association ID used for login',
-          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.primary)),
-      const SizedBox(height: 18),
-      _lbl('LTFRB Franchise Number', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _ltfrbCtrl, hint: 'LTFRB franchise number',
-          icon: Icons.description_outlined),
-      const SizedBox(height: 18),
-      _lbl('Region / City', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _regionCtrl, hint: 'Davao City, Davao del Sur',
-          icon: Icons.location_on_outlined),
-      const SizedBox(height: 20),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFF8E1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-        ),
-        child: Row(children: [
-          const Icon(Icons.verified_rounded, color: AppColors.primary, size: 18),
-          const SizedBox(width: 10),
-          Expanded(child: Text(
-            'Your LTFRB franchise number will be verified before your account is activated.',
-            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700]),
-          )),
-        ]),
-      ),
-      const SizedBox(height: 28),
-      _continueBtn(_nextStep),
-      const SizedBox(height: 24),
-    ]),
-  );
+        padding: const EdgeInsets.all(24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const SizedBox(height: 8),
+          Text('Association Information',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+          Text('Your TODA registration details',
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+          const SizedBox(height: 24),
 
-  // ── Step 2: Contact Info (NO password) ────────────────────────────────────
-  Widget _buildStep2() => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 8),
-      Text('Contact Information', style: GoogleFonts.poppins(
-        fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
-      )),
-      Text('Your account login credentials', style: GoogleFonts.poppins(
-        fontSize: 13, color: Colors.grey[500],
-      )),
-      const SizedBox(height: 24),
-      _lbl('Contact Person Name', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _contactNameCtrl, hint: 'Full name of authorized officer',
-          icon: Icons.person_outline_rounded),
-      const SizedBox(height: 18),
-      _lbl('Operator Email', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _emailCtrl, hint: 'operator@toda.ph',
-          icon: Icons.email_outlined,
-          keyboardType: TextInputType.emailAddress),
-      const SizedBox(height: 4),
-      Text('Must match your main TodaGo account email',
-          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.primary)),
-      const SizedBox(height: 18),
-      _lbl('Mobile Number', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _mobileCtrl, hint: '+63 912 345 6789',
-          icon: Icons.phone_outlined, keyboardType: TextInputType.phone),
-      const SizedBox(height: 20),
+          _lbl('TODA Association Name', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _assocNameCtrl,
+            hint: 'Davao-Central TODA',
+            icon: Icons.groups_rounded,
+          ),
+          const SizedBox(height: 18),
 
-      // No password needed box
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.green.withOpacity(0.06),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.withOpacity(0.3)),
-        ),
-        child: Row(children: [
-          const Icon(Icons.lock_rounded, color: Colors.green, size: 20),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('No separate password needed', style: GoogleFonts.poppins(
-              fontSize: 13, fontWeight: FontWeight.w700, color: Colors.green[800],
-            )),
-            const SizedBox(height: 2),
-            Text(
-              'You will use your main TodaGo account password to log in. No need to create a new one.',
-              style: GoogleFonts.poppins(fontSize: 11, color: Colors.green[700]),
+          _lbl('Association Code / TODA ID', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _assocCodeCtrl,
+            hint: 'e.g., DCC-TODA-001',
+            icon: Icons.badge_outlined,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'This is your TODA Association ID used for login',
+            style:
+                GoogleFonts.poppins(fontSize: 11, color: AppColors.primary),
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('LTFRB Franchise Number', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _ltfrbCtrl,
+            hint: 'LTFRB franchise number',
+            icon: Icons.description_outlined,
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('Region / City', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _regionCtrl,
+            hint: 'Davao City, Davao del Sur',
+            icon: Icons.location_on_outlined,
+          ),
+          const SizedBox(height: 20),
+
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  Border.all(color: AppColors.primary.withOpacity(0.3)),
             ),
-          ])),
+            child: Row(children: [
+              const Icon(Icons.verified_rounded,
+                  color: AppColors.primary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Your LTFRB franchise number will be verified before your account is activated.',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.grey[700]),
+                ),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 28),
+          _continueBtn(_nextStep),
+          const SizedBox(height: 24),
         ]),
-      ),
-      const SizedBox(height: 28),
-      _continueBtn(_nextStep),
-      const SizedBox(height: 24),
-    ]),
-  );
+      );
+
+  // ── Step 2: Contact Info (read-only — auto-filled from main account) ────────
+  Widget _buildStep2() => SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const SizedBox(height: 8),
+          Text('Contact Information',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+          Text('Fetched from your main TodaGo account',
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+          const SizedBox(height: 24),
+
+          _lbl('Contact Person Name', required: true),
+          const SizedBox(height: 6),
+          // ── READ-ONLY: value comes from main account ──
+          _fld(
+            controller: _contactNameCtrl,
+            hint: 'Full name of authorized officer',
+            icon: Icons.person_outline_rounded,
+            readOnly: true,
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('Operator Email', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _emailCtrl,
+            hint: 'operator@toda.ph',
+            icon: Icons.email_outlined,
+            keyboardType: TextInputType.emailAddress,
+            readOnly: true, // ── READ-ONLY: linked to main account
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Linked to your main TodaGo account',
+            style:
+                GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('Mobile Number', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _mobileCtrl,
+            hint: '+63 912 345 6789',
+            icon: Icons.phone_outlined,
+            keyboardType: TextInputType.phone,
+            readOnly: true, // ── READ-ONLY: linked to main account
+          ),
+          const SizedBox(height: 20),
+
+          // No password needed box
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.lock_rounded, color: Colors.green, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('No separate password needed',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.green[800],
+                          )),
+                      const SizedBox(height: 2),
+                      Text(
+                        'You will use your main TodaGo account password to log in. No need to create a new one.',
+                        style: GoogleFonts.poppins(
+                            fontSize: 11, color: Colors.green[700]),
+                      ),
+                    ]),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 28),
+          _continueBtn(_nextStep),
+          const SizedBox(height: 24),
+        ]),
+      );
 
   // ── Step 3: Fleet Info ────────────────────────────────────────────────────
   Widget _buildStep3() => SingleChildScrollView(
-    padding: const EdgeInsets.all(24),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const SizedBox(height: 8),
-      Text('Fleet Information', style: GoogleFonts.poppins(
-        fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
-      )),
-      Text('Tell us about your fleet size', style: GoogleFonts.poppins(
-        fontSize: 13, color: Colors.grey[500],
-      )),
-      const SizedBox(height: 24),
-      _lbl('Total Tricycles in Fleet', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _totalTricyclesCtrl, hint: 'e.g., 402',
-          icon: Icons.directions_car_outlined,
-          keyboardType: TextInputType.number),
-      const SizedBox(height: 18),
-      _lbl('Number of Active Drivers'),
-      const SizedBox(height: 6),
-      _fld(controller: _activeDriversCtrl, hint: 'e.g., 315',
-          icon: Icons.people_outline_rounded,
-          keyboardType: TextInputType.number),
-      const SizedBox(height: 18),
-      _lbl('Primary Service Area', required: true),
-      const SizedBox(height: 6),
-      _fld(controller: _serviceAreaCtrl,
-          hint: 'e.g., Davao City CBD, Panabo City',
-          icon: Icons.map_outlined),
-      const SizedBox(height: 20),
-      Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFE8F5E9),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.green.withOpacity(0.3)),
-        ),
-        child: Row(children: [
-          const Icon(Icons.verified_rounded, color: Colors.green, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('LTFRB Compliant', style: GoogleFonts.poppins(
-              fontSize: 13, fontWeight: FontWeight.w600, color: Colors.green[800],
-            )),
-            Text('TodaGo only accepts verified, LTFRB-registered operators.',
-                style: GoogleFonts.poppins(fontSize: 11, color: Colors.green[700])),
-          ])),
-        ]),
-      ),
-      const SizedBox(height: 28),
-      SizedBox(
-        width: double.infinity, height: 54,
-        child: ElevatedButton(
-          onPressed: _isLoading ? null : _submit,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.backgroundDark,
-            disabledBackgroundColor: AppColors.backgroundDark.withOpacity(0.5),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-            elevation: 0,
+        padding: const EdgeInsets.all(24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const SizedBox(height: 8),
+          Text('Fleet Information',
+              style: GoogleFonts.poppins(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+          Text('Tell us about your fleet size',
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+          const SizedBox(height: 24),
+
+          _lbl('Total Tricycles in Fleet', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _totalTricyclesCtrl,
+            hint: 'e.g., 402',
+            icon: Icons.directions_car_outlined,
+            keyboardType: TextInputType.number,
           ),
-          child: _isLoading
-              ? const SizedBox(width: 22, height: 22,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2.5, color: Colors.white))
-              : Text('Submit Registration', style: GoogleFonts.poppins(
-                  fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
-                )),
-        ),
-      ),
-      const SizedBox(height: 24),
-    ]),
-  );
+          const SizedBox(height: 18),
+
+          _lbl('Number of Active Drivers'),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _activeDriversCtrl,
+            hint: 'e.g., 315',
+            icon: Icons.people_outline_rounded,
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('Primary Service Area', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _serviceAreaCtrl,
+            hint: 'e.g., Davao City CBD, Panabo City',
+            icon: Icons.map_outlined,
+          ),
+          const SizedBox(height: 20),
+
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F5E9),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.green.withOpacity(0.3)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.verified_rounded,
+                  color: Colors.green, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('LTFRB Compliant',
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green[800],
+                          )),
+                      Text(
+                          'TodaGo only accepts verified, LTFRB-registered operators.',
+                          style: GoogleFonts.poppins(
+                              fontSize: 11, color: Colors.green[700])),
+                    ]),
+              ),
+            ]),
+          ),
+          const SizedBox(height: 28),
+
+          SizedBox(
+            width: double.infinity,
+            height: 54,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.backgroundDark,
+                disabledBackgroundColor:
+                    AppColors.backgroundDark.withOpacity(0.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(28)),
+                elevation: 0,
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.white),
+                    )
+                  : Text('Submit Registration',
+                      style: GoogleFonts.poppins(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                      )),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ]),
+      );
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
 
   Widget _lbl(String text, {bool required = false}) => Row(children: [
-    Text(text, style: GoogleFonts.poppins(
-      fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey[700],
-    )),
-    if (required) Text(' *', style: GoogleFonts.poppins(
-      fontSize: 13, color: AppColors.error, fontWeight: FontWeight.w600,
-    )),
-  ]);
+        Text(text,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            )),
+        if (required)
+          Text(' *',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              )),
+      ]);
 
   Widget _fld({
     required TextEditingController controller,
@@ -433,38 +629,66 @@ class _OperatorRegistrationScreenState
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     Widget? suffixIcon,
-  }) => TextFormField(
-    controller: controller,
-    keyboardType: keyboardType,
-    style: GoogleFonts.poppins(color: Colors.grey[800], fontSize: 15),
-    decoration: InputDecoration(
-      hintText: hint,
-      hintStyle: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
-      prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
-      suffixIcon: suffixIcon,
-      filled: true, fillColor: Colors.grey[50],
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey[200]!)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.backgroundDark, width: 2)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    ),
-  );
+    bool readOnly = false, // ← NEW: locks auto-filled fields
+  }) =>
+      TextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        readOnly: readOnly,
+        style: GoogleFonts.poppins(
+          // Dim read-only fields so the user knows they can't edit them
+          color: readOnly ? Colors.grey[500] : Colors.grey[800],
+          fontSize: 15,
+        ),
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle:
+              GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
+          prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
+          suffixIcon: readOnly
+              ? const Icon(Icons.lock_outline_rounded,
+                  color: Colors.grey, size: 16)
+              : suffixIcon,
+          filled: true,
+          // Slightly different background for read-only fields
+          fillColor: readOnly ? Colors.grey[100] : Colors.grey[50],
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[200]!),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey[200]!),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(
+              color: readOnly ? Colors.grey[300]! : AppColors.backgroundDark,
+              width: 2,
+            ),
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        ),
+      );
 
   Widget _continueBtn(VoidCallback onTap) => SizedBox(
-    width: double.infinity, height: 54,
-    child: ElevatedButton(
-      onPressed: onTap,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: AppColors.backgroundDark,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
-        elevation: 0,
-      ),
-      child: Text('Continue', style: GoogleFonts.poppins(
-        fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
-      )),
-    ),
-  );
+        width: double.infinity,
+        height: 54,
+        child: ElevatedButton(
+          onPressed: onTap,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.backgroundDark,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28)),
+            elevation: 0,
+          ),
+          child: Text('Continue',
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              )),
+        ),
+      );
 }
