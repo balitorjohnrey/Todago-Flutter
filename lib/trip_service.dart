@@ -3,32 +3,49 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class TripService {
-  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/trips';
+  static const String _baseUrl =
+      'https://todago-backend-production.up.railway.app/api/trips';
   static const _storage = FlutterSecureStorage();
 
-  static Future<String?> _getToken() async {
-    // Try all token types
-    String? token = await _storage.read(key: 'auth_token');
-    token ??= await _storage.read(key: 'driver_auth_token');
-    token ??= await _storage.read(key: 'operator_auth_token');
-    return token;
+  // ── FIX: Separate token getters per role ──────────────────────────────────
+  // Using a single _getToken() that tries auth_token first caused driver
+  // endpoints to receive the passenger token (role='passenger') → 403.
+
+  /// Passenger token — for ride requests, finding drivers, commuter history
+  static Future<String?> _getPassengerToken() async =>
+      await _storage.read(key: 'auth_token');
+
+  /// Driver token — for pending trips, accept/decline, status updates
+  static Future<String?> _getDriverToken() async =>
+      await _storage.read(key: 'driver_auth_token');
+
+  /// Operator token
+  static Future<String?> _getOperatorToken() async =>
+      await _storage.read(key: 'operator_auth_token');
+
+  /// Smart token: tries passenger first, then driver, then operator.
+  /// Only used for endpoints that work for any authenticated user.
+  static Future<String?> _getAnyToken() async {
+    return await _getPassengerToken() ??
+        await _getDriverToken() ??
+        await _getOperatorToken();
   }
 
-  static Future<Map<String, String>> _headers() async {
-    final token = await _getToken();
-    return {
-      'Content-Type': 'application/json',
-      if (token != null) 'Authorization': 'Bearer $token',
-    };
-  }
+  static Map<String, String> _headers(String? token) => {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      };
 
   // ── Passenger: fetch online drivers ───────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchOnlineDrivers() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/drivers/online'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 15));
+      final token = await _getPassengerToken();
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/drivers/online'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -51,18 +68,22 @@ class TripService {
     required String paymentMethod,
   }) async {
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/request'),
-        headers: await _headers(),
-        body: jsonEncode({
-          'driverId': driverId,
-          'pickupLocation': pickupLocation,
-          'destination': destination,
-          'serviceType': serviceType,
-          'fare': fare,
-          'paymentMethod': paymentMethod,
-        }),
-      ).timeout(const Duration(seconds: 15));
+      // ── FIX: always use passenger token for ride requests ─────────────────
+      final token = await _getPassengerToken();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/request'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'driverId': driverId,
+              'pickupLocation': pickupLocation,
+              'destination': destination,
+              'serviceType': serviceType,
+              'fare': fare,
+              'paymentMethod': paymentMethod,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
 
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {
@@ -73,10 +94,14 @@ class TripService {
   // ── Driver: poll for pending trip request ─────────────────────────────────
   static Future<Map<String, dynamic>?> fetchPendingTrip() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/driver/pending'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 10));
+      // ── FIX: always use driver token for driver endpoints ─────────────────
+      final token = await _getDriverToken();
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/driver/pending'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -91,10 +116,13 @@ class TripService {
   // ── Driver: accept trip ───────────────────────────────────────────────────
   static Future<bool> acceptTrip(String tripId) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/$tripId/accept'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/accept'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
@@ -105,10 +133,13 @@ class TripService {
   // ── Driver: decline trip ──────────────────────────────────────────────────
   static Future<bool> declineTrip(String tripId) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/$tripId/decline'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/decline'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
@@ -120,11 +151,14 @@ class TripService {
   static Future<Map<String, dynamic>> updateTripStatus(
       String tripId, String status) async {
     try {
-      final response = await http.put(
-        Uri.parse('$_baseUrl/$tripId/status'),
-        headers: await _headers(),
-        body: jsonEncode({'status': status}),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/status'),
+            headers: _headers(token),
+            body: jsonEncode({'status': status}),
+          )
+          .timeout(const Duration(seconds: 10));
       return jsonDecode(response.body) as Map<String, dynamic>;
     } catch (e) {
       return {'success': false, 'message': 'Connection failed'};
@@ -134,15 +168,15 @@ class TripService {
   // ── Driver: update online/offline status ─────────────────────────────────
   static Future<bool> updateDriverStatus(String status) async {
     try {
-      final token = await _storage.read(key: 'driver_auth_token');
-      final response = await http.put(
-        Uri.parse('${_baseUrl.replaceAll('/api/trips', '/api/driver')}/status'),
-        headers: {
-          'Content-Type': 'application/json',
-          if (token != null) 'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'status': status}),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .put(
+            Uri.parse(
+                'https://todago-backend-production.up.railway.app/api/driver/status'),
+            headers: _headers(token),
+            body: jsonEncode({'status': status}),
+          )
+          .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
       return data['success'] == true;
     } catch (e) {
@@ -153,10 +187,13 @@ class TripService {
   // ── Passenger: get active trip ────────────────────────────────────────────
   static Future<Map<String, dynamic>?> getActiveTrip() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/commuter/active'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getPassengerToken(); // ← passenger token
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/commuter/active'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['trip'];
@@ -170,10 +207,13 @@ class TripService {
   // ── Driver: get active trip ───────────────────────────────────────────────
   static Future<Map<String, dynamic>?> getDriverActiveTrip() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/driver/active'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 10));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/driver/active'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return data['trip'];
@@ -184,13 +224,16 @@ class TripService {
     }
   }
 
-  // ── Commuter: trip history ────────────────────────────────────────────────
+  // ── Passenger: trip history ───────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getCommuterHistory() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/commuter/history'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 15));
+      final token = await _getPassengerToken(); // ← passenger token
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/commuter/history'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List trips = data['trips'] ?? [];
@@ -205,10 +248,13 @@ class TripService {
   // ── Driver: trip history ──────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getDriverHistory() async {
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/driver/history'),
-        headers: await _headers(),
-      ).timeout(const Duration(seconds: 15));
+      final token = await _getDriverToken(); // ← driver token
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/driver/history'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final List trips = data['trips'] ?? [];
