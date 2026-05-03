@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class TripService {
-  static const String _baseUrl = 'https://YOUR_RAILWAY_URL.up.railway.app/api/trips';
+  static const String _baseUrl = 'https://todago-backend-production.up.railway.app/api/trips';
   static const _storage = FlutterSecureStorage();
 
   static Future<String?> _getToken() async {
