@@ -49,11 +49,11 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   int _waitSeconds = 0;
   bool _isCancelling = false;
 
-  // ── FIX: Track if we've ever confirmed the trip exists in DB ─────────────
-  // When getActiveTrip() returns null AFTER trip was confirmed, it means
-  // the driver cancelled/declined — not a network glitch.
-  bool _tripConfirmedInDb = false;
-  int _nullResponseCount = 0; // how many consecutive nulls after confirmation
+  // ── FIX: We KNOW the trip exists because we just got 201 from the server.
+  // Set this to true immediately so any null from getActiveTrip() is treated
+  // as a driver decline — not a timing/network issue.
+  bool _tripConfirmedInDb = true;
+  int _nullResponseCount = 0;
 
   final LatLng _pickup = const LatLng(7.1907, 125.4553);
   final LatLng _driver = const LatLng(7.1940, 125.4580);
@@ -92,6 +92,10 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     });
 
     _startPolling();
+    // Also poll immediately on first load (don't wait 4 seconds for first check)
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) _checkTripStatus();
+    });
   }
 
   void _startPolling() {
@@ -110,16 +114,14 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
       // ── FIX: Handle null response properly ───────────────────────────────
       if (trip == null) {
         if (_tripConfirmedInDb) {
-          // Trip existed but now returned null → driver cancelled/declined
           _nullResponseCount++;
-          // Wait 2 consecutive nulls to avoid false positives from network blips
-          if (_nullResponseCount >= 2) {
+          // Trip was confirmed, now null → driver cancelled/declined
+          // Use threshold of 1 (we're certain trip existed from 201 response)
+          if (_nullResponseCount >= 1) {
             _pollTimer?.cancel();
             _showDriverCancelledDialog();
           }
         }
-        // If trip was never confirmed in DB yet, it's just not created yet
-        // (race condition) — keep polling
         return;
       }
 
