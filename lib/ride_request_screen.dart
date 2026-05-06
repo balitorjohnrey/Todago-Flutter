@@ -84,10 +84,10 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
 
     return PopScope(
       canPop: false, // prevent back-swipe from auto-declining silently
-      child: Scaffold(
-        backgroundColor: Colors.black.withOpacity(0.6),
-        body: Center(
-          child: Padding(
+      child: Material(
+         color: Colors.transparent,
+        child: Center(
+          child: Center(child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
               decoration: BoxDecoration(
@@ -331,6 +331,7 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

@@ -157,7 +157,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       body: Stack(children: [
 
         // ── Map ────────────────────────────────────────────────────────────
-        FlutterMap(
+        Positioned.fill(child: FlutterMap(
           options: const MapOptions(
             initialCenter: LatLng(7.1870, 125.4516),
             initialZoom: 14.0,
@@ -197,7 +197,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             ]),
           ],
         ),
-
+        ),
         // ── Top trip-in-progress card ──────────────────────────────────────
         Positioned(
           top: 0, left: 0, right: 0,

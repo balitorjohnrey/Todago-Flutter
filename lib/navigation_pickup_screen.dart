@@ -59,7 +59,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       body: Stack(children: [
 
         // ── Map ────────────────────────────────────────────────────────────
-        FlutterMap(
+        Positioned.fill(child: FlutterMap(
           options: const MapOptions(
             initialCenter: LatLng(7.1920, 125.4570),
             initialZoom: 15.0,
@@ -108,7 +108,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
             ]),
           ],
         ),
-
+        ),
         // ── Top nav card ───────────────────────────────────────────────────
         Positioned(
           top: 0, left: 0, right: 0,

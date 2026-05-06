@@ -174,9 +174,12 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(children: [
-
+        Positioned.fill(
+          child: Container(color: const Color(0xFFE8EDF2)),
+          ),
+       
         // Map
-        FlutterMap(
+        Positioned.fill(child: FlutterMap(
           options: const MapOptions(
             initialCenter: LatLng(7.1920, 125.4560),
             initialZoom: 14.5,
@@ -216,7 +219,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
             ]),
           ],
         ),
-
+        ),
         // Top status bar
         Positioned(
           top: 0, left: 0, right: 0,
