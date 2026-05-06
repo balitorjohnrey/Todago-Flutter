@@ -39,7 +39,7 @@ class PassengerWaitingScreen extends StatefulWidget {
 }
 
 class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late AnimationController _pulseCtrl;
   Timer? _pollTimer;
   Timer? _dotsTimer;
@@ -116,8 +116,8 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
         if (_tripConfirmedInDb) {
           _nullResponseCount++;
           // Trip was confirmed, now null → driver cancelled/declined
-          // Use threshold of 1 (we're certain trip existed from 201 response)
-          if (_nullResponseCount >= 1) {
+       
+          if (_nullResponseCount >= 3) {
             _pollTimer?.cancel();
             _showDriverCancelledDialog();
           }
