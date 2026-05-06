@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -39,21 +38,15 @@ class PassengerWaitingScreen extends StatefulWidget {
 }
 
 class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late AnimationController _pulseCtrl;
   Timer? _pollTimer;
   Timer? _dotsTimer;
   Timer? _waitTimer;
-
   int _dotsCount = 1;
   int _waitSeconds = 0;
   bool _isCancelling = false;
-
-  // ── FIX: We KNOW the trip exists because we just got 201 from the server.
-  // Set this to true immediately so any null from getActiveTrip() is treated
-  // as a driver decline — not a timing/network issue.
-  bool _tripConfirmedInDb = true;
-  int _nullResponseCount = 0;
+  bool _isNavigating = false;
 
   final LatLng _pickup = const LatLng(7.1907, 125.4553);
   final LatLng _driver = const LatLng(7.1940, 125.4580);
@@ -69,138 +62,89 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   @override
   void initState() {
     super.initState();
-
     _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
+        vsync: this, duration: const Duration(seconds: 2))
+      ..repeat();
 
-    _dotsTimer = Timer.periodic(const Duration(milliseconds: 500), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-      setState(() => _dotsCount = (_dotsCount % 3) + 1);
+    _dotsTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
+      if (mounted) setState(() => _dotsCount = (_dotsCount % 3) + 1);
     });
 
-    _waitTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
-      setState(() => _waitSeconds++);
+    _waitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _waitSeconds++);
     });
 
-    _startPolling();
-    // Also poll immediately on first load (don't wait 4 seconds for first check)
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) _checkTripStatus();
+    // Poll every 3 seconds
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      _checkStatus();
     });
+
+    // Also check immediately after 1 second
+    Future.delayed(const Duration(seconds: 1), _checkStatus);
   }
 
-  void _startPolling() {
-    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
-      if (!mounted) return;
-      await _checkTripStatus();
-    });
-  }
-
-  Future<void> _checkTripStatus() async {
+  Future<void> _checkStatus() async {
+    if (_isNavigating || !mounted) return;
     try {
       final trip = await TripService.getActiveTrip();
+      if (!mounted || _isNavigating) return;
 
-      if (!mounted) return;
-
-      // ── FIX: Handle null response properly ───────────────────────────────
-      if (trip == null) {
-        if (_tripConfirmedInDb) {
-          _nullResponseCount++;
-          // Trip was confirmed, now null → driver cancelled/declined
-       
-          if (_nullResponseCount >= 3) {
-            _pollTimer?.cancel();
-            _showDriverCancelledDialog();
-          }
+      if (trip != null) {
+        final status = trip['status']?.toString() ?? '';
+        if (status == 'accepted' || status == 'pickup' || status == 'ongoing') {
+          _isNavigating = true;
+          _stopTimers();
+          Navigator.of(context).pushReplacement(PageRouteBuilder(
+            pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
+              tripId: trip['trip_id']?.toString() ?? widget.tripId,
+              driverName: trip['driver_name']?.toString() ?? widget.driverName,
+              driverRating: widget.driverRating,
+              todaBodyNumber: trip['toda_body_number']?.toString() ?? widget.todaBodyNumber,
+              plateNo: trip['plate_no']?.toString() ?? widget.plateNo,
+              etaMinutes: widget.etaMinutes,
+              distanceKm: widget.distanceKm,
+            ),
+            transitionDuration: const Duration(milliseconds: 500),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+          ));
+        } else if (status == 'cancelled') {
+          _isNavigating = true;
+          _stopTimers();
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Driver declined. Please try another driver.',
+                style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w500)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ));
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+            (_) => false,
+          );
         }
-        return;
       }
-
-      // Trip exists in DB — mark as confirmed
-      _tripConfirmedInDb = true;
-      _nullResponseCount = 0;
-
-      final status = trip['status']?.toString() ?? '';
-
-      if (status == 'cancelled') {
-        // Explicitly cancelled
-        _pollTimer?.cancel();
-        _showDriverCancelledDialog();
-        return;
-      }
-
-      // Driver accepted → move to live tracking
-      if (status == 'accepted' ||
-          status == 'pickup' ||
-          status == 'ongoing') {
-        _pollTimer?.cancel();
-        if (!mounted) return;
-        Navigator.of(context).pushReplacement(PageRouteBuilder(
-          pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
-            tripId: trip['trip_id']?.toString() ?? widget.tripId,
-            driverName:
-                trip['driver_name']?.toString() ?? widget.driverName,
-            driverRating: widget.driverRating,
-            todaBodyNumber:
-                trip['toda_body_number']?.toString() ?? widget.todaBodyNumber,
-            plateNo: trip['plate_no']?.toString() ?? widget.plateNo,
-            etaMinutes: widget.etaMinutes,
-            distanceKm: widget.distanceKm,
-          ),
-          transitionDuration: const Duration(milliseconds: 500),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-        ));
-      }
-    } catch (_) {
-      // Network error — keep polling silently
+    } catch (e) {
+      debugPrint('[WaitingScreen] Poll error: $e');
     }
   }
 
-  void _showDriverCancelledDialog() {
-    if (!mounted) return;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Driver Declined',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        content: Text(
-          'The driver declined your ride request. Please try booking another driver.',
-          style: GoogleFonts.poppins(fontSize: 14),
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              _goHome();
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.backgroundDark,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            child: Text('Book Again',
-                style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w700, color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  void _stopTimers() {
+    _pollTimer?.cancel();
+    _dotsTimer?.cancel();
+    _waitTimer?.cancel();
   }
 
-  void _goHome() {
+  Future<void> _cancelRide() async {
+    if (_isCancelling) return;
+    setState(() => _isCancelling = true);
+    _stopTimers();
+    if (widget.tripId.isNotEmpty) {
+      await TripService.updateTripStatus(widget.tripId, 'cancelled');
+    }
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
@@ -213,49 +157,6 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     );
   }
 
-  Future<void> _cancelRide() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Cancel Ride?',
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-        content: Text('Are you sure you want to cancel this booking?',
-            style: GoogleFonts.poppins(fontSize: 14)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('No',
-                style: GoogleFonts.poppins(color: AppColors.textHint)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.error,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text('Yes, Cancel',
-                style: GoogleFonts.poppins(
-                    color: Colors.white, fontWeight: FontWeight.w600)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    setState(() => _isCancelling = true);
-    _pollTimer?.cancel();
-
-    if (widget.tripId.isNotEmpty) {
-      await TripService.updateTripStatus(widget.tripId, 'cancelled');
-    }
-    if (!mounted) return;
-    _goHome();
-  }
-
   String get _waitTime {
     if (_waitSeconds < 60) return '${_waitSeconds}s';
     return '${_waitSeconds ~/ 60}m ${_waitSeconds % 60}s';
@@ -263,9 +164,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
-    _dotsTimer?.cancel();
-    _waitTimer?.cancel();
+    _stopTimers();
     _pulseCtrl.dispose();
     super.dispose();
   }
@@ -273,28 +172,65 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFE8EDF2), // ← visible while map loads
+      backgroundColor: Colors.white,
       body: Stack(children: [
 
-        // ── Map with error fallback ──────────────────────────────────────
-        _buildMap(),
+        // Map
+        FlutterMap(
+          options: const MapOptions(
+            initialCenter: LatLng(7.1920, 125.4560),
+            initialZoom: 14.5,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.todago.app',
+            ),
+            PolylineLayer(polylines: [
+              Polyline(points: [_driver, _pickup],
+                  color: AppColors.primary, strokeWidth: 4),
+            ]),
+            MarkerLayer(markers: [
+              Marker(
+                point: _driver, width: 40, height: 40,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundDark, shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(Icons.electric_rickshaw_rounded,
+                      color: AppColors.primary, size: 20),
+                ),
+              ),
+              Marker(
+                point: _pickup, width: 36, height: 36,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue, shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                  ),
+                  child: const Icon(Icons.person_rounded,
+                      color: Colors.white, size: 18),
+                ),
+              ),
+            ]),
+          ],
+        ),
 
-        // ── Top status bar ───────────────────────────────────────────────
+        // Top status bar
         Positioned(
           top: 0, left: 0, right: 0,
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   boxShadow: [BoxShadow(
                     color: Colors.black.withOpacity(0.12),
-                    blurRadius: 12,
-                    offset: const Offset(0, 3),
+                    blurRadius: 12, offset: const Offset(0, 3),
                   )],
                 ),
                 child: Row(children: [
@@ -314,54 +250,46 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                     Text(
                       'Waiting for driver${'.' * _dotsCount}',
                       style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
+                        fontSize: 14, fontWeight: FontWeight.w700,
                         color: AppColors.backgroundDark,
                       ),
                     ),
                     Text('Wait time: $_waitTime',
                         style: GoogleFonts.poppins(
-                          fontSize: 11, color: AppColors.textHint,
-                        )),
+                            fontSize: 11, color: AppColors.textHint)),
                   ]),
                   const Spacer(),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text('${widget.etaMinutes} min',
                         style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 13, fontWeight: FontWeight.w800,
                           color: AppColors.primary,
                         )),
                   ),
                 ]),
-              ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0),
+              ),
             ),
           ),
         ),
 
-        // ── Bottom driver card ───────────────────────────────────────────
+        // Bottom driver card
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               boxShadow: [BoxShadow(
-                color: Colors.black12,
-                blurRadius: 20,
-                offset: Offset(0, -4),
+                color: Colors.black12, blurRadius: 20, offset: Offset(0, -4),
               )],
             ),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            child:
-                Column(mainAxisSize: MainAxisSize.min, children: [
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(
                 width: 40, height: 4,
                 decoration: BoxDecoration(
@@ -371,7 +299,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
               )),
               const SizedBox(height: 16),
 
-              // Driver info row
+              // Driver info
               Row(children: [
                 Container(
                   width: 52, height: 52,
@@ -381,72 +309,42 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                   ),
                   child: Center(child: Text(_initials,
                       style: GoogleFonts.poppins(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
+                        fontSize: 17, fontWeight: FontWeight.w800,
                         color: AppColors.primary,
                       ))),
                 ),
                 const SizedBox(width: 14),
                 Expanded(child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(widget.driverName,
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.backgroundDark,
-                        )),
-                    Row(children: [
-                      if (widget.driverRating > 0) ...[
-                        const Icon(Icons.star_rounded,
-                            color: AppColors.primary, size: 14),
-                        const SizedBox(width: 3),
-                        Text(widget.driverRating.toStringAsFixed(1),
-                            style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.backgroundDark,
-                            )),
-                        Text(' · ',
-                            style: GoogleFonts.poppins(
-                                fontSize: 12, color: AppColors.textHint)),
-                      ],
-                      Flexible(
-                        child: Text(widget.todaBodyNumber,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 12, color: AppColors.textHint,
-                            )),
-                      ),
-                    ]),
-                    if (widget.plateNo.isNotEmpty)
-                      Text('Plate: ${widget.plateNo}',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11, color: AppColors.textHint,
-                          )),
-                  ],
-                )),
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(widget.driverName, style: GoogleFonts.poppins(
+                    fontSize: 16, fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+                  Text(widget.todaBodyNumber, style: GoogleFonts.poppins(
+                    fontSize: 12, color: AppColors.textHint,
+                  )),
+                  if (widget.plateNo.isNotEmpty)
+                    Text('Plate: ${widget.plateNo}', style: GoogleFonts.poppins(
+                      fontSize: 11, color: AppColors.textHint,
+                    )),
+                ])),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.orange.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                        color: Colors.orange.withOpacity(0.3)),
+                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
                   ),
-                  child: Text('Pending',
-                      style: GoogleFonts.poppins(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.orange,
-                      )),
+                  child: Text('Waiting', style: GoogleFonts.poppins(
+                    fontSize: 11, fontWeight: FontWeight.w700,
+                    color: Colors.orange,
+                  )),
                 ),
               ]),
 
               const SizedBox(height: 16),
 
-              // Trip info
+              // Stats
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -454,137 +352,73 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Row(children: [
-                  _tripInfoItem(Icons.route_rounded,
-                      '${widget.distanceKm.toStringAsFixed(1)} km', 'Distance'),
-                  _dividerV(),
-                  _tripInfoItem(Icons.schedule_rounded,
-                      '${widget.etaMinutes} min', 'ETA'),
-                  _dividerV(),
-                  _tripInfoItem(Icons.payments_rounded,
-                      '₱${widget.fare.toStringAsFixed(0)}', 'Fare'),
+                  _info('${widget.distanceKm.toStringAsFixed(1)} km',
+                      'Distance', Icons.route_rounded),
+                  _divV(),
+                  _info('${widget.etaMinutes} min', 'ETA',
+                      Icons.schedule_rounded),
+                  _divV(),
+                  _info('₱${widget.fare.toStringAsFixed(0)}', 'Fare',
+                      Icons.payments_rounded),
                 ]),
               ),
 
               const SizedBox(height: 14),
 
-              // Auto-checking indicator
+              // Checking indicator
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 SizedBox(
                   width: 14, height: 14,
                   child: CircularProgressIndicator(
-                    strokeWidth: 2, color: AppColors.primary,
-                  ),
+                    strokeWidth: 2, color: AppColors.primary),
                 ),
                 const SizedBox(width: 8),
-                Text('Waiting for driver to accept...',
+                Text('Checking every 3 seconds...',
                     style: GoogleFonts.poppins(
-                      fontSize: 11, color: AppColors.textHint,
-                    )),
+                        fontSize: 11, color: AppColors.textHint)),
               ]),
 
               const SizedBox(height: 14),
 
+              // Cancel
               SizedBox(
                 width: double.infinity, height: 48,
                 child: OutlinedButton(
                   onPressed: _isCancelling ? null : _cancelRide,
                   style: OutlinedButton.styleFrom(
-                    side: BorderSide(
-                        color: Colors.grey[300]!, width: 1.5),
+                    side: BorderSide(color: Colors.grey[300]!, width: 1.5),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                   ),
                   child: _isCancelling
-                      ? const SizedBox(
-                          width: 20, height: 20,
+                      ? const SizedBox(width: 20, height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2))
-                      : Text('Cancel Ride',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.error,
-                          )),
+                      : Text('Cancel Ride', style: GoogleFonts.poppins(
+                          fontSize: 14, fontWeight: FontWeight.w600,
+                          color: AppColors.error,
+                        )),
                 ),
               ),
             ]),
-          ).animate().slideY(
-              begin: 0.3, end: 0,
-              duration: 400.ms, curve: Curves.easeOut),
+          ),
         ),
       ]),
     );
   }
 
-  // ── Map with fallback if FlutterMap crashes ──────────────────────────────
-  Widget _buildMap() {
-    try {
-      return FlutterMap(
-        options: const MapOptions(
-          initialCenter: LatLng(7.1920, 125.4560),
-          initialZoom: 14.5,
-        ),
-        children: [
-          TileLayer(
-            urlTemplate:
-                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-            userAgentPackageName: 'com.todago.app',
-          ),
-          PolylineLayer(polylines: [
-            Polyline(
-              points: [_driver, _pickup],
-              color: AppColors.primary,
-              strokeWidth: 4,
-            ),
-          ]),
-          MarkerLayer(markers: [
-            Marker(
-              point: _driver, width: 40, height: 40,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundDark,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(Icons.electric_rickshaw_rounded,
-                    color: AppColors.primary, size: 20),
-              ),
-            ),
-            Marker(
-              point: _pickup, width: 36, height: 36,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Colors.blue,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2.5),
-                ),
-                child: const Icon(Icons.person_rounded,
-                    color: Colors.white, size: 18),
-              ),
-            ),
-          ]),
-        ],
-      );
-    } catch (_) {
-      return Container(color: const Color(0xFFE8EDF2));
-    }
-  }
-
-  Widget _tripInfoItem(IconData icon, String value, String label) =>
+  Widget _info(String value, String label, IconData icon) =>
       Expanded(child: Column(children: [
         Icon(icon, size: 18, color: AppColors.primary),
         const SizedBox(height: 4),
-        Text(value,
-            style: GoogleFonts.poppins(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: AppColors.backgroundDark,
-            )),
-        Text(label,
-            style: GoogleFonts.poppins(
-              fontSize: 10, color: AppColors.textHint,
-            )),
+        Text(value, style: GoogleFonts.poppins(
+          fontSize: 14, fontWeight: FontWeight.w800,
+          color: AppColors.backgroundDark,
+        )),
+        Text(label, style: GoogleFonts.poppins(
+          fontSize: 10, color: AppColors.textHint,
+        )),
       ]));
 
-  Widget _dividerV() =>
+  Widget _divV() =>
       Container(width: 1, height: 40, color: const Color(0xFFEEEEEE));
 }
