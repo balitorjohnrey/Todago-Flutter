@@ -209,6 +209,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                   final rating = _safeDouble(d['avg_rating'], 0.0);
                   final trips = _safeInt(d['total_trips'], 0);
                   final eta = _safeInt(d['eta_minutes'], 5);
+                  final dist = _safeDouble(d['distance_km'], 1.0);
                   final assoc = d['association_code']?.toString() ??
                       d['toda_body_number']?.toString() ??
                       '';
@@ -294,13 +295,29 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                             ]),
                             const SizedBox(height: 8),
                             Row(children: [
-                              _driverStat('$eta', 'min'),
-                              const SizedBox(width: 12),
-                              _driverStat('\${dist.toStringAsFixed(1)}', 'km'),
+                              Text('$eta min',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.backgroundDark,
+                                  )),
+                              Text('  ·  ',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 11, color: AppColors.textHint)),
+                              Flexible(
+                                  child: Text(
+                                '${dist.toStringAsFixed(1)} km',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.backgroundDark,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              )),
                               const Spacer(),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
+                                    horizontal: 6, vertical: 3),
                                 decoration: BoxDecoration(
                                   color: Colors.green.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(8),
@@ -412,22 +429,6 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
       ),
     );
   }
-
-  Widget _driverStat(String value, String unit) => Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(value,
-                style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-            const SizedBox(width: 2),
-            Text(unit,
-                style: GoogleFonts.poppins(
-                    fontSize: 11, color: AppColors.textHint)),
-          ]);
 
   Widget _summaryRow(String label, String value) => Row(children: [
         Text(label,
