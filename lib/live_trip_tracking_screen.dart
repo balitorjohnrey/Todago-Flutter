@@ -229,8 +229,6 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // FIX: Use Stack as the body so Positioned widgets render correctly
-    // over the full-screen map background.
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -461,60 +459,60 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     );
   }
 
-  // ── Map with ColoredBox fallback while tiles load ─────────────────────────
+  // ── Map: SizedBox.expand gives FlutterMap strict bounds, preventing
+  //   the blank-screen crash that occurs without explicit size constraints.
   Widget _buildMap() {
     try {
-      return ColoredBox(
-        color: const Color(0xFFE8EDF2),
+      return SizedBox.expand(
         child: FlutterMap(
-          options: const MapOptions(
-            initialCenter: LatLng(7.1907, 125.4553),
-            initialZoom: 14.5,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.todago_flutter',
+            options: const MapOptions(
+              initialCenter: LatLng(7.1907, 125.4553),
+              initialZoom: 14.5,
             ),
-            PolylineLayer(polylines: [
-              Polyline(
-                points: [_driver, _pickup, _destination],
-                color: AppColors.primary,
-                strokeWidth: 4,
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.todago_flutter',
               ),
-            ]),
-            MarkerLayer(markers: [
-              Marker(
-                point: _driver, width: 40, height: 40,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundDark,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Icon(Icons.electric_rickshaw_rounded,
-                      color: AppColors.primary, size: 20),
+              PolylineLayer(polylines: [
+                Polyline(
+                  points: [_driver, _pickup, _destination],
+                  color: AppColors.primary,
+                  strokeWidth: 4,
                 ),
-              ),
-              Marker(
-                point: _pickup, width: 36, height: 36,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
+              ]),
+              MarkerLayer(markers: [
+                Marker(
+                  point: _driver, width: 40, height: 40,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundDark,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.electric_rickshaw_rounded,
+                        color: AppColors.primary, size: 20),
                   ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 18),
                 ),
-              ),
-              Marker(
-                point: _destination, width: 36, height: 36,
-                child: const Icon(Icons.location_on_rounded,
-                    color: Colors.red, size: 36),
-              ),
-            ]),
-          ],
+                Marker(
+                  point: _pickup, width: 36, height: 36,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.blue,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2.5),
+                    ),
+                    child: const Icon(Icons.person_rounded,
+                        color: Colors.white, size: 18),
+                  ),
+                ),
+                Marker(
+                  point: _destination, width: 36, height: 36,
+                  child: const Icon(Icons.location_on_rounded,
+                      color: Colors.red, size: 36),
+                ),
+              ]),
+            ],
         ),
       );
     } catch (e) {
@@ -528,7 +526,6 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
             Text('Map loading...',
                 style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
           ],
-        
         )),
       );
     }

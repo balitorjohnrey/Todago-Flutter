@@ -39,7 +39,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       'fare': '₱20',
       'status': 'Confirmed',
       'statusColor': Colors.green,
-      // LiveTripTrackingScreen fields
       'driver_rating': 4.8,
       'toda_body_number': 'TODA-01',
       'plate_no': 'ABC 123',
@@ -226,44 +225,49 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Widget _buildHomeTab() {
     return Stack(
       children: [
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: _currentLocation,
-            initialZoom: 15.0,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.todago.app',
+
+        // ── FIX: SizedBox.expand gives FlutterMap strict bounds,
+        //   preventing the blank-screen crash. ────────────────────────────
+        SizedBox.expand(
+          child: FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: _currentLocation,
+              initialZoom: 15.0,
             ),
-            MarkerLayer(markers: [
-              Marker(
-                point: _currentLocation,
-                width: 44,
-                height: 44,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.4),
-                        blurRadius: 12,
-                        spreadRadius: 3,
-                      )
-                    ],
-                  ),
-                  child: const Icon(Icons.person_pin_rounded,
-                      color: AppColors.backgroundDark, size: 22),
-                ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.todago_flutter',
               ),
-            ]),
-          ],
+              MarkerLayer(markers: [
+                Marker(
+                  point: _currentLocation,
+                  width: 44,
+                  height: 44,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.4),
+                          blurRadius: 12,
+                          spreadRadius: 3,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(Icons.person_pin_rounded,
+                        color: AppColors.backgroundDark, size: 22),
+                  ),
+                ),
+              ]),
+            ],
+          ),
         ),
 
-        // Top bar
+        // ── Top bar ───────────────────────────────────────────────────────
         Positioned(
           top: 0, left: 0, right: 0,
           child: SafeArea(
@@ -274,7 +278,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(20),
@@ -314,7 +319,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   ),
                   const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 18, vertical: 14),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
@@ -338,7 +344,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           ),
         ),
 
-        // Bottom card
+        // ── Bottom card ───────────────────────────────────────────────────
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Container(
@@ -346,7 +352,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
               boxShadow: [BoxShadow(
-                  color: Colors.black12, blurRadius: 20, offset: Offset(0, -4))],
+                  color: Colors.black12, blurRadius: 20,
+                  offset: Offset(0, -4))],
             ),
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Column(
@@ -372,19 +379,26 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                 SizedBox(
                   width: double.infinity, height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: () => Navigator.of(context).push(PageRouteBuilder(
-                      pageBuilder: (_, __, ___) => const ServiceSelectionScreen(),
-                      transitionDuration: const Duration(milliseconds: 400),
-                      transitionsBuilder: (_, anim, __, child) => SlideTransition(
-                        position: Tween<Offset>(
-                                begin: const Offset(0, 1), end: Offset.zero)
-                            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-                        child: child,
+                    onPressed: () => Navigator.of(context).push(
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) =>
+                            const ServiceSelectionScreen(),
+                        transitionDuration: const Duration(milliseconds: 400),
+                        transitionsBuilder: (_, anim, __, child) =>
+                            SlideTransition(
+                          position: Tween<Offset>(
+                            begin: const Offset(0, 1), end: Offset.zero,
+                          ).animate(CurvedAnimation(
+                              parent: anim, curve: Curves.easeOut)),
+                          child: child,
+                        ),
                       ),
-                    )),
-                    icon: const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
+                    ),
+                    icon: const Icon(Icons.bolt_rounded,
+                        color: Colors.white, size: 20),
                     label: Text('Book Now', style: GoogleFonts.poppins(
-                      fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white,
+                      fontSize: 15, fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     )),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.backgroundDark,
@@ -401,10 +415,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     onPressed: () {},
                     icon: const Icon(Icons.calendar_month_rounded,
                         color: AppColors.backgroundDark, size: 20),
-                    label: Text('Schedule Reservation', style: GoogleFonts.poppins(
-                      fontSize: 15, fontWeight: FontWeight.w600,
-                      color: AppColors.backgroundDark,
-                    )),
+                    label: Text('Schedule Reservation',
+                        style: GoogleFonts.poppins(
+                          fontSize: 15, fontWeight: FontWeight.w600,
+                          color: AppColors.backgroundDark,
+                        )),
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: Colors.grey[300]!, width: 1.5),
                       shape: RoundedRectangleBorder(
@@ -466,7 +481,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     itemCount: list.length,
                     itemBuilder: (_, i) => _bookingCard(list[i])
                         .animate()
-                        .fadeIn(delay: Duration(milliseconds: 80 * i), duration: 400.ms)
+                        .fadeIn(
+                            delay: Duration(milliseconds: 80 * i),
+                            duration: 400.ms)
                         .slideY(begin: 0.1, end: 0),
                   ),
           ),
@@ -549,14 +566,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             Column(children: [
               Container(width: 10, height: 10,
                   decoration: const BoxDecoration(
-                      color: AppColors.backgroundDark, shape: BoxShape.circle)),
-              Container(width: 1.5, height: 40, color: const Color(0xFFDDDDDD)),
+                      color: AppColors.backgroundDark,
+                      shape: BoxShape.circle)),
+              Container(width: 1.5, height: 40,
+                  color: const Color(0xFFDDDDDD)),
               Container(width: 10, height: 10,
                   decoration: const BoxDecoration(
                       color: AppColors.primary, shape: BoxShape.circle)),
             ]),
             const SizedBox(width: 14),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('Pickup', style: GoogleFonts.poppins(
                     fontSize: 10, color: AppColors.textHint)),
@@ -604,7 +624,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             Row(children: [
               ...List.generate(5, (i) => Icon(
                 i < (b['rating'] as int)
-                    ? Icons.star_rounded : Icons.star_outline_rounded,
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
                 size: 16, color: AppColors.primary,
               )),
               const SizedBox(width: 6),
@@ -636,17 +657,20 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton(
-                  // Fixed: pass all required params to LiveTripTrackingScreen
                   onPressed: () => Navigator.of(context).push(
                     PageRouteBuilder(
                       pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
                         tripId: b['trip_id']?.toString() ?? '',
                         driverName: b['driver'] as String,
-                        driverRating: (b['driver_rating'] as num?)?.toDouble() ?? 4.8,
-                        todaBodyNumber: b['toda_body_number']?.toString() ?? 'TODA-01',
+                        driverRating:
+                            (b['driver_rating'] as num?)?.toDouble() ?? 4.8,
+                        todaBodyNumber:
+                            b['toda_body_number']?.toString() ?? 'TODA-01',
                         plateNo: b['plate_no']?.toString() ?? '',
-                        etaMinutes: (b['eta_minutes'] as num?)?.toInt() ?? 5,
-                        distanceKm: (b['distance_km'] as num?)?.toDouble() ?? 1.2,
+                        etaMinutes:
+                            (b['eta_minutes'] as num?)?.toInt() ?? 5,
+                        distanceKm:
+                            (b['distance_km'] as num?)?.toDouble() ?? 1.2,
                       ),
                       transitionDuration: const Duration(milliseconds: 400),
                       transitionsBuilder: (_, anim, __, child) =>
@@ -661,7 +685,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     elevation: 0,
                   ),
                   child: Text('Track', style: GoogleFonts.poppins(
-                    fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white,
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: Colors.white,
                   )),
                 ),
               ),
@@ -697,13 +722,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   size: 32, color: AppColors.textHint),
             ),
             const SizedBox(height: 16),
-            Text('No ${_bookingTab == 0 ? "upcoming" : "past"} trips',
+            Text(
+                'No ${_bookingTab == 0 ? "upcoming" : "past"} trips',
                 style: GoogleFonts.poppins(
                     fontSize: 16, fontWeight: FontWeight.w700,
                     color: AppColors.backgroundDark)),
             const SizedBox(height: 6),
             Text('Your rides will appear here',
-                style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
+                style: GoogleFonts.poppins(
+                    fontSize: 13, color: AppColors.textHint)),
           ],
         ),
       );
@@ -720,13 +747,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             bottom: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('My Wallet', style: GoogleFonts.poppins(
                   fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white,
                 )),
                 const SizedBox(height: 24),
                 Text('TodaGo Wallet Balance', style: GoogleFonts.poppins(
-                  fontSize: 12, color: Colors.white54, fontWeight: FontWeight.w500,
+                  fontSize: 12, color: Colors.white54,
+                  fontWeight: FontWeight.w500,
                 )),
                 const SizedBox(height: 6),
                 Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
@@ -740,7 +769,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   ),
                   const SizedBox(width: 10),
                   GestureDetector(
-                    onTap: () => setState(() => _balanceVisible = !_balanceVisible),
+                    onTap: () =>
+                        setState(() => _balanceVisible = !_balanceVisible),
                     child: Icon(
                       _balanceVisible
                           ? Icons.visibility_outlined
@@ -836,7 +866,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     ]);
   }
 
-  Widget _walletActionBtn(IconData icon, String label, Color bg, Color fg) =>
+  Widget _walletActionBtn(
+          IconData icon, String label, Color bg, Color fg) =>
       Expanded(
         child: GestureDetector(
           onTap: () => _showTopUpSheet(),
@@ -881,7 +912,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         child: Row(children: [
           Text(emoji, style: const TextStyle(fontSize: 24)),
           const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(name, style: GoogleFonts.poppins(
               fontSize: 14, fontWeight: FontWeight.w700,
               color: AppColors.backgroundDark,
@@ -956,7 +988,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           child: Icon(t['icon'] as IconData, color: iconColor, size: 20),
         ),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(t['title'] as String, style: GoogleFonts.poppins(
             fontSize: 13, fontWeight: FontWeight.w700,
             color: AppColors.backgroundDark,
@@ -991,7 +1024,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         ),
         padding: EdgeInsets.fromLTRB(
             24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-        child: Column(mainAxisSize: MainAxisSize.min,
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start, children: [
           Center(child: Container(
             width: 40, height: 4,
@@ -1010,8 +1044,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           )),
           const SizedBox(height: 20),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 10, runSpacing: 10,
             children: [50, 100, 200, 300, 500, 1000]
                 .map((amt) => GestureDetector(
                       onTap: () {},
@@ -1101,13 +1134,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             child: Center(child: Text(
               _firstName.isNotEmpty ? _firstName[0].toUpperCase() : 'R',
               style: GoogleFonts.poppins(
-                fontSize: 30, fontWeight: FontWeight.w800, color: AppColors.primary,
+                fontSize: 30, fontWeight: FontWeight.w800,
+                color: AppColors.primary,
               ),
             )),
           ),
           const SizedBox(height: 14),
           Text(_user?['full_name'] ?? 'Rider', style: GoogleFonts.poppins(
-            fontSize: 20, fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
+            fontSize: 20, fontWeight: FontWeight.w800,
+            color: AppColors.backgroundDark,
           )),
           Text(_user?['email'] ?? '', style: GoogleFonts.poppins(
             fontSize: 13, color: AppColors.textHint,
@@ -1120,14 +1155,16 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               borderRadius: BorderRadius.circular(20),
             ),
             child: Text('Passenger', style: GoogleFonts.poppins(
-              fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary,
+              fontSize: 12, fontWeight: FontWeight.w600,
+              color: AppColors.primary,
             )),
           ),
           const SizedBox(height: 32),
           _pItem(Icons.phone_rounded, 'Phone', _user?['phone'] ?? '—'),
           _pItem(Icons.email_rounded, 'Email', _user?['email'] ?? '—'),
           _pItem(Icons.star_rounded, 'Total Trips', '31 completed'),
-          _pItem(Icons.account_balance_wallet_rounded, 'Wallet Balance', '₱245.50'),
+          _pItem(Icons.account_balance_wallet_rounded,
+              'Wallet Balance', '₱245.50'),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity, height: 50,
@@ -1146,7 +1183,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     borderRadius: BorderRadius.circular(14)),
               ),
               child: Text('Logout', style: GoogleFonts.poppins(
-                fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.error,
+                fontSize: 14, fontWeight: FontWeight.w600,
+                color: AppColors.error,
               )),
             ),
           ),
@@ -1206,13 +1244,19 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     children: [
                       Icon(tabs[i]['icon'] as IconData,
                           size: 22,
-                          color: sel ? AppColors.backgroundDark : Colors.grey[400]),
+                          color: sel
+                              ? AppColors.backgroundDark
+                              : Colors.grey[400]),
                       const SizedBox(height: 3),
-                      Text(tabs[i]['label'] as String, style: GoogleFonts.poppins(
-                        fontSize: 10,
-                        fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
-                        color: sel ? AppColors.backgroundDark : Colors.grey[400],
-                      )),
+                      Text(tabs[i]['label'] as String,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight:
+                                sel ? FontWeight.w700 : FontWeight.w400,
+                            color: sel
+                                ? AppColors.backgroundDark
+                                : Colors.grey[400],
+                          )),
                     ],
                   ),
                 ),
