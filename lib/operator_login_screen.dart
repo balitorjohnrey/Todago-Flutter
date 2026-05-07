@@ -146,16 +146,25 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                   ]),
                 ).animate().fadeIn(duration: 300.ms).shakeX(duration: 400.ms),
 
-              _label('TODA Association ID', required: true),
+              // ── FIX: Updated label and hint to clarify both name and code are accepted
+              _label('TODA Association Name or Code', required: true),
               const SizedBox(height: 6),
-              _field(controller: _todaIdCtrl, hint: 'Enter your association ID',
+              _field(controller: _todaIdCtrl,
+                // FIX: hint now shows the full name format since that's what
+                // most users will remember from registration
+                hint: 'e.g., Panabo City TODA',
                 icon: Icons.badge_outlined,
                 suffixIcon: const Icon(Icons.info_outline_rounded,
                     color: Colors.grey, size: 18),
-                validator: (v) => v == null || v.isEmpty ? 'TODA Association ID is required' : null),
+                validator: (v) => v == null || v.isEmpty
+                    ? 'TODA Association name or code is required'
+                    : null),
               const SizedBox(height: 4),
-              Text('e.g., "Davao-Central TODA #001" or your TODA code',
-                  style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400])),
+              // FIX: Hint text now tells users they can enter either value
+              Text(
+                'Enter your full association name (e.g., "Panabo City TODA") or short code',
+                style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400]),
+              ),
 
               const SizedBox(height: 18),
 

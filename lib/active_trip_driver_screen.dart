@@ -17,10 +17,9 @@ class ActiveTripDriverScreen extends StatefulWidget {
 class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   bool _isCompleting = false;
 
-  final LatLng _driverPos = const LatLng(7.1907, 125.4553);
+  final LatLng _driverPos      = const LatLng(7.1907, 125.4553);
   final LatLng _destinationPos = const LatLng(7.1830, 125.4480);
 
-  // ── Safe getters — prevent null errors causing blank screens ─────────────
   String get _passengerName => widget.trip['commuter_name'] ?? 'Passenger';
 
   String get _passengerInitials {
@@ -38,7 +37,68 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   double get _commissionAmt => _fare * _commissionPct / 100;
   double get _driverEarnings => _fare - _commissionAmt;
 
-  // ── Complete trip ─────────────────────────────────────────────────────────
+  // ── SizedBox.expand gives FlutterMap strict bounds, preventing blank-screen ──
+  Widget _buildMap() {
+    try {
+      return SizedBox.expand(
+        child: FlutterMap(
+          options: MapOptions(
+            initialCenter: _driverPos,
+            initialZoom: 16.0,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.example.todago_flutter',
+            ),
+            PolylineLayer(polylines: [
+              Polyline(
+                points: [_driverPos, _destinationPos],
+                color: AppColors.primary,
+                strokeWidth: 5,
+              ),
+            ]),
+            MarkerLayer(markers: [
+              Marker(
+                point: _driverPos,
+                width: 40,
+                height: 40,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundDark,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                  ),
+                  child: const Icon(Icons.electric_rickshaw_rounded,
+                      color: AppColors.primary, size: 20),
+                ),
+              ),
+              Marker(
+                point: _destinationPos,
+                width: 38,
+                height: 38,
+                child: const Icon(Icons.location_on_rounded,
+                    color: Colors.red, size: 38),
+              ),
+            ]),
+          ],
+        ),
+      );
+    } catch (e) {
+      return Container(
+        color: const Color(0xFFE8EDF2),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.map_outlined, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text('Map loading...',
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
+          ]),
+        ),
+      );
+    }
+  }
+
   Future<void> _completeTrip() async {
     setState(() => _isCompleting = true);
     final tripId = widget.trip['trip_id'] ?? '';
@@ -68,8 +128,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
         contentPadding: const EdgeInsets.all(24),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            width: 64,
-            height: 64,
+            width: 64, height: 64,
             decoration: BoxDecoration(
               color: Colors.green.withOpacity(0.1),
               shape: BoxShape.circle,
@@ -80,14 +139,12 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           const SizedBox(height: 16),
           Text('Trip Completed! 🎉',
               style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
+                fontSize: 18, fontWeight: FontWeight.w800,
                 color: AppColors.backgroundDark,
               )),
           const SizedBox(height: 6),
           Text('Thank you for the ride, $_passengerName!',
-              style:
-                  GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint),
+              style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint),
               textAlign: TextAlign.center),
           const SizedBox(height: 20),
           Container(
@@ -133,9 +190,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
               ),
               child: Text('Back to Dashboard',
                   style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white,
                   )),
             ),
           ),
@@ -148,8 +203,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           {bool bold = false, bool large = false}) =>
       Row(children: [
         Text(label,
-            style:
-                GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
+            style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
         const Spacer(),
         Text(value,
             style: GoogleFonts.poppins(
@@ -161,58 +215,14 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Scaffold is the root — Stack fills the body so Positioned widgets work correctly.
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
           // ── Map fills the entire screen background ───────────────────────
-          Positioned.fill(
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: _driverPos,
-                initialZoom: 16.0,
-              ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.todago_flutter',
-                ),
-                PolylineLayer(polylines: [
-                  Polyline(
-                    points: [_driverPos, _destinationPos],
-                    color: AppColors.primary,
-                    strokeWidth: 5,
-                  ),
-                ]),
-                MarkerLayer(markers: [
-                  Marker(
-                    point: _driverPos,
-                    width: 40,
-                    height: 40,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.backgroundDark,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                      ),
-                      child: const Icon(Icons.electric_rickshaw_rounded,
-                          color: AppColors.primary, size: 20),
-                    ),
-                  ),
-                  Marker(
-                    point: _destinationPos,
-                    width: 38,
-                    height: 38,
-                    child: const Icon(Icons.location_on_rounded,
-                        color: Colors.red, size: 38),
-                  ),
-                ]),
-              ],
-            ),
-          ),
+          Positioned.fill(child: _buildMap()),
 
-          // ── Back button (FloatingActionButton mini) ──────────────────────
+          // ── Back button ──────────────────────────────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
             left: 16,
@@ -228,46 +238,38 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           // ── Top trip-in-progress card ────────────────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
-            left: 72, // offset to sit right of the back button
+            left: 72,
             right: 16,
             child: Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(18),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  )
-                ],
+                boxShadow: [BoxShadow(
+                  color: Colors.black.withOpacity(0.12),
+                  blurRadius: 14, offset: const Offset(0, 4),
+                )],
               ),
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: Colors.green.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border:
-                            Border.all(color: Colors.green.withOpacity(0.3)),
+                        border: Border.all(color: Colors.green.withOpacity(0.3)),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Container(
-                            width: 7,
-                            height: 7,
+                            width: 7, height: 7,
                             decoration: const BoxDecoration(
                                 color: Colors.green, shape: BoxShape.circle)),
                         const SizedBox(width: 6),
                         Text('TRIP IN PROGRESS',
                             style: GoogleFonts.poppins(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.green,
-                              letterSpacing: 0.5,
+                              fontSize: 10, fontWeight: FontWeight.w800,
+                              color: Colors.green, letterSpacing: 0.5,
                             )),
                       ]),
                     ),
@@ -279,8 +281,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                     ]),
                     const SizedBox(height: 12),
                     Row(children: [
-                      const Icon(Icons.flag_rounded,
-                          color: Colors.red, size: 16),
+                      const Icon(Icons.flag_rounded, color: Colors.red, size: 16),
                       const SizedBox(width: 6),
                       Text('Destination',
                           style: GoogleFonts.poppins(
@@ -289,8 +290,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                     const SizedBox(height: 2),
                     Text(_destination,
                         style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
+                          fontSize: 15, fontWeight: FontWeight.w700,
                           color: AppColors.backgroundDark,
                         )),
                   ]),
@@ -299,29 +299,21 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
           // ── Bottom passenger + complete ride card ────────────────────────
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            bottom: 0, left: 0, right: 0,
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 20,
-                      offset: Offset(0, -4))
-                ],
+                boxShadow: [BoxShadow(
+                    color: Colors.black12, blurRadius: 20, offset: Offset(0, -4))],
               ),
               padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
               child: SafeArea(
                 top: false,
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   // Drag handle
-                  Center(
-                      child: Container(
-                    width: 40,
-                    height: 4,
+                  Center(child: Container(
+                    width: 40, height: 4,
                     decoration: BoxDecoration(
                       color: Colors.grey[300],
                       borderRadius: BorderRadius.circular(2),
@@ -332,68 +324,58 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                   // Passenger row
                   Row(children: [
                     Container(
-                      width: 48,
-                      height: 48,
+                      width: 48, height: 48,
                       decoration: BoxDecoration(
                         color: const Color(0xFFF0F2F5),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Center(
-                          child: Text(_passengerInitials,
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.backgroundDark,
-                              ))),
+                      child: Center(child: Text(_passengerInitials,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16, fontWeight: FontWeight.w800,
+                            color: AppColors.backgroundDark,
+                          ))),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                        child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                          Text(_passengerName,
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.backgroundDark,
-                              )),
-                          Row(children: [
-                            const Icon(Icons.verified_rounded,
-                                color: Colors.green, size: 13),
-                            const SizedBox(width: 4),
-                            Text('Verified Passenger',
-                                style: GoogleFonts.poppins(
-                                    fontSize: 12, color: AppColors.textHint)),
-                          ]),
-                        ])),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      Text(_passengerName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16, fontWeight: FontWeight.w800,
+                            color: AppColors.backgroundDark,
+                          )),
+                      Row(children: [
+                        const Icon(Icons.verified_rounded,
+                            color: Colors.green, size: 13),
+                        const SizedBox(width: 4),
+                        Text('Verified Passenger',
+                            style: GoogleFonts.poppins(
+                                fontSize: 12, color: AppColors.textHint)),
+                      ]),
+                    ])),
                   ]),
 
                   const SizedBox(height: 14),
 
                   // Call + Message
                   Row(children: [
-                    Expanded(
-                        child: _actionBtn(
-                            Icons.phone_rounded, 'Call', Colors.green, () {})),
+                    Expanded(child: _actionBtn(
+                        Icons.phone_rounded, 'Call', Colors.green, () {})),
                     const SizedBox(width: 10),
-                    Expanded(
-                        child: _actionBtn(Icons.chat_bubble_rounded, 'Message',
-                            AppColors.primary, () {})),
+                    Expanded(child: _actionBtn(Icons.chat_bubble_rounded,
+                        'Message', AppColors.primary, () {})),
                   ]),
 
                   const SizedBox(height: 14),
 
                   // Trip stats
-                  Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _tripStat('10 min', 'Time Left'),
-                        _dividerV(),
-                        _tripStat('2 km', 'Distance'),
-                        _dividerV(),
-                        _tripStat('₱${_driverEarnings.toStringAsFixed(0)}',
-                            'Earnings'),
-                      ]),
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
+                    _tripStat('10 min', 'Time Left'),
+                    _dividerV(),
+                    _tripStat('2 km', 'Distance'),
+                    _dividerV(),
+                    _tripStat('₱${_driverEarnings.toStringAsFixed(0)}', 'Earnings'),
+                  ]),
 
                   const SizedBox(height: 16),
 
@@ -411,37 +393,32 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                       ),
                       child: Row(children: [
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 36, height: 36,
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: _isCompleting
-                              ? const Center(
-                                  child: SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white)))
+                              ? const Center(child: SizedBox(
+                                  width: 18, height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white)))
                               : const Icon(Icons.arrow_forward_rounded,
                                   color: Colors.white, size: 20),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                              Text('Slide to Complete Trip',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  )),
-                              Text('Slide when passenger reaches destination',
-                                  style: GoogleFonts.poppins(
-                                      fontSize: 10, color: Colors.white70)),
-                            ])),
+                        Expanded(child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text('Slide to Complete Trip',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14, fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              )),
+                          Text('Slide when passenger reaches destination',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 10, color: Colors.white70)),
+                        ])),
                       ]),
                     ),
                   ),
@@ -455,25 +432,20 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     );
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
-
   Widget _navStat(String value, String label) => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(value,
               style: GoogleFonts.poppins(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
+                fontSize: 24, fontWeight: FontWeight.w900,
                 color: AppColors.backgroundDark,
               )),
           Text(label,
-              style:
-                  GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
         ],
       );
 
-  Widget _actionBtn(
-          IconData icon, String label, Color color, VoidCallback onTap) =>
+  Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) =>
       GestureDetector(
         onTap: onTap,
         child: Container(
@@ -488,9 +460,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             const SizedBox(width: 6),
             Text(label,
                 style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: color,
+                  fontSize: 13, fontWeight: FontWeight.w700, color: color,
                 )),
           ]),
         ),
@@ -499,13 +469,11 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   Widget _tripStat(String value, String label) => Column(children: [
         Text(value,
             style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
+              fontSize: 16, fontWeight: FontWeight.w800,
               color: AppColors.backgroundDark,
             )),
         Text(label,
-            style:
-                GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+            style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
       ]);
 
   Widget _dividerV() =>

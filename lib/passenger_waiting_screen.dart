@@ -178,48 +178,9 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
           child: Container(color: const Color(0xFFE8EDF2)),
           ),
        
-        // Map
-        Positioned.fill(child: FlutterMap(
-          options: const MapOptions(
-            initialCenter: LatLng(7.1920, 125.4560),
-            initialZoom: 14.5,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.todago.app',
-            ),
-            PolylineLayer(polylines: [
-              Polyline(points: [_driver, _pickup],
-                  color: AppColors.primary, strokeWidth: 4),
-            ]),
-            MarkerLayer(markers: [
-              Marker(
-                point: _driver, width: 40, height: 40,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundDark, shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                  ),
-                  child: const Icon(Icons.electric_rickshaw_rounded,
-                      color: AppColors.primary, size: 20),
-                ),
-              ),
-              Marker(
-                point: _pickup, width: 36, height: 36,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue, shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2.5),
-                  ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 18),
-                ),
-              ),
-            ]),
-          ],
-        ),
-        ),
+        // Map — SizedBox.expand gives FlutterMap strict bounds,
+        // preventing the blank-screen crash on some devices.
+        Positioned.fill(child: _buildMap()),
         // Top status bar
         Positioned(
           top: 0, left: 0, right: 0,
@@ -407,6 +368,69 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
         ),
       ]),
     );
+  }
+
+  Widget _buildMap() {
+    try {
+      return SizedBox.expand(
+        child: FlutterMap(
+          options: const MapOptions(
+            initialCenter: LatLng(7.1920, 125.4560),
+            initialZoom: 14.5,
+          ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.todago.app',
+            ),
+            PolylineLayer(polylines: [
+              Polyline(
+                  points: [_driver, _pickup],
+                  color: AppColors.primary,
+                  strokeWidth: 4),
+            ]),
+            MarkerLayer(markers: [
+              Marker(
+                point: _driver, width: 40, height: 40,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundDark,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(Icons.electric_rickshaw_rounded,
+                      color: AppColors.primary, size: 20),
+                ),
+              ),
+              Marker(
+                point: _pickup, width: 36, height: 36,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2.5),
+                  ),
+                  child: const Icon(Icons.person_rounded,
+                      color: Colors.white, size: 18),
+                ),
+              ),
+            ]),
+          ],
+        ),
+      );
+    } catch (e) {
+      return Container(
+        color: const Color(0xFFE8EDF2),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.map_outlined, size: 48, color: Colors.grey),
+            const SizedBox(height: 8),
+            Text('Map loading...',
+                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
+          ]),
+        ),
+      );
+    }
   }
 
   Widget _info(String value, String label, IconData icon) =>
