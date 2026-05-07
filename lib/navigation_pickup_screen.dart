@@ -34,7 +34,13 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   String get _paymentMethod =>
       (widget.trip['payment_method'] ?? 'cash').toUpperCase();
 
-  double get _fare => (widget.trip['fare'] ?? 25.0).toDouble();
+  double get _fare {
+    final f = widget.trip['fare'];
+    if (f == null) return 25.0;
+    if (f is double) return f;
+    if (f is int) return f.toDouble();
+    return double.tryParse(f.toString()) ?? 25.0;
+  }
 
   Future<void> _confirmArrival() async {
     setState(() => _isConfirming = true);
@@ -52,81 +58,6 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     ));
   }
 
-  // ── SizedBox.expand gives FlutterMap strict bounds, preventing blank-screen ──
-  Widget _buildMap() {
-    try {
-      return SizedBox.expand(
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: _driverPos,
-            initialZoom: 15.0,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-              userAgentPackageName: 'com.example.todago_flutter',
-            ),
-            PolylineLayer(polylines: [
-              Polyline(
-                points: [_driverPos, _pickup],
-                color: AppColors.primary,
-                strokeWidth: 5,
-              ),
-            ]),
-            MarkerLayer(
-              markers: [
-                Marker(
-                  point: _driverPos,
-                  width: 40,
-                  height: 40,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.backgroundDark,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2.5),
-                    ),
-                    child: const Icon(Icons.electric_rickshaw_rounded,
-                        color: AppColors.primary, size: 20),
-                  ),
-                ),
-                Marker(
-                  point: _pickup,
-                  width: 44,
-                  height: 44,
-                  child: Column(children: [
-                    Container(
-                      width: 32, height: 32,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                      ),
-                      child: const Icon(Icons.person_pin_circle,
-                          color: AppColors.backgroundDark, size: 20),
-                    ),
-                    Container(width: 2, height: 10, color: AppColors.primary),
-                  ]),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      return Container(
-        color: const Color(0xFFE8EDF2),
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.map_outlined, size: 48, color: Colors.grey),
-            const SizedBox(height: 8),
-            Text('Map loading...',
-                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
-          ]),
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -135,7 +66,63 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
         children: [
 
           // ── Map ──────────────────────────────────────────────────────────
-          Positioned.fill(child: _buildMap()),
+          Positioned.fill(
+            child: FlutterMap(
+              options: MapOptions(
+                initialCenter: _driverPos,
+                initialZoom: 15.0,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.example.todago_flutter',
+                ),
+                PolylineLayer(polylines: [
+                  Polyline(
+                    points: [_driverPos, _pickup],
+                    color: AppColors.primary,
+                    strokeWidth: 5,
+                  ),
+                ]),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: _driverPos,
+                      width: 40,
+                      height: 40,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: AppColors.backgroundDark,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2.5),
+                        ),
+                        child: const Icon(Icons.electric_rickshaw_rounded,
+                            color: AppColors.primary, size: 20),
+                      ),
+                    ),
+                    Marker(
+                      point: _pickup,
+                      width: 44,
+                      height: 44,
+                      child: Column(children: [
+                        Container(
+                          width: 32, height: 32,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 2.5),
+                          ),
+                          child: const Icon(Icons.person_pin_circle,
+                              color: AppColors.backgroundDark, size: 20),
+                        ),
+                        Container(width: 2, height: 10, color: AppColors.primary),
+                      ]),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
 
           // ── Back button ──────────────────────────────────────────────────
           Positioned(
@@ -153,7 +140,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
           // ── Top nav info card ────────────────────────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
-            left: 70,
+            left: 70, // offset to not overlap the back button
             right: 16,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
