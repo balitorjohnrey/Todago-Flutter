@@ -266,13 +266,13 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       );
 
-  Widget _buildMiniLogo() => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-            color: AppColors.primary, borderRadius: BorderRadius.circular(10)),
-        child: const Icon(Icons.bolt_rounded,
-            color: AppColors.backgroundDark, size: 22),
+  Widget _buildMiniLogo() => ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.asset(
+          'assets/logo.png',
+          width: 40, height: 40,
+          fit: BoxFit.cover,
+        ),
       );
 
   Widget _buildField({
