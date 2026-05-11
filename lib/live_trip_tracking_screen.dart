@@ -57,8 +57,10 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       if (!mounted) return;
 
       if (trip == null) {
+        // Active trip is gone — check history to tell apart
+        // completed (driver finished) vs cancelled (driver declined)
         _pollTimer?.cancel();
-        _showTripCancelledDialog();
+        await _checkIfCompleted();
         return;
       }
 
@@ -69,9 +71,30 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         if (newStatus == 'completed') {
           _pollTimer?.cancel();
           _showTripCompletedDialog();
+        } else if (newStatus == 'cancelled') {
+          _pollTimer?.cancel();
+          _showTripCancelledDialog();
         }
       }
     });
+  }
+
+  // When active trip disappears, check if it was completed or cancelled
+  Future<void> _checkIfCompleted() async {
+    try {
+      final history = await TripService.getCommuterHistory();
+      if (!mounted) return;
+      if (history.isNotEmpty) {
+        final last = history.first;
+        final status = last['status']?.toString() ?? '';
+        if (status == 'completed') {
+          _showTripCompletedDialog();
+          return;
+        }
+      }
+    } catch (_) {}
+    // Default: show cancelled
+    _showTripCancelledDialog();
   }
 
   void _showTripCancelledDialog() {
