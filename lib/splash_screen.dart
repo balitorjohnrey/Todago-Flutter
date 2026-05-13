@@ -34,7 +34,7 @@ class _SplashScreenState extends State<SplashScreen> {
     final loggedIn = await AuthService.isLoggedIn();
     if (loggedIn && mounted) {
       await Future.delayed(const Duration(milliseconds: 600));
-      _navigateTo(const RoleSelectionScreen(successMessage: "Welcome back!"));
+      _navigateTo(const RoleSelectionScreen(successMessage: ''));
     }
   }
 
