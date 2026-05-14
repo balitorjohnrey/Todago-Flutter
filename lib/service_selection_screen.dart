@@ -1,12 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
 import 'finding_driver_screen.dart';
 
 class ServiceSelectionScreen extends StatefulWidget {
-  const ServiceSelectionScreen({super.key});
+  final String pickupName;
+  final String destinationName;
+  final LatLng? pickupLatLng;
+  final LatLng? destinationLatLng;
+  final int? etaMinutes;
+  final double? distanceKm;
+
+  const ServiceSelectionScreen({
+    super.key,
+    this.pickupName = 'Your Location',
+    this.destinationName = 'Destination',
+    this.pickupLatLng,
+    this.destinationLatLng,
+    this.etaMinutes,
+    this.distanceKm,
+  });
+
   @override
   State<ServiceSelectionScreen> createState() => _ServiceSelectionScreenState();
 }
@@ -286,7 +303,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                   const Icon(Icons.location_on_rounded,
                       color: AppColors.primary, size: 18),
                   const SizedBox(width: 10),
-                  Expanded(child: Text('Pickup: University Avenue',
+                  Expanded(child: Text('To: ${widget.destinationName}',
                       style: GoogleFonts.poppins(
                         fontSize: 13, color: AppColors.backgroundDark,
                         fontWeight: FontWeight.w500,

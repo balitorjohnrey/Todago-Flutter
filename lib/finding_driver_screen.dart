@@ -10,6 +10,8 @@ class FindingDriverScreen extends StatefulWidget {
   final String price;
   final double fareAmount;
   final List<Map<String, dynamic>> onlineDrivers;
+  final String pickupName;
+  final String destinationName;
 
   const FindingDriverScreen({
     super.key,
@@ -17,6 +19,8 @@ class FindingDriverScreen extends StatefulWidget {
     required this.price,
     required this.fareAmount,
     required this.onlineDrivers,
+    this.pickupName = 'Your Location',
+    this.destinationName = 'Destination',
   });
 
   @override
@@ -63,6 +67,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
           price: widget.price,
           fareAmount: widget.fareAmount,
           onlineDrivers: widget.onlineDrivers,
+          pickupName: widget.pickupName,
+          destinationName: widget.destinationName,
         ),
         transitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (_, anim, __, child) =>

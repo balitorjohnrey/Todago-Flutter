@@ -10,6 +10,8 @@ class DriverSelectionScreen extends StatefulWidget {
   final String price;
   final double fareAmount;
   final List<Map<String, dynamic>> onlineDrivers;
+  final String pickupName;
+  final String destinationName;
 
   const DriverSelectionScreen({
     super.key,
@@ -17,6 +19,8 @@ class DriverSelectionScreen extends StatefulWidget {
     required this.price,
     required this.fareAmount,
     required this.onlineDrivers,
+    this.pickupName = 'Your Location',
+    this.destinationName = 'Davao del Norte State College',
   });
 
   @override
@@ -60,8 +64,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
 
     final result = await TripService.requestRide(
       driverId: _selectedDriver['driver_id'] as String,
-      pickupLocation: 'University Avenue',
-      destination: 'Davao del Norte State College',
+      pickupLocation: widget.pickupName,
+      destination: widget.destinationName,
       serviceType: _normalizeServiceType(widget.serviceType),
       fare: widget.fareAmount,
       paymentMethod: 'cash',

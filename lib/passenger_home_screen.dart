@@ -7,7 +7,7 @@ import 'package:latlong2/latlong.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'location_service.dart';
-import 'service_selection_screen.dart';
+import 'destination_picker_screen.dart';
 import 'live_trip_tracking_screen.dart';
 import 'splash_screen.dart';
 
@@ -317,27 +317,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 18, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
-                        blurRadius: 12, offset: const Offset(0, 3),
-                      )],
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.search_rounded,
-                          color: AppColors.textHint, size: 22),
-                      const SizedBox(width: 10),
-                      Text('Where to?', style: GoogleFonts.poppins(
-                        fontSize: 15, color: AppColors.textHint,
-                      )),
-                    ]),
-                  ),
+
                 ],
               ),
             ),
@@ -382,7 +362,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     onPressed: () => Navigator.of(context).push(
                       PageRouteBuilder(
                         pageBuilder: (_, __, ___) =>
-                            const ServiceSelectionScreen(),
+                            const DestinationPickerScreen(),
                         transitionDuration: const Duration(milliseconds: 400),
                         transitionsBuilder: (_, anim, __, child) =>
                             SlideTransition(
