@@ -584,7 +584,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
                         child: Row(children: [
                           const SizedBox(width: 14),
                           const Icon(Icons.search_rounded,
-                              color: Colors.black54, size: 22),
+                              color: Color.fromARGB(231, 254, 140, 1), size: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: TextField(
