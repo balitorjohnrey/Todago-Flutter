@@ -577,14 +577,14 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [BoxShadow(
-                            color: Colors.black.withOpacity(0.18),
+                            color: const Color.fromARGB(255, 255, 123, 0).withOpacity(0.18),
                             blurRadius: 12, offset: const Offset(0, 3),
                           )],
-                        ),
+                        ),  
                         child: Row(children: [
                           const SizedBox(width: 14),
                           const Icon(Icons.search_rounded,
-                              color: Color.fromARGB(231, 254, 140, 1), size: 22),
+                              color: Colors.black54, size: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: TextField(
