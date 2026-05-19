@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
@@ -15,10 +14,11 @@ class NavigationPickupScreen extends StatefulWidget {
 }
 
 class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
+  GoogleMapController? _mapController;
   bool _isConfirming = false;
 
-  final LatLng _pickup    = const LatLng(7.1907, 125.4553);
-  final LatLng _driverPos = const LatLng(7.1940, 125.4590);
+  static const LatLng _pickup    = LatLng(7.1907, 125.4553);
+  static const LatLng _driverPos = LatLng(7.1940, 125.4590);
 
   String get _passengerName =>
       widget.trip['commuter_name'] ?? 'Passenger';
@@ -59,68 +59,50 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   }
 
   @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
         children: [
 
-          // ── Map ──────────────────────────────────────────────────────────
+          // ── Google Map ───────────────────────────────────────────────────
           Positioned.fill(
-            child: FlutterMap(
-              options: MapOptions(
-                initialCenter: _driverPos,
-                initialZoom: 15.0,
+            child: GoogleMap(
+              onMapCreated: (c) => _mapController = c,
+              initialCameraPosition: const CameraPosition(
+                target: _driverPos,
+                zoom: 15.0,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.todago_flutter',
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              markers: {
+                Marker(
+                  markerId: const MarkerId('driver'),
+                  position: _driverPos,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueYellow),
                 ),
-                PolylineLayer(polylines: [
-                  Polyline(
-                    points: [_driverPos, _pickup],
-                    color: AppColors.primary,
-                    strokeWidth: 5,
-                  ),
-                ]),
-                MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: _driverPos,
-                      width: 40,
-                      height: 40,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: AppColors.backgroundDark,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2.5),
-                        ),
-                        child: const Icon(Icons.electric_rickshaw_rounded,
-                            color: AppColors.primary, size: 20),
-                      ),
-                    ),
-                    Marker(
-                      point: _pickup,
-                      width: 44,
-                      height: 44,
-                      child: Column(children: [
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2.5),
-                          ),
-                          child: const Icon(Icons.person_pin_circle,
-                              color: AppColors.backgroundDark, size: 20),
-                        ),
-                        Container(width: 2, height: 10, color: AppColors.primary),
-                      ]),
-                    ),
-                  ],
+                Marker(
+                  markerId: const MarkerId('pickup'),
+                  position: _pickup,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueBlue),
                 ),
-              ],
+              },
+              polylines: {
+                Polyline(
+                  polylineId: const PolylineId('route'),
+                  points: [_driverPos, _pickup],
+                  color: AppColors.primary,
+                  width: 5,
+                ),
+              },
             ),
           ),
 
@@ -140,7 +122,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
           // ── Top nav info card ────────────────────────────────────────────
           Positioned(
             top: MediaQuery.of(context).padding.top + 10,
-            left: 70, // offset to not overlap the back button
+            left: 70,
             right: 16,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),

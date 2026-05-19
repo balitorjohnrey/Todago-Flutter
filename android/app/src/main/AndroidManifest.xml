@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Internet — for API calls and OpenStreetMap tiles -->
+    <!-- Internet — for API calls and map tiles -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
     <!-- Location — triggers native dialog:
@@ -52,6 +52,12 @@
         </receiver>
 
         <meta-data android:name="flutterEmbedding" android:value="2"/>
+
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y"/>
+
     </application>
 
     <queries>

@@ -18,9 +18,8 @@ dependencies:
   flutter_animate: ^4.2.0+1
   cupertino_icons: ^1.0.2
 
-  # Map (Free — OpenStreetMap, no API key needed)
-  flutter_map: ^8.3.0
-  latlong2: ^0.9.1
+  # Map 
+  google_maps_flutter: ^2.9.0
 
   # Location & GPS
   geolocator: ^14.0.2

@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'location_service.dart';
@@ -21,7 +20,7 @@ class PassengerHomeScreen extends StatefulWidget {
 class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   int _selectedTab = 0;
   Map<String, dynamic>? _user;
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
   LatLng _currentLocation = const LatLng(7.1907, 125.4553);
 
   // ── Bookings state ──────────────────────────────────────────────────────
@@ -193,8 +192,16 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final pos = await LocationService.getCurrentPosition();
     if (pos != null && mounted) {
       setState(() => _currentLocation = LatLng(pos.latitude, pos.longitude));
-      _mapController.move(_currentLocation, 16);
+      _mapController?.animateCamera(
+        CameraUpdate.newLatLngZoom(_currentLocation, 16),
+      );
     }
+  }
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
   }
 
   String get _firstName {
@@ -226,44 +233,32 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     return Stack(
       children: [
 
-        // ── FIX: SizedBox.expand gives FlutterMap strict bounds,
-        //   preventing the blank-screen crash. ────────────────────────────
+        // ── Google Map fills the screen ───────────────────────────────────
         SizedBox.expand(
-          child: FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _currentLocation,
-              initialZoom: 15.0,
+          child: GoogleMap(
+            onMapCreated: (controller) {
+              _mapController = controller;
+              // If we already have a real GPS fix, animate to it
+              if (_currentLocation != const LatLng(7.1907, 125.4553)) {
+                _mapController?.animateCamera(
+                  CameraUpdate.newLatLngZoom(_currentLocation, 16),
+                );
+              }
+            },
+            initialCameraPosition: CameraPosition(
+              target: _currentLocation,
+              zoom: 15.0,
             ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.todago_flutter',
+            zoomControlsEnabled: false,
+            myLocationButtonEnabled: false,
+            markers: {
+              Marker(
+                markerId: const MarkerId('current_location'),
+                position: _currentLocation,
+                icon: BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueYellow),
               ),
-              MarkerLayer(markers: [
-                Marker(
-                  point: _currentLocation,
-                  width: 44,
-                  height: 44,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppColors.primary.withOpacity(0.4),
-                          blurRadius: 12,
-                          spreadRadius: 3,
-                        ),
-                      ],
-                    ),
-                    child: const Icon(Icons.person_pin_rounded,
-                        color: AppColors.backgroundDark, size: 22),
-                  ),
-                ),
-              ]),
-            ],
+            },
           ),
         ),
 
@@ -317,7 +312,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                       ),
                     ],
                   ),
-
                 ],
               ),
             ),
@@ -352,9 +346,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   fontSize: 20, fontWeight: FontWeight.w800,
                   color: AppColors.backgroundDark,
                 )),
-                Text('Choose how you want to ride', style: GoogleFonts.poppins(
-                  fontSize: 13, color: AppColors.textHint,
-                )),
+                Text('Choose how you want to ride',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13, color: AppColors.textHint,
+                    )),
                 const SizedBox(height: 20),
                 SizedBox(
                   width: double.infinity, height: 52,
@@ -846,8 +841,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     ]);
   }
 
-  Widget _walletActionBtn(
-          IconData icon, String label, Color bg, Color fg) =>
+  Widget _walletActionBtn(IconData icon, String label, Color bg, Color fg) =>
       Expanded(
         child: GestureDetector(
           onTap: () => _showTopUpSheet(),
@@ -941,7 +935,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   Widget _txCard(Map<String, dynamic> t) {
     final amount = t['amount'] as double;
-    final isPos = amount > 0;
+    final isPos  = amount > 0;
     Color iconBg = t['type'] == 'topup'
         ? AppColors.success.withOpacity(0.1)
         : t['type'] == 'cashback'

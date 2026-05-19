@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
@@ -33,13 +32,15 @@ class LiveTripTrackingScreen extends StatefulWidget {
 }
 
 class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
-  final LatLng _pickup      = const LatLng(7.1907, 125.4553);
-  final LatLng _driver      = const LatLng(7.1940, 125.4580);
-  final LatLng _destination = const LatLng(7.1850, 125.4500);
+  GoogleMapController? _mapController;
+
+  static const LatLng _pickup      = LatLng(7.1907, 125.4553);
+  static const LatLng _driver      = LatLng(7.1940, 125.4580);
+  static const LatLng _destination = LatLng(7.1850, 125.4500);
 
   // ── Trip status polling ───────────────────────────────────────────────────
   Timer? _pollTimer;
-  String _tripStatus = 'requested'; // requested → accepted → pickup → ongoing → completed
+  String _tripStatus = 'requested';
 
   @override
   void initState() {
@@ -57,8 +58,6 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       if (!mounted) return;
 
       if (trip == null) {
-        // Active trip is gone — check history to tell apart
-        // completed (driver finished) vs cancelled (driver declined)
         _pollTimer?.cancel();
         await _checkIfCompleted();
         return;
@@ -79,13 +78,12 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     });
   }
 
-  // When active trip disappears, check if it was completed or cancelled
   Future<void> _checkIfCompleted() async {
     try {
       final history = await TripService.getCommuterHistory();
       if (!mounted) return;
       if (history.isNotEmpty) {
-        final last = history.first;
+        final last   = history.first;
         final status = last['status']?.toString() ?? '';
         if (status == 'completed') {
           _showTripCompletedDialog();
@@ -93,7 +91,6 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         }
       }
     } catch (_) {}
-    // Default: show cancelled
     _showTripCancelledDialog();
   }
 
@@ -178,6 +175,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -191,23 +189,23 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   String get _statusLabel {
     switch (_tripStatus) {
-      case 'requested':  return 'Waiting for driver to accept...';
-      case 'accepted':   return 'Driver is on the way!';
-      case 'pickup':     return 'Driver arrived at pickup!';
-      case 'ongoing':    return 'Enjoy your ride!';
-      case 'completed':  return 'Trip completed!';
-      default:           return 'Connecting...';
+      case 'requested': return 'Waiting for driver to accept...';
+      case 'accepted':  return 'Driver is on the way!';
+      case 'pickup':    return 'Driver arrived at pickup!';
+      case 'ongoing':   return 'Enjoy your ride!';
+      case 'completed': return 'Trip completed!';
+      default:          return 'Connecting...';
     }
   }
 
   Color get _statusColor {
     switch (_tripStatus) {
-      case 'requested':  return Colors.orange;
-      case 'accepted':   return AppColors.primary;
-      case 'pickup':     return Colors.blue;
-      case 'ongoing':    return AppColors.success;
-      case 'completed':  return AppColors.success;
-      default:           return AppColors.textHint;
+      case 'requested': return Colors.orange;
+      case 'accepted':  return AppColors.primary;
+      case 'pickup':    return Colors.blue;
+      case 'ongoing':   return AppColors.success;
+      case 'completed': return AppColors.success;
+      default:          return AppColors.textHint;
     }
   }
 
@@ -257,7 +255,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       body: Stack(
         children: [
 
-          // ── Map fills the entire screen ──────────────────────────────────
+          // ── Google Map fills the entire screen ───────────────────────────
           Positioned.fill(
             child: _buildMap(),
           ),
@@ -482,76 +480,43 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     );
   }
 
-  // ── Map: SizedBox.expand gives FlutterMap strict bounds, preventing
-  //   the blank-screen crash that occurs without explicit size constraints.
   Widget _buildMap() {
-    try {
-      return SizedBox.expand(
-        child: FlutterMap(
-            options: const MapOptions(
-              initialCenter: LatLng(7.1907, 125.4553),
-              initialZoom: 14.5,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.todago_flutter',
-              ),
-              PolylineLayer(polylines: [
-                Polyline(
-                  points: [_driver, _pickup, _destination],
-                  color: AppColors.primary,
-                  strokeWidth: 4,
-                ),
-              ]),
-              MarkerLayer(markers: [
-                Marker(
-                  point: _driver, width: 40, height: 40,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: AppColors.backgroundDark,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: const Icon(Icons.electric_rickshaw_rounded,
-                        color: AppColors.primary, size: 20),
-                  ),
-                ),
-                Marker(
-                  point: _pickup, width: 36, height: 36,
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.blue,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2.5),
-                    ),
-                    child: const Icon(Icons.person_rounded,
-                        color: Colors.white, size: 18),
-                  ),
-                ),
-                Marker(
-                  point: _destination, width: 36, height: 36,
-                  child: const Icon(Icons.location_on_rounded,
-                      color: Colors.red, size: 36),
-                ),
-              ]),
-            ],
+    return GoogleMap(
+      onMapCreated: (controller) => _mapController = controller,
+      initialCameraPosition: const CameraPosition(
+        target: LatLng(7.1907, 125.4553),
+        zoom: 14.5,
+      ),
+      zoomControlsEnabled: false,
+      myLocationButtonEnabled: false,
+      markers: {
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: _driver,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueYellow),
         ),
-      );
-    } catch (e) {
-      return Container(
-        color: const Color(0xFFE8EDF2),
-        child: Center(child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.map_outlined, size: 48, color: Colors.grey),
-            const SizedBox(height: 8),
-            Text('Map loading...',
-                style: GoogleFonts.poppins(fontSize: 14, color: Colors.grey)),
-          ],
-        )),
-      );
-    }
+        Marker(
+          markerId: const MarkerId('pickup'),
+          position: _pickup,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueBlue),
+        ),
+        Marker(
+          markerId: const MarkerId('destination'),
+          position: _destination,
+          icon: BitmapDescriptor.defaultMarker,
+        ),
+      },
+      polylines: {
+        Polyline(
+          polylineId: const PolylineId('route'),
+          points: [_driver, _pickup, _destination],
+          color: AppColors.primary,
+          width: 4,
+        ),
+      },
+    );
   }
 
   Widget _etaItem(String label, String value, IconData icon) =>

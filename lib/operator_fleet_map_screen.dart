@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 
@@ -12,56 +11,46 @@ class OperatorFleetMapScreen extends StatefulWidget {
 }
 
 class _OperatorFleetMapScreenState extends State<OperatorFleetMapScreen> {
+  GoogleMapController? _mapController;
   bool _showList = false;
 
   // Simulated driver positions around Davao/Panabo area
   final List<Map<String, dynamic>> _drivers = [
-    {
-      'lat': 7.1907, 'lng': 125.4553,
-      'status': 'active', 'id': 'TODA #001', 'name': 'Juan Reyes',
-    },
-    {
-      'lat': 7.1940, 'lng': 125.4580,
-      'status': 'active', 'id': 'TODA #002', 'name': 'Maria Cruz',
-    },
-    {
-      'lat': 7.1880, 'lng': 125.4510,
-      'status': 'active', 'id': 'TODA #003', 'name': 'Pedro Lopez',
-    },
-    {
-      'lat': 7.1960, 'lng': 125.4490,
-      'status': 'offline', 'id': 'TODA #004', 'name': 'Jose Santos',
-    },
-    {
-      'lat': 7.1850, 'lng': 125.4600,
-      'status': 'active', 'id': 'TODA #005', 'name': 'Ana Gomez',
-    },
-    {
-      'lat': 7.1920, 'lng': 125.4530,
-      'status': 'offline', 'id': 'TODA #006', 'name': 'Carlo Ramos',
-    },
-    {
-      'lat': 7.1870, 'lng': 125.4570,
-      'status': 'active', 'id': 'TODA #007', 'name': 'Lena Torres',
-    },
-    {
-      'lat': 7.1930, 'lng': 125.4620,
-      'status': 'active', 'id': 'TODA #008', 'name': 'Ben Villanueva',
-    },
-    {
-      'lat': 7.1900, 'lng': 125.4480,
-      'status': 'active', 'id': 'TODA #009', 'name': 'Rose Dela Cruz',
-    },
-    {
-      'lat': 7.1950, 'lng': 125.4550,
-      'status': 'offline', 'id': 'TODA #010', 'name': 'Mark Fernandez',
-    },
+    {'lat': 7.1907, 'lng': 125.4553, 'status': 'active',  'id': 'TODA #001', 'name': 'Juan Reyes'},
+    {'lat': 7.1940, 'lng': 125.4580, 'status': 'active',  'id': 'TODA #002', 'name': 'Maria Cruz'},
+    {'lat': 7.1880, 'lng': 125.4510, 'status': 'active',  'id': 'TODA #003', 'name': 'Pedro Lopez'},
+    {'lat': 7.1960, 'lng': 125.4490, 'status': 'offline', 'id': 'TODA #004', 'name': 'Jose Santos'},
+    {'lat': 7.1850, 'lng': 125.4600, 'status': 'active',  'id': 'TODA #005', 'name': 'Ana Gomez'},
+    {'lat': 7.1920, 'lng': 125.4530, 'status': 'offline', 'id': 'TODA #006', 'name': 'Carlo Ramos'},
+    {'lat': 7.1870, 'lng': 125.4570, 'status': 'active',  'id': 'TODA #007', 'name': 'Lena Torres'},
+    {'lat': 7.1930, 'lng': 125.4620, 'status': 'active',  'id': 'TODA #008', 'name': 'Ben Villanueva'},
+    {'lat': 7.1900, 'lng': 125.4480, 'status': 'active',  'id': 'TODA #009', 'name': 'Rose Dela Cruz'},
+    {'lat': 7.1950, 'lng': 125.4550, 'status': 'offline', 'id': 'TODA #010', 'name': 'Mark Fernandez'},
   ];
 
-  int get _activeCount =>
-      _drivers.where((d) => d['status'] == 'active').length;
-  int get _offlineCount =>
-      _drivers.where((d) => d['status'] == 'offline').length;
+  int get _activeCount  => _drivers.where((d) => d['status'] == 'active').length;
+  int get _offlineCount => _drivers.where((d) => d['status'] == 'offline').length;
+
+  Set<Marker> get _mapMarkers => _drivers.map((d) {
+    final isActive = d['status'] == 'active';
+    return Marker(
+      markerId: MarkerId(d['id'] as String),
+      position: LatLng(d['lat'] as double, d['lng'] as double),
+      icon: BitmapDescriptor.defaultMarkerWithHue(
+        isActive ? BitmapDescriptor.hueYellow : BitmapDescriptor.hueAzure,
+      ),
+      infoWindow: InfoWindow(
+        title: d['name'] as String,
+        snippet: '${d['id']} · ${isActive ? "Active" : "Offline"}',
+      ),
+    );
+  }).toSet();
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -70,57 +59,17 @@ class _OperatorFleetMapScreenState extends State<OperatorFleetMapScreen> {
       body: Stack(
         children: [
 
-          // ── FIX: Positioned.fill gives FlutterMap strict bounds,
-          //   preventing the blank-screen crash. ────────────────────────────
+          // ── Google Map fills entire screen ───────────────────────────────
           Positioned.fill(
-            child: FlutterMap(
-              options: const MapOptions(
-                initialCenter: LatLng(7.1907, 125.4553),
-                initialZoom: 14.5,
+            child: GoogleMap(
+              onMapCreated: (c) => _mapController = c,
+              initialCameraPosition: const CameraPosition(
+                target: LatLng(7.1907, 125.4553),
+                zoom: 14.5,
               ),
-              children: [
-                TileLayer(
-                  urlTemplate:
-                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                  userAgentPackageName: 'com.example.todago_flutter',
-                ),
-                MarkerLayer(
-                  markers: _drivers
-                      .map((d) => Marker(
-                            point: LatLng(
-                                d['lat'] as double, d['lng'] as double),
-                            width: 32,
-                            height: 32,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: d['status'] == 'active'
-                                    ? AppColors.primary
-                                    : Colors.grey[400],
-                                shape: BoxShape.circle,
-                                border:
-                                    Border.all(color: Colors.white, width: 2),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: (d['status'] == 'active'
-                                            ? AppColors.primary
-                                            : Colors.grey)
-                                        .withOpacity(0.4),
-                                    blurRadius: 6,
-                                  ),
-                                ],
-                              ),
-                              child: Icon(
-                                Icons.electric_rickshaw_rounded,
-                                size: 14,
-                                color: d['status'] == 'active'
-                                    ? AppColors.backgroundDark
-                                    : Colors.white,
-                              ),
-                            ),
-                          ))
-                      .toList(),
-                ),
-              ],
+              zoomControlsEnabled: false,
+              myLocationButtonEnabled: false,
+              markers: _mapMarkers,
             ),
           ),
 
@@ -202,9 +151,7 @@ class _OperatorFleetMapScreenState extends State<OperatorFleetMapScreen> {
               child: Row(children: [
                 _statDot(AppColors.primary, 'Active', _activeCount),
                 const SizedBox(width: 4),
-                Container(
-                    width: 1, height: 30,
-                    color: const Color(0xFFEEEEEE)),
+                Container(width: 1, height: 30, color: const Color(0xFFEEEEEE)),
                 const SizedBox(width: 4),
                 _statDot(Colors.grey, 'Offline', _offlineCount),
               ]),
@@ -256,8 +203,7 @@ class _OperatorFleetMapScreenState extends State<OperatorFleetMapScreen> {
         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Container(
               width: 8, height: 8,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle)),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 6),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: GoogleFonts.poppins(
@@ -290,7 +236,7 @@ class _OperatorFleetMapScreenState extends State<OperatorFleetMapScreen> {
             separatorBuilder: (_, __) =>
                 const Divider(height: 1, color: Color(0xFFF5F5F5)),
             itemBuilder: (_, i) {
-              final d = _drivers[i];
+              final d        = _drivers[i];
               final isActive = d['status'] == 'active';
               return ListTile(
                 dense: true,
