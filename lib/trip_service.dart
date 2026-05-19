@@ -19,18 +19,6 @@ class TripService {
   static Future<String?> _getDriverToken() async =>
       await _storage.read(key: 'driver_auth_token');
 
-  /// Operator token
-  static Future<String?> _getOperatorToken() async =>
-      await _storage.read(key: 'operator_auth_token');
-
-  /// Smart token: tries passenger first, then driver, then operator.
-  /// Only used for endpoints that work for any authenticated user.
-  static Future<String?> _getAnyToken() async {
-    return await _getPassengerToken() ??
-        await _getDriverToken() ??
-        await _getOperatorToken();
-  }
-
   static Map<String, String> _headers(String? token) => {
         'Content-Type': 'application/json',
         if (token != null) 'Authorization': 'Bearer $token',
