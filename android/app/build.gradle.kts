@@ -22,7 +22,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.todago_flutter"
-        minSdk = 21                          // ← changed from flutter.minSdkVersion
+        minSdk = flutter.minSdkVersion                          // ← changed from flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
