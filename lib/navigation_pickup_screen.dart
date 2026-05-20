@@ -21,10 +21,11 @@ class NavigationPickupScreen extends StatefulWidget {
 class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   GoogleMapController? _mapController;
   bool _isConfirming = false;
+  bool _mapReady     = false;
 
-  // Driver position = this device (driver's phone) — live GPS
+  // Driver's live position — updates as driver moves
   LatLng _driverPos = const LatLng(7.1940, 125.4590);
-  // Pickup = passenger's location from trip data (fixed)
+  // Passenger pickup — fixed from trip data
   static const LatLng _pickup = LatLng(7.1907, 125.4553);
 
   StreamSubscription<Position>? _locationStream;
@@ -32,31 +33,32 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   @override
   void initState() {
     super.initState();
-    _startLocationTracking();
+    _startLiveLocation();
   }
 
-  // Live GPS: driver device position = driver marker
-  void _startLocationTracking() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-    if (perm == LocationPermission.deniedForever) return;
+  // ── Real-time GPS: this device IS the driver ───────────────────────────────
+  Future<void> _startLiveLocation() async {
+    bool ok = await Geolocator.isLocationServiceEnabled();
+    if (!ok) return;
 
-    // Get initial fix immediately
+    LocationPermission p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+    if (p == LocationPermission.deniedForever) return;
+
+    // Initial fix
     try {
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
-      if (mounted) {
-        final loc = LatLng(pos.latitude, pos.longitude);
-        setState(() => _driverPos = loc);
-        _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 8));
+      if (!mounted) return;
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _driverPos = loc);
+      if (_mapReady) {
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(loc, 16));
       }
     } catch (_) {}
 
-    // Stream continuous updates
+    // Continuous stream
     _locationStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -66,19 +68,23 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       if (!mounted) return;
       final loc = LatLng(pos.latitude, pos.longitude);
       setState(() => _driverPos = loc);
-      _mapController?.animateCamera(CameraUpdate.newCameraPosition(
-        CameraPosition(target: loc, zoom: 16, bearing: pos.heading),
-      ));
+      if (_mapReady) {
+        _mapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: loc, zoom: 16, bearing: pos.heading > 0 ? pos.heading : 0),
+          ),
+        );
+      }
     });
   }
 
-  String get _passengerName    => widget.trip['commuter_name'] ?? 'Passenger';
+  String get _passengerName => widget.trip['commuter_name'] ?? 'Passenger';
   String get _passengerInitials {
     final parts = _passengerName.trim().split(' ');
     return parts.take(2).map((w) => w.isNotEmpty ? w[0].toUpperCase() : '').join();
   }
-  String get _pickupLocation   => widget.trip['pickup_location'] ?? 'Pickup Location';
-  String get _paymentMethod    => (widget.trip['payment_method'] ?? 'cash').toUpperCase();
+  String get _pickupLocation  => widget.trip['pickup_location'] ?? 'Pickup Location';
+  String get _paymentMethod   => (widget.trip['payment_method'] ?? 'cash').toUpperCase();
   double get _fare {
     final f = widget.trip['fare'];
     if (f == null) return 25.0;
@@ -114,51 +120,38 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       backgroundColor: AppColors.background,
       body: Stack(children: [
 
-        // Live Google Map
+        // ── Live Google Map ────────────────────────────────────────────────
         Positioned.fill(
           child: GoogleMap(
-            onMapCreated: (c) => _mapController = c,
-            initialCameraPosition: CameraPosition(target: _driverPos, zoom: 15.0),
+            onMapCreated: (c) {
+              _mapController = c;
+              _mapReady = true;
+              _mapController?.animateCamera(
+                  CameraUpdate.newLatLngZoom(_driverPos, 16));
+            },
+            initialCameraPosition: CameraPosition(target: _driverPos, zoom: 15),
             zoomControlsEnabled: false,
+            myLocationEnabled: false,
             myLocationButtonEnabled: false,
             markers: {
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: _driverPos,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-                rotation: 0,
-                flat: true,
-              ),
-              Marker(
-                markerId: const MarkerId('pickup'),
-                position: _pickup,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-              ),
+              Marker(markerId: const MarkerId('driver'), position: _driverPos,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+                  flat: true, rotation: 0),
+              Marker(markerId: const MarkerId('pickup'), position: _pickup,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)),
             },
             polylines: {
-              Polyline(
-                polylineId: const PolylineId('shadow'),
-                points: routePoints,
-                color: _kRouteShadow,
-                width: 8,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
-              Polyline(
-                polylineId: const PolylineId('route'),
-                points: routePoints,
-                color: _kRouteBlue,
-                width: 5,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
+              Polyline(polylineId: const PolylineId('shadow'), points: routePoints,
+                  color: _kRouteShadow, width: 8,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
+              Polyline(polylineId: const PolylineId('route'), points: routePoints,
+                  color: _kRouteBlue, width: 5,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
             },
           ),
         ),
 
-        // Back button
+        // ── Back button ────────────────────────────────────────────────────
         Positioned(
           top: MediaQuery.of(context).padding.top + 10, left: 16,
           child: FloatingActionButton(
@@ -168,24 +161,23 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
           ),
         ),
 
-        // Top nav info card
+        // ── Top nav card ───────────────────────────────────────────────────
         Positioned(
           top: MediaQuery.of(context).padding.top + 10, left: 70, right: 16,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: Colors.white, borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
-                  blurRadius: 12, offset: const Offset(0, 4))],
-            ),
+            decoration: BoxDecoration(color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
+                    blurRadius: 12, offset: const Offset(0, 4))]),
             child: Row(children: [
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: AppColors.primary, borderRadius: BorderRadius.circular(8),
-                ),
+                decoration: BoxDecoration(color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(8)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Icon(Icons.navigation_rounded, color: AppColors.backgroundDark, size: 13),
+                  const Icon(Icons.navigation_rounded,
+                      color: AppColors.backgroundDark, size: 13),
                   const SizedBox(width: 4),
                   Text('NAVIGATING', style: GoogleFonts.poppins(fontSize: 9,
                       fontWeight: FontWeight.w800, color: AppColors.backgroundDark,
@@ -200,15 +192,13 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
           ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0),
         ),
 
-        // Bottom passenger card
-        Positioned(
-          bottom: 0, left: 0, right: 0,
+        // ── Bottom card ────────────────────────────────────────────────────
+        Positioned(bottom: 0, left: 0, right: 0,
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -4))],
-            ),
+            decoration: const BoxDecoration(color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20,
+                    offset: Offset(0, -4))]),
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
             child: SafeArea(top: false, child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(width: 40, height: 4,
@@ -218,35 +208,28 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
               Row(children: [
                 const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 16),
                 const SizedBox(width: 6),
-                Text('Pickup Location',
-                    style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+                Text('Pickup Location', style: GoogleFonts.poppins(
+                    fontSize: 11, color: AppColors.textHint)),
               ]),
               const SizedBox(height: 2),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(_pickupLocation,
-                    style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700,
-                        color: AppColors.backgroundDark)),
-              ),
+              Align(alignment: Alignment.centerLeft,
+                child: Text(_pickupLocation, style: GoogleFonts.poppins(
+                    fontSize: 15, fontWeight: FontWeight.w700,
+                    color: AppColors.backgroundDark))),
               const SizedBox(height: 14),
               Row(children: [
-                Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(color: const Color(0xFFF0F2F5),
-                      borderRadius: BorderRadius.circular(14)),
-                  child: Center(child: Text(_passengerInitials,
-                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800,
-                          color: AppColors.backgroundDark))),
-                ),
+                Container(width: 48, height: 48,
+                    decoration: BoxDecoration(color: const Color(0xFFF0F2F5),
+                        borderRadius: BorderRadius.circular(14)),
+                    child: Center(child: Text(_passengerInitials,
+                        style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800,
+                            color: AppColors.backgroundDark)))),
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_passengerName,
-                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800,
-                          color: AppColors.backgroundDark)),
-                  Text(
-                    '${widget.trip['service_type']?.toString().toUpperCase() ?? 'SOLO'} RIDE · $_paymentMethod Payment',
-                    style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint),
-                  ),
+                  Text(_passengerName, style: GoogleFonts.poppins(fontSize: 16,
+                      fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
+                  Text('${widget.trip['service_type']?.toString().toUpperCase() ?? 'SOLO'} RIDE · $_paymentMethod Payment',
+                      style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
                 ])),
                 Row(children: [
                   _iconBtn(Icons.phone_rounded, Colors.green),
@@ -256,15 +239,12 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
               ]),
               const SizedBox(height: 16),
               Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-                _tripStat('2 min', 'ETA'),
-                _dividerV(),
-                _tripStat('0.8 km', 'Distance'),
-                _dividerV(),
+                _tripStat('2 min', 'ETA'), _divV(),
+                _tripStat('0.8 km', 'Distance'), _divV(),
                 _tripStat('₱${_fare.toStringAsFixed(0)}', 'Fare'),
               ]),
               const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity, height: 54,
+              SizedBox(width: double.infinity, height: 54,
                 child: ElevatedButton(
                   onPressed: _isConfirming ? null : _confirmArrival,
                   style: ElevatedButton.styleFrom(
@@ -281,9 +261,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                           const Icon(Icons.check_circle_outline_rounded,
                               color: AppColors.primary, size: 20),
                           const SizedBox(width: 8),
-                          Text('Confirm Arrival',
-                              style: GoogleFonts.poppins(fontSize: 15, fontWeight: FontWeight.w700,
-                                  color: Colors.white)),
+                          Text('Confirm Arrival', style: GoogleFonts.poppins(
+                              fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                         ]),
                 ),
               ),
@@ -303,17 +282,15 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
     ],
   );
-  Widget _iconBtn(IconData icon, Color color) => Container(
-    width: 38, height: 38,
-    decoration: BoxDecoration(color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(11),
-        border: Border.all(color: color.withOpacity(0.3))),
-    child: Icon(icon, color: color, size: 18),
-  );
+  Widget _iconBtn(IconData icon, Color color) => Container(width: 38, height: 38,
+      decoration: BoxDecoration(color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: color.withOpacity(0.3))),
+      child: Icon(icon, color: color, size: 18));
   Widget _tripStat(String value, String label) => Column(children: [
     Text(value, style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800,
         color: AppColors.backgroundDark)),
     Text(label, style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
   ]);
-  Widget _dividerV() => Container(width: 1, height: 36, color: const Color(0xFFEEEEEE));
+  Widget _divV() => Container(width: 1, height: 36, color: const Color(0xFFEEEEEE));
 }

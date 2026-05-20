@@ -43,20 +43,21 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     with SingleTickerProviderStateMixin {
   GoogleMapController? _mapController;
   late AnimationController _pulseCtrl;
+  bool _mapReady = false;
 
   Timer? _pollTimer;
   Timer? _dotsTimer;
   Timer? _waitTimer;
   StreamSubscription<Position>? _locationStream;
 
-  int _dotsCount   = 1;
-  int _waitSeconds = 0;
+  int  _dotsCount   = 1;
+  int  _waitSeconds = 0;
   bool _isCancelling = false;
   bool _isNavigating = false;
 
-  // Passenger live GPS (this device = passenger's phone)
+  // Passenger live GPS — updates as device moves
   LatLng _pickup = const LatLng(7.1907, 125.4553);
-  // Driver position — updated from backend poll
+  // Driver position — polled from backend
   LatLng _driver = const LatLng(7.1940, 125.4580);
 
   String get _initials {
@@ -68,7 +69,6 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   void initState() {
     super.initState();
     _pulseCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 2))..repeat();
-
     _dotsTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
       if (mounted) setState(() => _dotsCount = (_dotsCount % 3) + 1);
     });
@@ -77,26 +77,32 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     });
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) => _checkStatus());
     Future.delayed(const Duration(seconds: 1), _checkStatus);
-
-    _startLocationTracking();
+    _startLiveLocation();
   }
 
-  // Live GPS: passenger device = pickup marker
-  void _startLocationTracking() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-    if (perm == LocationPermission.deniedForever) return;
+  // ── Real-time GPS: this device IS the passenger ────────────────────────────
+  Future<void> _startLiveLocation() async {
+    bool ok = await Geolocator.isLocationServiceEnabled();
+    if (!ok) return;
 
+    LocationPermission p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+    if (p == LocationPermission.deniedForever) return;
+
+    // Initial fix
     try {
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
-      if (mounted) setState(() => _pickup = LatLng(pos.latitude, pos.longitude));
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 8));
+      if (!mounted) return;
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pickup = loc);
+      if (_mapReady) {
+        _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
+      }
     } catch (_) {}
 
+    // Continuous stream
     _locationStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -104,7 +110,11 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
       ),
     ).listen((pos) {
       if (!mounted) return;
-      setState(() => _pickup = LatLng(pos.latitude, pos.longitude));
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pickup = loc);
+      if (_mapReady) {
+        _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
+      }
     });
   }
 
@@ -115,14 +125,12 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
       if (!mounted || _isNavigating) return;
 
       if (trip != null) {
-        // Update driver position from backend if provided
+        // Update driver GPS from backend
         final dLat = trip['driver_lat'];
         final dLng = trip['driver_lng'];
         if (dLat != null && dLng != null && mounted) {
           setState(() => _driver = LatLng(
-            (dLat as num).toDouble(),
-            (dLng as num).toDouble(),
-          ));
+              (dLat as num).toDouble(), (dLng as num).toDouble()));
         }
 
         final status = trip['status']?.toString() ?? '';
@@ -140,7 +148,8 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
               distanceKm: widget.distanceKm,
             ),
             transitionDuration: const Duration(milliseconds: 500),
-            transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
           ));
         } else if (status == 'cancelled') {
           _isNavigating = true;
@@ -149,8 +158,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('Driver declined. Please try another driver.',
                 style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
-            backgroundColor: AppColors.error,
-            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error, behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             margin: const EdgeInsets.all(16),
           ));
@@ -159,9 +167,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
           );
         }
       }
-    } catch (e) {
-      debugPrint('[WaitingScreen] Poll error: $e');
-    }
+    } catch (e) { debugPrint('[WaitingScreen] Poll error: $e'); }
   }
 
   void _stopTimers() {
@@ -174,13 +180,16 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     if (_isCancelling) return;
     setState(() => _isCancelling = true);
     _stopTimers();
-    if (widget.tripId.isNotEmpty) await TripService.updateTripStatus(widget.tripId, 'cancelled');
+    if (widget.tripId.isNotEmpty) {
+      await TripService.updateTripStatus(widget.tripId, 'cancelled');
+    }
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
         transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
       ), (_) => false,
     );
   }
@@ -206,104 +215,83 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
       backgroundColor: Colors.white,
       body: Stack(children: [
 
-        // Live Google Map
+        // ── Live Google Map ────────────────────────────────────────────────
         Positioned.fill(
           child: GoogleMap(
-            onMapCreated: (c) => _mapController = c,
+            onMapCreated: (c) {
+              _mapController = c;
+              _mapReady = true;
+              _mapController?.animateCamera(
+                  CameraUpdate.newLatLngZoom(_pickup, 14.5));
+            },
             initialCameraPosition: CameraPosition(target: _pickup, zoom: 14.5),
             zoomControlsEnabled: false,
+            myLocationEnabled: false,
             myLocationButtonEnabled: false,
             markers: {
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: _driver,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-              ),
-              Marker(
-                markerId: const MarkerId('pickup'),
-                position: _pickup,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-              ),
+              Marker(markerId: const MarkerId('driver'), position: _driver,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow)),
+              Marker(markerId: const MarkerId('pickup'), position: _pickup,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)),
             },
             polylines: {
-              Polyline(
-                polylineId: const PolylineId('shadow'),
-                points: routePoints,
-                color: _kRouteShadow,
-                width: 8,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
-              Polyline(
-                polylineId: const PolylineId('route'),
-                points: routePoints,
-                color: _kRouteBlue,
-                width: 5,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
+              Polyline(polylineId: const PolylineId('shadow'), points: routePoints,
+                  color: _kRouteShadow, width: 8,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
+              Polyline(polylineId: const PolylineId('route'), points: routePoints,
+                  color: _kRouteBlue, width: 5,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
             },
           ),
         ),
 
-        // Top status bar
-        Positioned(
-          top: 0, left: 0, right: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white, borderRadius: BorderRadius.circular(18),
+        // ── Top status bar ─────────────────────────────────────────────────
+        Positioned(top: 0, left: 0, right: 0,
+          child: SafeArea(child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
-                      blurRadius: 12, offset: const Offset(0, 3))],
-                ),
-                child: Row(children: [
-                  AnimatedBuilder(
-                    animation: _pulseCtrl,
-                    builder: (_, __) => Container(
-                      width: 10, height: 10,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.4 + 0.6 * _pulseCtrl.value),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
+                      blurRadius: 12, offset: const Offset(0, 3))]),
+              child: Row(children: [
+                AnimatedBuilder(animation: _pulseCtrl, builder: (_, __) => Container(
+                  width: 10, height: 10,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.4 + 0.6 * _pulseCtrl.value),
+                    shape: BoxShape.circle,
                   ),
-                  const SizedBox(width: 10),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Waiting for driver${'.' * _dotsCount}',
-                        style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700,
-                            color: AppColors.backgroundDark)),
-                    Text('Wait time: $_waitTime',
-                        style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
-                  ]),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12)),
-                    child: Text('${widget.etaMinutes} min',
-                        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
-                  ),
+                )),
+                const SizedBox(width: 10),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Waiting for driver${'.' * _dotsCount}',
+                      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700,
+                          color: AppColors.backgroundDark)),
+                  Text('Wait time: $_waitTime',
+                      style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
                 ]),
-              ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Text('${widget.etaMinutes} min',
+                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w800,
+                          color: AppColors.primary)),
+                ),
+              ]),
             ),
-          ),
+          )),
         ),
 
-        // Bottom driver card
-        Positioned(
-          bottom: 0, left: 0, right: 0,
+        // ── Bottom card ────────────────────────────────────────────────────
+        Positioned(bottom: 0, left: 0, right: 0,
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -4))],
-            ),
+            decoration: const BoxDecoration(color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20,
+                    offset: Offset(0, -4))]),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(width: 40, height: 4,
@@ -314,18 +302,17 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                 Container(width: 52, height: 52,
                     decoration: BoxDecoration(color: AppColors.backgroundDark,
                         borderRadius: BorderRadius.circular(14)),
-                    child: Center(child: Text(_initials,
-                        style: GoogleFonts.poppins(fontSize: 17, fontWeight: FontWeight.w800,
-                            color: AppColors.primary)))),
+                    child: Center(child: Text(_initials, style: GoogleFonts.poppins(
+                        fontSize: 17, fontWeight: FontWeight.w800, color: AppColors.primary)))),
                 const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(widget.driverName, style: GoogleFonts.poppins(fontSize: 16,
                       fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
-                  Text(widget.todaBodyNumber,
-                      style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
+                  Text(widget.todaBodyNumber, style: GoogleFonts.poppins(
+                      fontSize: 12, color: AppColors.textHint)),
                   if (widget.plateNo.isNotEmpty)
-                    Text('Plate: ${widget.plateNo}',
-                        style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+                    Text('Plate: ${widget.plateNo}', style: GoogleFonts.poppins(
+                        fontSize: 11, color: AppColors.textHint)),
                 ])),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -360,8 +347,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                     style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
               ]),
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity, height: 48,
+              SizedBox(width: double.infinity, height: 48,
                 child: OutlinedButton(
                   onPressed: _isCancelling ? null : _cancelRide,
                   style: OutlinedButton.styleFrom(
@@ -384,12 +370,10 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
 
   Widget _info(String value, String label, IconData icon) =>
       Expanded(child: Column(children: [
-        Icon(icon, size: 18, color: AppColors.primary),
-        const SizedBox(height: 4),
+        Icon(icon, size: 18, color: AppColors.primary), const SizedBox(height: 4),
         Text(value, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800,
             color: AppColors.backgroundDark)),
         Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
       ]));
-
   Widget _divV() => Container(width: 1, height: 40, color: const Color(0xFFEEEEEE));
 }

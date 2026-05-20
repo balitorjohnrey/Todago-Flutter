@@ -38,31 +38,48 @@ class LiveTripTrackingScreen extends StatefulWidget {
 class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   GoogleMapController? _mapController;
 
-  // Passenger live GPS (this device = passenger's phone)
+  // Passenger live GPS — updates as device moves
   LatLng _pickup      = const LatLng(7.1907, 125.4553);
-  // Driver position — updated from backend poll
+  // Driver position — polled from backend
   LatLng _driver      = const LatLng(7.1940, 125.4580);
+  // Destination — fixed from trip data
   static const LatLng _destination = LatLng(7.1850, 125.4500);
 
   StreamSubscription<Position>? _locationStream;
-  Timer? _pollTimer;
-  String _tripStatus = 'requested';
+  Timer?  _pollTimer;
+  String  _tripStatus  = 'requested';
+  bool    _mapReady    = false;
 
   @override
   void initState() {
     super.initState();
-    _startLocationTracking();
+    _startLiveLocation();
     if (widget.tripId.isNotEmpty) _startPolling();
   }
 
-  // Live GPS: passenger's device position = pickup marker
-  void _startLocationTracking() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-    var perm = await Geolocator.checkPermission();
-    if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-    if (perm == LocationPermission.deniedForever) return;
+  // ── Real-time GPS ─────────────────────────────────────────────────────────
+  Future<void> _startLiveLocation() async {
+    bool ok = await Geolocator.isLocationServiceEnabled();
+    if (!ok) return;
 
+    LocationPermission p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) p = await Geolocator.requestPermission();
+    if (p == LocationPermission.deniedForever) return;
+
+    // Initial fix
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 8));
+      if (!mounted) return;
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pickup = loc);
+      if (_mapReady) {
+        _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
+      }
+    } catch (_) {}
+
+    // Continuous stream
     _locationStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -70,7 +87,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       ),
     ).listen((pos) {
       if (!mounted) return;
-      setState(() => _pickup = LatLng(pos.latitude, pos.longitude));
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _pickup = loc);
+      if (_mapReady) {
+        _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
+      }
     });
   }
 
@@ -86,14 +107,12 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         return;
       }
 
-      // Update driver position from backend if provided
+      // Update driver GPS from backend
       final dLat = trip['driver_lat'];
       final dLng = trip['driver_lng'];
       if (dLat != null && dLng != null && mounted) {
         setState(() => _driver = LatLng(
-          (dLat as num).toDouble(),
-          (dLng as num).toDouble(),
-        ));
+          (dLat as num).toDouble(), (dLng as num).toDouble()));
       }
 
       final newStatus = trip['status'] as String? ?? 'requested';
@@ -109,7 +128,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     try {
       final history = await TripService.getCommuterHistory();
       if (!mounted) return;
-      if (history.isNotEmpty && history.first['status']?.toString() == 'completed') {
+      if (history.isNotEmpty &&
+          history.first['status']?.toString() == 'completed') {
         _showTripCompletedDialog(); return;
       }
     } catch (_) {}
@@ -117,36 +137,38 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   }
 
   void _showTripCancelledDialog() {
-    showDialog(
-      context: context, barrierDismissible: false,
+    showDialog(context: context, barrierDismissible: false,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Trip Cancelled', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        title: Text('Trip Cancelled',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text('The driver cancelled or declined your ride. Please book again.',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [ElevatedButton(
           onPressed: () { Navigator.of(context).pop(); _goHome(); },
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.backgroundDark,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: Text('Back to Home', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: Colors.white)),
+          child: Text('Back to Home', style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w700, color: Colors.white)),
         )],
       ),
     );
   }
 
   void _showTripCompletedDialog() {
-    showDialog(
-      context: context, barrierDismissible: false,
+    showDialog(context: context, barrierDismissible: false,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Trip Completed! 🎉', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        title: Text('Trip Completed! 🎉',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text('You have arrived at your destination. Thanks for riding with TodaGo!',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [ElevatedButton(
           onPressed: () { Navigator.of(context).pop(); _goHome(); },
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-          child: Text('Done', style: GoogleFonts.poppins(fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
+          child: Text('Done', style: GoogleFonts.poppins(
+              fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
         )],
       ),
     );
@@ -158,9 +180,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
         transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
-      ),
-      (_) => false,
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ), (_) => false,
     );
   }
 
@@ -199,32 +221,29 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     }
   }
 
-  Future<void> _cancelTrip(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
+  Future<void> _cancelTrip(BuildContext ctx) async {
+    final confirm = await showDialog<bool>(context: ctx,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Cancel Trip?', style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
         content: Text('Are you sure you want to cancel this ride?',
             style: GoogleFonts.poppins(fontSize: 14)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text('No', style: GoogleFonts.poppins(color: AppColors.textHint)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('No', style: GoogleFonts.poppins(color: AppColors.textHint))),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.error,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-            child: Text('Yes, Cancel',
-                style: GoogleFonts.poppins(color: Colors.white, fontWeight: FontWeight.w600)),
-          ),
+            child: Text('Yes, Cancel', style: GoogleFonts.poppins(
+                color: Colors.white, fontWeight: FontWeight.w600))),
         ],
       ),
     );
     if (confirm != true) return;
     _pollTimer?.cancel();
-    if (widget.tripId.isNotEmpty) await TripService.updateTripStatus(widget.tripId, 'cancelled');
+    if (widget.tripId.isNotEmpty) {
+      await TripService.updateTripStatus(widget.tripId, 'cancelled');
+    }
     if (!mounted) return;
     _goHome();
   }
@@ -236,117 +255,92 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       backgroundColor: AppColors.background,
       body: Stack(children: [
 
-        // Live Google Map
+        // ── Live Google Map ────────────────────────────────────────────────
         Positioned.fill(
           child: GoogleMap(
-            onMapCreated: (c) => _mapController = c,
+            onMapCreated: (c) {
+              _mapController = c;
+              _mapReady = true;
+              // Jump to passenger's real location once map is ready
+              _mapController?.animateCamera(
+                  CameraUpdate.newLatLngZoom(_pickup, 14.5));
+            },
             initialCameraPosition: CameraPosition(target: _pickup, zoom: 14.5),
             zoomControlsEnabled: false,
+            myLocationEnabled: false,
             myLocationButtonEnabled: false,
             markers: {
-              Marker(
-                markerId: const MarkerId('driver'),
-                position: _driver,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-              ),
-              Marker(
-                markerId: const MarkerId('pickup'),
-                position: _pickup,
-                icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-              ),
-              const Marker(
-                markerId: MarkerId('destination'),
-                position: _destination,
-              ),
+              Marker(markerId: const MarkerId('driver'), position: _driver,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow)),
+              Marker(markerId: const MarkerId('pickup'), position: _pickup,
+                  icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue)),
+              const Marker(markerId: MarkerId('destination'), position: _destination),
             },
             polylines: {
-              Polyline(
-                polylineId: const PolylineId('shadow'),
-                points: routePoints,
-                color: _kRouteShadow,
-                width: 8,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
-              Polyline(
-                polylineId: const PolylineId('route'),
-                points: routePoints,
-                color: _kRouteBlue,
-                width: 5,
-                startCap: Cap.roundCap,
-                endCap: Cap.roundCap,
-                jointType: JointType.round,
-              ),
+              Polyline(polylineId: const PolylineId('shadow'), points: routePoints,
+                  color: _kRouteShadow, width: 8,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
+              Polyline(polylineId: const PolylineId('route'), points: routePoints,
+                  color: _kRouteBlue, width: 5,
+                  startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round),
             },
           ),
         ),
 
-        // Status + ETA bar
-        Positioned(
-          top: 0, left: 0, right: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: Column(children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _statusColor.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: _statusColor.withOpacity(0.4), width: 1.5),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Container(width: 8, height: 8,
-                        decoration: BoxDecoration(color: _statusColor, shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    Text(_statusLabel,
-                        style: GoogleFonts.poppins(
-                            fontSize: 12, fontWeight: FontWeight.w700, color: _statusColor)),
-                  ]),
+        // ── Status + ETA bar ───────────────────────────────────────────────
+        Positioned(top: 0, left: 0, right: 0,
+          child: SafeArea(child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Column(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _statusColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _statusColor.withOpacity(0.4), width: 1.5),
                 ),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(width: 8, height: 8,
+                      decoration: BoxDecoration(color: _statusColor, shape: BoxShape.circle)),
+                  const SizedBox(width: 8),
+                  Text(_statusLabel, style: GoogleFonts.poppins(
+                      fontSize: 12, fontWeight: FontWeight.w700, color: _statusColor)),
+                ]),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
                     boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12),
-                        blurRadius: 12, offset: const Offset(0, 3))],
+                        blurRadius: 12, offset: const Offset(0, 3))]),
+                child: Row(children: [
+                  _etaItem('ETA', '${widget.etaMinutes} min', Icons.schedule_rounded),
+                  const SizedBox(width: 24),
+                  _etaItem('Distance', '${widget.distanceKm.toStringAsFixed(1)} km',
+                      Icons.straighten_rounded),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => _cancelTrip(context),
+                    child: Container(width: 40, height: 40,
+                        decoration: BoxDecoration(color: Colors.red.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.red.withOpacity(0.3))),
+                        child: const Icon(Icons.close_rounded, color: Colors.red, size: 20)),
                   ),
-                  child: Row(children: [
-                    _etaItem('ETA', '${widget.etaMinutes} min', Icons.schedule_rounded),
-                    const SizedBox(width: 24),
-                    _etaItem('Distance', '${widget.distanceKm.toStringAsFixed(1)} km',
-                        Icons.straighten_rounded),
-                    const Spacer(),
-                    GestureDetector(
-                      onTap: () => _cancelTrip(context),
-                      child: Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1), shape: BoxShape.circle,
-                          border: Border.all(color: Colors.red.withOpacity(0.3)),
-                        ),
-                        child: const Icon(Icons.close_rounded, color: Colors.red, size: 20),
-                      ),
-                    ),
-                  ]),
-                ),
-              ]),
-            ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.3, end: 0),
-          ),
+                ]),
+              ),
+            ]),
+          ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.3, end: 0)),
         ),
 
-        // Bottom driver card
-        Positioned(
-          bottom: 0, left: 0, right: 0,
+        // ── Bottom driver card ─────────────────────────────────────────────
+        Positioned(bottom: 0, left: 0, right: 0,
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20, offset: Offset(0, -4))],
-            ),
+            decoration: const BoxDecoration(color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20,
+                    offset: Offset(0, -4))]),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Center(child: Container(width: 40, height: 4,
@@ -354,32 +348,27 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                       borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
               Row(children: [
-                Container(
-                  width: 50, height: 50,
-                  decoration: BoxDecoration(color: AppColors.backgroundDark,
-                      borderRadius: BorderRadius.circular(14)),
-                  child: Center(child: Text(_initials,
-                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800,
-                          color: AppColors.primary))),
-                ),
+                Container(width: 50, height: 50,
+                    decoration: BoxDecoration(color: AppColors.backgroundDark,
+                        borderRadius: BorderRadius.circular(14)),
+                    child: Center(child: Text(_initials, style: GoogleFonts.poppins(
+                        fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.primary)))),
                 const SizedBox(width: 14),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(widget.driverName,
-                      style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700,
-                          color: AppColors.backgroundDark)),
+                  Text(widget.driverName, style: GoogleFonts.poppins(fontSize: 16,
+                      fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
                   Row(children: [
                     const Icon(Icons.star_rounded, color: AppColors.primary, size: 14),
                     const SizedBox(width: 3),
-                    Text(widget.driverRating.toStringAsFixed(1),
-                        style: GoogleFonts.poppins(fontSize: 12,
-                            color: AppColors.backgroundDark, fontWeight: FontWeight.w600)),
+                    Text(widget.driverRating.toStringAsFixed(1), style: GoogleFonts.poppins(
+                        fontSize: 12, color: AppColors.backgroundDark, fontWeight: FontWeight.w600)),
                     if (widget.todaBodyNumber.isNotEmpty)
-                      Text(' · ${widget.todaBodyNumber}',
-                          style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+                      Text(' · ${widget.todaBodyNumber}', style: GoogleFonts.poppins(
+                          fontSize: 11, color: AppColors.textHint)),
                   ]),
                   if (widget.plateNo.isNotEmpty)
-                    Text('Plate: ${widget.plateNo}',
-                        style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
+                    Text('Plate: ${widget.plateNo}', style: GoogleFonts.poppins(
+                        fontSize: 11, color: AppColors.textHint)),
                 ])),
                 Row(children: [
                   _actionBtn(Icons.phone_rounded, Colors.green),
@@ -396,8 +385,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   const Icon(Icons.navigation_rounded, color: AppColors.primary, size: 18),
                   const SizedBox(width: 10),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Heading to',
-                        style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
+                    Text('Heading to', style: GoogleFonts.poppins(
+                        fontSize: 10, color: AppColors.textHint)),
                     Text('Davao del Norte State College, Panabo',
                         style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w600,
                             color: AppColors.backgroundDark)),
@@ -405,17 +394,15 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                 ]),
               ),
               const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity, height: 48,
+              SizedBox(width: double.infinity, height: 48,
                 child: OutlinedButton(
                   onPressed: () => _cancelTrip(context),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: Colors.grey[300]!, width: 1.5),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text('Cancel Trip',
-                      style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600,
-                          color: AppColors.textHint)),
+                  child: Text('Cancel Trip', style: GoogleFonts.poppins(
+                      fontSize: 14, fontWeight: FontWeight.w600, color: AppColors.textHint)),
                 ),
               ),
             ]),
@@ -427,8 +414,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   Widget _etaItem(String label, String value, IconData icon) =>
       Row(children: [
-        Icon(icon, size: 16, color: AppColors.textHint),
-        const SizedBox(width: 6),
+        Icon(icon, size: 16, color: AppColors.textHint), const SizedBox(width: 6),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
           Text(value, style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w800,
@@ -438,11 +424,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   Widget _actionBtn(IconData icon, Color color) => Container(
         width: 40, height: 40,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
+        decoration: BoxDecoration(color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.3))),
         child: Icon(icon, color: color, size: 20),
       );
 }
