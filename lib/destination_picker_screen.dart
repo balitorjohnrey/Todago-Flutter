@@ -10,6 +10,9 @@ import 'package:geolocator/geolocator.dart';
 import 'app_theme.dart';
 import 'service_selection_screen.dart';
 
+const Color _kRouteShadow = Color(0xFF185ABC);
+const Color _kRouteBlue   = Color(0xFF1A73E8);
+
 // ── Models ────────────────────────────────────────────────────────────────────
 class PlaceSuggestion {
   final String displayName;
@@ -40,21 +43,14 @@ class RouteInfo {
   final List<LatLng> points;
   final double distanceKm;
   final int etaMinutes;
-
-  RouteInfo({
-    required this.points,
-    required this.distanceKm,
-    required this.etaMinutes,
-  });
+  RouteInfo({required this.points, required this.distanceKm, required this.etaMinutes});
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 class DestinationPickerScreen extends StatefulWidget {
   const DestinationPickerScreen({super.key});
-
   @override
-  State<DestinationPickerScreen> createState() =>
-      _DestinationPickerScreenState();
+  State<DestinationPickerScreen> createState() => _DestinationPickerScreenState();
 }
 
 class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
@@ -75,6 +71,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
   RouteInfo? _route;
 
   Timer? _debounce;
+  StreamSubscription<Position>? _locationStream;
 
   @override
   void initState() {
@@ -85,30 +82,23 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
+    _locationStream?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _mapCtrl?.dispose();
     super.dispose();
   }
 
-  // ── Get real GPS location ─────────────────────────────────────────────────
+  // ── Get GPS + start live stream ───────────────────────────────────────────
   Future<void> _getCurrentLocation() async {
     setState(() => _loadingLocation = true);
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
-        _setDefaultLocation();
-        return;
-      }
+      if (!serviceEnabled) { _setDefaultLocation(); return; }
 
       LocationPermission perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) {
-        perm = await Geolocator.requestPermission();
-      }
-      if (perm == LocationPermission.deniedForever) {
-        _setDefaultLocation();
-        return;
-      }
+      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
+      if (perm == LocationPermission.deniedForever) { _setDefaultLocation(); return; }
 
       final pos = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
@@ -117,131 +107,116 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
 
       if (!mounted) return;
       final loc = LatLng(pos.latitude, pos.longitude);
-      setState(() {
-        _currentLocation  = loc;
-        _loadingLocation  = false;
-      });
+      setState(() { _currentLocation = loc; _loadingLocation = false; });
 
       await Future.delayed(const Duration(milliseconds: 300));
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(loc, 16.0));
-
       _reverseGeocode(loc);
+
+      // Start continuous live tracking
+      _startLocationStream();
     } catch (e) {
       debugPrint('[Location] Error: $e');
       _setDefaultLocation();
     }
   }
 
+  void _startLocationStream() {
+    _locationStream?.cancel();
+    _locationStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 8,
+      ),
+    ).listen((pos) {
+      if (!mounted) return;
+      final loc = LatLng(pos.latitude, pos.longitude);
+      setState(() => _currentLocation = loc);
+      // Follow user only when no destination is set yet
+      if (_destination == null) {
+        _mapCtrl?.animateCamera(CameraUpdate.newLatLng(loc));
+      }
+    });
+  }
+
   void _setDefaultLocation() {
     const loc = LatLng(7.1907, 125.4553);
     if (!mounted) return;
-    setState(() {
-      _currentLocation = loc;
-      _loadingLocation = false;
-    });
+    setState(() { _currentLocation = loc; _loadingLocation = false; });
     _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(loc, 15.0));
+    _startLocationStream();
   }
 
-  // ── Reverse geocode: coords → address ─────────────────────────────────────
+  // ── Reverse geocode ───────────────────────────────────────────────────────
   Future<void> _reverseGeocode(LatLng pos) async {
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/reverse'
-        '?lat=${pos.latitude}&lon=${pos.longitude}'
-        '&format=json&zoom=18&addressdetails=1',
+        '?lat=${pos.latitude}&lon=${pos.longitude}&format=json&zoom=18&addressdetails=1',
       );
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
+      final res = await http.get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
           .timeout(const Duration(seconds: 8));
       if (res.statusCode == 200 && mounted) {
         final data = jsonDecode(res.body);
         final addr = data['address'] as Map<String, dynamic>? ?? {};
         final parts = <String>[];
-        if (addr['road'] != null)   parts.add(addr['road'] as String);
+        if (addr['road'] != null) parts.add(addr['road'] as String);
         if (addr['suburb'] != null) parts.add(addr['suburb'] as String);
-        if (addr['city'] != null)
-          parts.add(addr['city'] as String);
-        else if (addr['town'] != null)
-          parts.add(addr['town'] as String);
-        setState(() => _pickupName =
-            parts.isNotEmpty ? parts.join(', ') : 'Your Location');
+        if (addr['city'] != null) parts.add(addr['city'] as String);
+        else if (addr['town'] != null) parts.add(addr['town'] as String);
+        setState(() => _pickupName = parts.isNotEmpty ? parts.join(', ') : 'Your Location');
       }
-    } catch (e) {
-      debugPrint('[Geocode] Reverse geocode error: $e');
-    }
+    } catch (e) { debugPrint('[Geocode] $e'); }
   }
 
-  // ── Search via Nominatim ───────────────────────────────────────────────────
+  // ── Search ────────────────────────────────────────────────────────────────
   void _onSearchChanged(String q) {
     _debounce?.cancel();
     if (q.trim().length < 2) {
-      setState(() {
-        _suggestions    = [];
-        _showSuggestions = false;
-      });
+      setState(() { _suggestions = []; _showSuggestions = false; });
       return;
     }
-    _debounce =
-        Timer(const Duration(milliseconds: 500), () => _searchPlaces(q));
+    _debounce = Timer(const Duration(milliseconds: 500), () => _searchPlaces(q));
   }
 
   Future<void> _searchPlaces(String q) async {
     if (!mounted) return;
-    setState(() {
-      _isSearching     = true;
-      _showSuggestions = true;
-    });
+    setState(() { _isSearching = true; _showSuggestions = true; });
     try {
       final uri = Uri.parse(
         'https://nominatim.openstreetmap.org/search'
-        '?q=${Uri.encodeComponent(q + ' Philippines')}'
+        '?q=${Uri.encodeComponent('$q Philippines')}'
         '&format=json&limit=7&countrycodes=ph'
-        '&viewbox=125.0,6.5,126.5,8.5&bounded=0'
-        '&addressdetails=1',
+        '&viewbox=125.0,6.5,126.5,8.5&bounded=0&addressdetails=1',
       );
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
+      final res = await http.get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
           .timeout(const Duration(seconds: 10));
       if (!mounted) return;
       if (res.statusCode == 200) {
         final list = jsonDecode(res.body) as List;
-        setState(() {
-          _suggestions = list
-              .map((j) => PlaceSuggestion.fromJson(j))
-              .toList();
-        });
+        setState(() => _suggestions = list.map((j) => PlaceSuggestion.fromJson(j)).toList());
       }
-    } catch (e) {
-      debugPrint('[Search] Error: $e');
-    } finally {
-      if (mounted) setState(() => _isSearching = false);
-    }
+    } catch (e) { debugPrint('[Search] $e'); }
+    finally { if (mounted) setState(() => _isSearching = false); }
   }
 
-  // ── User picks a suggestion ────────────────────────────────────────────────
+  // ── Select destination ────────────────────────────────────────────────────
   Future<void> _selectDestination(PlaceSuggestion place) async {
     final dest = LatLng(place.lat, place.lon);
     setState(() {
-      _destination     = dest;
-      _destinationName = place.shortName;
-      _showSuggestions = false;
-      _suggestions     = [];
-      _searchCtrl.text = place.shortName;
-      _route           = null;
+      _destination = dest; _destinationName = place.shortName;
+      _showSuggestions = false; _suggestions = [];
+      _searchCtrl.text = place.shortName; _route = null;
     });
     _searchFocus.unfocus();
 
     if (_currentLocation != null) {
       try {
         final bounds = LatLngBounds(
-          southwest: LatLng(
-            min(_currentLocation!.latitude,  dest.latitude),
-            min(_currentLocation!.longitude, dest.longitude),
-          ),
-          northeast: LatLng(
-            max(_currentLocation!.latitude,  dest.latitude),
-            max(_currentLocation!.longitude, dest.longitude),
-          ),
+          southwest: LatLng(min(_currentLocation!.latitude, dest.latitude),
+              min(_currentLocation!.longitude, dest.longitude)),
+          northeast: LatLng(max(_currentLocation!.latitude, dest.latitude),
+              max(_currentLocation!.longitude, dest.longitude)),
         );
         _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
       } catch (_) {
@@ -253,191 +228,128 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
     }
   }
 
-  // ── OSRM real road routing ─────────────────────────────────────────────────
+  // ── OSRM routing ──────────────────────────────────────────────────────────
   Future<void> _fetchRoadRoute() async {
     if (_currentLocation == null || _destination == null) return;
     setState(() => _isRouting = true);
-
     final from = _currentLocation!;
     final to   = _destination!;
-
     try {
       final uri = Uri.parse(
         'https://router.project-osrm.org/route/v1/driving'
-        '/${from.longitude},${from.latitude}'
-        ';${to.longitude},${to.latitude}'
+        '/${from.longitude},${from.latitude};${to.longitude},${to.latitude}'
         '?overview=full&geometries=geojson&steps=false',
       );
-
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
+      final res = await http.get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
           .timeout(const Duration(seconds: 15));
-
       if (!mounted) return;
-
       if (res.statusCode == 200) {
         final data   = jsonDecode(res.body) as Map<String, dynamic>;
         final routes = data['routes'] as List?;
-
         if (routes != null && routes.isNotEmpty) {
-          final route          = routes.first as Map<String, dynamic>;
-          final distanceMeters = (route['distance'] as num).toDouble();
-          final durationSecs   = (route['duration'] as num).toDouble();
-
-          final geometry = route['geometry'] as Map<String, dynamic>;
-          final coords   = geometry['coordinates'] as List;
-          final points   = coords.map((c) {
+          final route  = routes.first as Map<String, dynamic>;
+          final dist   = (route['distance'] as num).toDouble();
+          final dur    = (route['duration'] as num).toDouble();
+          final coords = (route['geometry'] as Map)['coordinates'] as List;
+          final points = coords.map((c) {
             final pair = c as List;
-            return LatLng(
-              (pair[1] as num).toDouble(),
-              (pair[0] as num).toDouble(),
-            );
+            return LatLng((pair[1] as num).toDouble(), (pair[0] as num).toDouble());
           }).toList();
-
-          if (mounted) {
-            setState(() {
-              _route = RouteInfo(
-                points: points,
-                distanceKm: distanceMeters / 1000,
-                etaMinutes: (durationSecs / 60).ceil(),
-              );
-            });
-          }
+          if (mounted) setState(() => _route = RouteInfo(
+              points: points, distanceKm: dist / 1000, etaMinutes: (dur / 60).ceil()));
           return;
         }
       }
-
       await _fetchGraphHopperRoute(from, to);
     } catch (e) {
-      debugPrint('[Route] OSRM error: $e');
+      debugPrint('[Route] OSRM: $e');
       _straightLineFallback(from, to);
     } finally {
       if (mounted) setState(() => _isRouting = false);
     }
   }
 
-  // ── GraphHopper fallback ───────────────────────────────────────────────────
   Future<void> _fetchGraphHopperRoute(LatLng from, LatLng to) async {
     try {
       final uri = Uri.parse(
         'https://graphhopper.com/api/1/route'
         '?point=${from.latitude},${from.longitude}'
         '&point=${to.latitude},${to.longitude}'
-        '&vehicle=car&locale=en&key=&type=json'
-        '&points_encoded=false',
+        '&vehicle=car&locale=en&key=&type=json&points_encoded=false',
       );
-      final res = await http
-          .get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
+      final res = await http.get(uri, headers: {'User-Agent': 'TodaGoApp/1.0'})
           .timeout(const Duration(seconds: 10));
-
       if (res.statusCode == 200 && mounted) {
         final data  = jsonDecode(res.body);
         final paths = data['paths'] as List?;
         if (paths != null && paths.isNotEmpty) {
           final path = paths.first;
-          final dist = (path['distance'] as num).toDouble();
-          final time = (path['time'] as num).toDouble();
-          final pts  = (path['points']['coordinates'] as List)
-              .map((c) => LatLng(
-                    (c[1] as num).toDouble(),
-                    (c[0] as num).toDouble(),
-                  ))
-              .toList();
-          setState(() {
-            _route = RouteInfo(
+          final pts  = (path['points']['coordinates'] as List).map((c) =>
+              LatLng((c[1] as num).toDouble(), (c[0] as num).toDouble())).toList();
+          setState(() => _route = RouteInfo(
               points: pts,
-              distanceKm: dist / 1000,
-              etaMinutes: (time / 60000).ceil(),
-            );
-          });
+              distanceKm: (path['distance'] as num).toDouble() / 1000,
+              etaMinutes: ((path['time'] as num).toDouble() / 60000).ceil()));
           return;
         }
       }
-    } catch (e) {
-      debugPrint('[Route] GraphHopper error: $e');
-    }
+    } catch (e) { debugPrint('[Route] GraphHopper: $e'); }
     _straightLineFallback(from, to);
   }
 
-  // ── Straight-line fallback (uses Geolocator instead of latlong2) ──────────
   void _straightLineFallback(LatLng from, LatLng to) {
     final distMeters = Geolocator.distanceBetween(
-      from.latitude, from.longitude,
-      to.latitude, to.longitude,
-    );
+        from.latitude, from.longitude, to.latitude, to.longitude);
     final dist = distMeters / 1000;
     if (!mounted) return;
-    setState(() {
-      _route = RouteInfo(
-        points: [from, to],
-        distanceKm: dist,
-        etaMinutes: (dist / 0.4).ceil(),
-      );
-    });
+    setState(() => _route = RouteInfo(
+        points: [from, to], distanceKm: dist, etaMinutes: (dist / 0.4).ceil()));
   }
 
-  // ── Confirm → go to service selection ────────────────────────────────────
   void _confirmDestination() {
     if (_destination == null) return;
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => ServiceSelectionScreen(
-        pickupName:      _pickupName,
-        destinationName: _destinationName,
-        pickupLatLng:    _currentLocation,
-        destinationLatLng: _destination,
-        etaMinutes:      _route?.etaMinutes,
-        distanceKm:      _route?.distanceKm,
+        pickupName: _pickupName, destinationName: _destinationName,
+        pickupLatLng: _currentLocation, destinationLatLng: _destination,
+        etaMinutes: _route?.etaMinutes, distanceKm: _route?.distanceKm,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, 1), end: Offset.zero,
-        ).animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+        position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
         child: child,
       ),
     ));
   }
 
-  // ── Estimated fare ────────────────────────────────────────────────────────
-  String _estimateFare(double km) {
-    final fare = (15 + (km * 5)).round().clamp(15, 300);
-    return fare.toString();
-  }
+  String _estimateFare(double km) => (15 + km * 5).round().clamp(15, 300).toString();
 
-  // ── Build polylines set ───────────────────────────────────────────────────
   Set<Polyline> get _polylines {
     if (_route == null || _route!.points.length < 2) return {};
     return {
       Polyline(
         polylineId: const PolylineId('shadow'),
         points: _route!.points,
-        color: Colors.black.withOpacity(0.15),
-        width: 9,
+        color: _kRouteShadow, width: 8,
+        startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round,
       ),
       Polyline(
         polylineId: const PolylineId('route'),
         points: _route!.points,
-        color: AppColors.primary,
-        width: 6,
-      ),
-      Polyline(
-        polylineId: const PolylineId('highlight'),
-        points: _route!.points,
-        color: Colors.white.withOpacity(0.4),
-        width: 2,
+        color: _kRouteBlue, width: 5,
+        startCap: Cap.roundCap, endCap: Cap.roundCap, jointType: JointType.round,
       ),
     };
   }
 
-  // ── Build markers set ─────────────────────────────────────────────────────
   Set<Marker> get _markers {
     final set = <Marker>{};
     if (_currentLocation != null) {
       set.add(Marker(
         markerId: const MarkerId('current'),
         position: _currentLocation!,
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-            BitmapDescriptor.hueYellow),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
       ));
     }
     if (_destination != null) {
@@ -455,32 +367,25 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
     return Scaffold(
       body: Stack(children: [
 
-        // ═══ FULL-SCREEN MAP ══════════════════════════════════════════════
+        // Full-screen live Google Map
         Positioned.fill(
           child: _loadingLocation
               ? Container(
                   color: const Color(0xFFE8EFF5),
-                  child: Center(child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(color: AppColors.primary),
-                      const SizedBox(height: 16),
-                      Text('Getting your location...',
-                          style: GoogleFonts.poppins(
-                            fontSize: 14, color: AppColors.backgroundDark,
-                            fontWeight: FontWeight.w500,
-                          )),
-                    ],
-                  )),
+                  child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    const CircularProgressIndicator(color: AppColors.primary),
+                    const SizedBox(height: 16),
+                    Text('Getting your location...', style: GoogleFonts.poppins(
+                        fontSize: 14, color: AppColors.backgroundDark,
+                        fontWeight: FontWeight.w500)),
+                  ])),
                 )
               : GoogleMap(
                   onMapCreated: (c) {
                     _mapCtrl = c;
-                    // Animate to real location once controller is ready
                     if (_currentLocation != null) {
                       _mapCtrl?.animateCamera(
-                        CameraUpdate.newLatLngZoom(_currentLocation!, 16.0),
-                      );
+                          CameraUpdate.newLatLngZoom(_currentLocation!, 16.0));
                     }
                   },
                   initialCameraPosition: CameraPosition(
@@ -498,230 +403,149 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
                 ),
         ),
 
-        // ═══ TOP SEARCH PANEL ═════════════════════════════════════════════
+        // Top search panel
         Positioned(
           top: 0, left: 0, right: 0,
           child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-
-                  // Back button + Search bar row
-                  Row(children: [
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).pop(),
-                      child: Container(
-                        width: 44, height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                          boxShadow: [BoxShadow(
-                            color: Colors.black.withOpacity(0.18),
-                            blurRadius: 10, offset: const Offset(0, 2),
-                          )],
-                        ),
-                        child: const Icon(Icons.arrow_back_ios_rounded,
-                            color: Colors.black87, size: 18),
-                      ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  GestureDetector(
+                    onTap: () => Navigator.of(context).pop(),
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18),
+                              blurRadius: 10, offset: const Offset(0, 2))]),
+                      child: const Icon(Icons.arrow_back_ios_rounded,
+                          color: Colors.black87, size: 18),
                     ),
-                    const SizedBox(width: 10),
-
-                    // Search bar
-                    Expanded(
-                      child: Container(
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(
-                            color: const Color.fromARGB(255, 255, 123, 0)
-                                .withOpacity(0.18),
-                            blurRadius: 12, offset: const Offset(0, 3),
-                          )],
-                        ),
-                        child: Row(children: [
-                          const SizedBox(width: 14),
-                          const Icon(Icons.search_rounded,
-                              color: Colors.black54, size: 22),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: TextField(
-                              controller: _searchCtrl,
-                              focusNode:  _searchFocus,
-                              onChanged:  _onSearchChanged,
-                              style: GoogleFonts.poppins(
-                                fontSize: 15, color: Colors.black,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              cursorColor: AppColors.primary,
-                              decoration: InputDecoration(
-                                hintText: 'Where to go?',
-                                hintStyle: GoogleFonts.poppins(
-                                  fontSize: 15, color: Colors.black45,
-                                  fontWeight: FontWeight.w400,
-                                ),
-                                border: InputBorder.none,
-                                contentPadding: EdgeInsets.zero,
-                              ),
-                            ),
-                          ),
-                          if (_searchCtrl.text.isNotEmpty)
-                            GestureDetector(
-                              onTap: () {
-                                _searchCtrl.clear();
-                                setState(() {
-                                  _suggestions     = [];
-                                  _showSuggestions = false;
-                                  _destination     = null;
-                                  _route           = null;
-                                });
-                              },
-                              child: const Padding(
-                                padding: EdgeInsets.all(12),
-                                child: Icon(Icons.close_rounded,
-                                    color: Colors.black45, size: 18),
-                              ),
-                            ),
-                        ]),
-                      ),
-                    ),
-                  ]),
-
-                  // Suggestions dropdown
-                  if (_showSuggestions)
-                    Container(
-                      margin: const EdgeInsets.only(top: 6, left: 54),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(child: Container(
+                    height: 52,
+                    decoration: BoxDecoration(color: Colors.white,
                         borderRadius: BorderRadius.circular(14),
                         boxShadow: [BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 14, offset: const Offset(0, 4),
-                        )],
-                      ),
-                      child: _isSearching && _suggestions.isEmpty
-                          ? const Padding(
-                              padding: EdgeInsets.all(16),
-                              child: Center(child: SizedBox(
-                                width: 20, height: 20,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.primary),
-                              )),
-                            )
-                          : _suggestions.isEmpty
-                              ? Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Text('No results found',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 13, color: Colors.black54,
-                                      )),
-                                )
-                              : ListView.separated(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: _suggestions.length,
-                                  separatorBuilder: (_, __) => const Divider(
-                                      height: 1,
-                                      color: Color(0xFFF0F0F0)),
-                                  itemBuilder: (_, i) {
-                                    final s = _suggestions[i];
-                                    return GestureDetector(
-                                      onTap: () => _selectDestination(s),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 14, vertical: 12),
-                                        child: Row(children: [
-                                          Container(
-                                            width: 34, height: 34,
+                            color: const Color.fromARGB(255, 255, 123, 0).withOpacity(0.18),
+                            blurRadius: 12, offset: const Offset(0, 3))]),
+                    child: Row(children: [
+                      const SizedBox(width: 14),
+                      const Icon(Icons.search_rounded, color: Colors.black54, size: 22),
+                      const SizedBox(width: 10),
+                      Expanded(child: TextField(
+                        controller: _searchCtrl, focusNode: _searchFocus,
+                        onChanged: _onSearchChanged,
+                        style: GoogleFonts.poppins(fontSize: 15, color: Colors.black,
+                            fontWeight: FontWeight.w500),
+                        cursorColor: AppColors.primary,
+                        decoration: InputDecoration(
+                          hintText: 'Where to go?',
+                          hintStyle: GoogleFonts.poppins(fontSize: 15, color: Colors.black45,
+                              fontWeight: FontWeight.w400),
+                          border: InputBorder.none, contentPadding: EdgeInsets.zero,
+                        ),
+                      )),
+                      if (_searchCtrl.text.isNotEmpty)
+                        GestureDetector(
+                          onTap: () {
+                            _searchCtrl.clear();
+                            setState(() {
+                              _suggestions = []; _showSuggestions = false;
+                              _destination = null; _route = null;
+                            });
+                          },
+                          child: const Padding(padding: EdgeInsets.all(12),
+                              child: Icon(Icons.close_rounded, color: Colors.black45, size: 18)),
+                        ),
+                    ]),
+                  )),
+                ]),
+
+                // Suggestions dropdown
+                if (_showSuggestions)
+                  Container(
+                    margin: const EdgeInsets.only(top: 6, left: 54),
+                    decoration: BoxDecoration(color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15),
+                            blurRadius: 14, offset: const Offset(0, 4))]),
+                    child: _isSearching && _suggestions.isEmpty
+                        ? const Padding(padding: EdgeInsets.all(16),
+                            child: Center(child: SizedBox(width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2,
+                                    color: AppColors.primary))))
+                        : _suggestions.isEmpty
+                            ? Padding(padding: const EdgeInsets.all(16),
+                                child: Text('No results found', style: GoogleFonts.poppins(
+                                    fontSize: 13, color: Colors.black54)))
+                            : ListView.separated(
+                                shrinkWrap: true,
+                                physics: const NeverScrollableScrollPhysics(),
+                                itemCount: _suggestions.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1, color: Color(0xFFF0F0F0)),
+                                itemBuilder: (_, i) {
+                                  final s = _suggestions[i];
+                                  return GestureDetector(
+                                    onTap: () => _selectDestination(s),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 12),
+                                      child: Row(children: [
+                                        Container(width: 34, height: 34,
                                             decoration: BoxDecoration(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.12),
-                                              borderRadius:
-                                                  BorderRadius.circular(9),
-                                            ),
-                                            child: const Icon(
-                                              Icons.location_on_rounded,
-                                              color: AppColors.primary,
-                                              size: 18,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                                color: AppColors.primary.withOpacity(0.12),
+                                                borderRadius: BorderRadius.circular(9)),
+                                            child: const Icon(Icons.location_on_rounded,
+                                                color: AppColors.primary, size: 18)),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Text(s.shortName,
-                                                  style: GoogleFonts.poppins(
-                                                    fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: Colors.black87,
-                                                  )),
-                                              const SizedBox(height: 2),
-                                              Text(s.displayName,
-                                                  style: GoogleFonts.poppins(
-                                                    fontSize: 11,
-                                                    color: Colors.black45,
-                                                  ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis),
-                                            ],
-                                          )),
-                                          const Icon(
-                                              Icons.chevron_right_rounded,
-                                              color: Colors.black26,
-                                              size: 18),
-                                        ]),
-                                      ),
-                                    );
-                                  },
-                                ),
-                    ).animate().fadeIn(duration: 200.ms),
-                ],
-              ),
+                                          Text(s.shortName, style: GoogleFonts.poppins(
+                                              fontSize: 13, fontWeight: FontWeight.w600,
+                                              color: Colors.black87)),
+                                          const SizedBox(height: 2),
+                                          Text(s.displayName, style: GoogleFonts.poppins(
+                                              fontSize: 11, color: Colors.black45),
+                                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                                        ])),
+                                        const Icon(Icons.chevron_right_rounded,
+                                            color: Colors.black26, size: 18),
+                                      ]),
+                                    ),
+                                  );
+                                },
+                              ),
+                  ).animate().fadeIn(duration: 200.ms),
+              ]),
             ),
           ),
         ),
 
-        // ═══ ROUTING INDICATOR ════════════════════════════════════════════
+        // Routing indicator
         if (_isRouting)
-          Positioned(
-            top: 110, left: 0, right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 9),
-                decoration: BoxDecoration(
-                  color: AppColors.backgroundDark,
+          Positioned(top: 110, left: 0, right: 0,
+            child: Center(child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              decoration: BoxDecoration(color: AppColors.backgroundDark,
                   borderRadius: BorderRadius.circular(22),
-                  boxShadow: [BoxShadow(
-                    color: Colors.black.withOpacity(0.2), blurRadius: 8,
-                  )],
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: AppColors.primary),
-                  ),
-                  const SizedBox(width: 10),
-                  Text('Finding road route...',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12, color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                      )),
-                ]),
-              ),
-            ),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8)]),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const SizedBox(width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)),
+                const SizedBox(width: 10),
+                Text('Finding road route...', style: GoogleFonts.poppins(fontSize: 12,
+                    color: Colors.white, fontWeight: FontWeight.w600)),
+              ]),
+            )),
           ),
 
-        // ═══ MY LOCATION BUTTON ═══════════════════════════════════════════
+        // My location button
         if (!_loadingLocation && _destination == null)
-          Positioned(
-            bottom: 28, right: 16,
+          Positioned(bottom: 28, right: 16,
             child: GestureDetector(
               onTap: () {
                 if (_currentLocation != null) {
@@ -729,157 +553,95 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
                       CameraUpdate.newLatLngZoom(_currentLocation!, 16));
                 }
               },
-              child: Container(
-                width: 50, height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(
-                    color: Colors.black.withOpacity(0.2), blurRadius: 8,
-                  )],
-                ),
+              child: Container(width: 50, height: 50,
+                decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                        blurRadius: 8)]),
                 child: const Icon(Icons.my_location_rounded,
-                    color: AppColors.backgroundDark, size: 22),
-              ),
+                    color: AppColors.backgroundDark, size: 22)),
             ),
           ),
 
-        // ═══ BOTTOM ROUTE INFO + CONFIRM ══════════════════════════════════
+        // Bottom route info + confirm
         if (_destination != null)
-          Positioned(
-            bottom: 0, left: 0, right: 0,
+          Positioned(bottom: 0, left: 0, right: 0,
             child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 20, offset: Offset(0, -4),
-                )],
-              ),
+              decoration: const BoxDecoration(color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 20,
+                      offset: Offset(0, -4))]),
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 30),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-
-                // Drag handle
-                Center(child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                )),
+                Center(child: Container(width: 40, height: 4,
+                    decoration: BoxDecoration(color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
                 const SizedBox(height: 14),
 
                 // Route card
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8F9FA),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFFEEEEEE)),
-                  ),
+                  decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFEEEEEE))),
                   child: Column(children: [
-                    // FROM
                     Row(children: [
-                      Container(
-                        width: 11, height: 11,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                              color: AppColors.backgroundDark, width: 2),
-                        ),
-                      ),
+                      Container(width: 11, height: 11,
+                          decoration: BoxDecoration(color: AppColors.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: AppColors.backgroundDark, width: 2))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('FROM', style: GoogleFonts.poppins(
-                            fontSize: 9, color: Colors.black45,
-                            letterSpacing: 1.2, fontWeight: FontWeight.w700,
-                          )),
-                          Text(_pickupName, style: GoogleFonts.poppins(
-                            fontSize: 13, fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ],
-                      )),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text('FROM', style: GoogleFonts.poppins(fontSize: 9, color: Colors.black45,
+                            letterSpacing: 1.2, fontWeight: FontWeight.w700)),
+                        Text(_pickupName, style: GoogleFonts.poppins(fontSize: 13,
+                            fontWeight: FontWeight.w600, color: Colors.black87),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ])),
                     ]),
-
-                    // Dashed connector
-                    Padding(
-                      padding: const EdgeInsets.only(left: 4.5),
-                      child: Column(children: List.generate(3, (_) =>
-                        Container(
-                          width: 1.5, height: 5,
-                          margin: const EdgeInsets.symmetric(vertical: 2),
-                          color: Colors.grey[300],
-                        ),
-                      )),
-                    ),
-
-                    // TO
+                    Padding(padding: const EdgeInsets.only(left: 4.5),
+                        child: Column(children: List.generate(3, (_) => Container(
+                            width: 1.5, height: 5, margin: const EdgeInsets.symmetric(vertical: 2),
+                            color: Colors.grey[300])))),
                     Row(children: [
-                      Container(
-                        width: 11, height: 11,
-                        decoration: BoxDecoration(
-                          color: AppColors.backgroundDark,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
+                      Container(width: 11, height: 11,
+                          decoration: BoxDecoration(color: AppColors.backgroundDark,
+                              borderRadius: BorderRadius.circular(3))),
                       const SizedBox(width: 12),
-                      Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('TO', style: GoogleFonts.poppins(
-                            fontSize: 9, color: Colors.black45,
-                            letterSpacing: 1.2, fontWeight: FontWeight.w700,
-                          )),
-                          Text(_destinationName, style: GoogleFonts.poppins(
-                            fontSize: 13, fontWeight: FontWeight.w600,
-                            color: Colors.black87,
-                          ), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ],
-                      )),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                        Text('TO', style: GoogleFonts.poppins(fontSize: 9, color: Colors.black45,
+                            letterSpacing: 1.2, fontWeight: FontWeight.w700)),
+                        Text(_destinationName, style: GoogleFonts.poppins(fontSize: 13,
+                            fontWeight: FontWeight.w600, color: Colors.black87),
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                      ])),
                     ]),
                   ]),
                 ),
 
                 const SizedBox(height: 12),
 
-                // Stats row
+                // Stats
                 if (_route != null)
                   Row(children: [
                     _statBox('${_route!.etaMinutes} min', 'ETA',
                         Icons.schedule_rounded, AppColors.primary),
                     const SizedBox(width: 8),
-                    _statBox(
-                        '${_route!.distanceKm.toStringAsFixed(1)} km',
-                        'Distance',
-                        Icons.route_rounded,
-                        Colors.blue),
+                    _statBox('${_route!.distanceKm.toStringAsFixed(1)} km', 'Distance',
+                        Icons.route_rounded, Colors.blue),
                     const SizedBox(width: 8),
-                    _statBox('~₱${_estimateFare(_route!.distanceKm)}',
-                        'Est. Fare',
-                        Icons.payments_rounded,
-                        Colors.green),
+                    _statBox('~₱${_estimateFare(_route!.distanceKm)}', 'Est. Fare',
+                        Icons.payments_rounded, Colors.green),
                   ])
                 else if (_isRouting)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                      const SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: AppColors.primary),
-                      ),
+                  Padding(padding: const EdgeInsets.symmetric(vertical: 10),
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.primary)),
                       const SizedBox(width: 10),
-                      Text('Calculating route...',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13, color: Colors.black54,
-                          )),
+                      Text('Calculating route...', style: GoogleFonts.poppins(
+                          fontSize: 13, color: Colors.black54)),
                     ]),
                   ),
 
@@ -892,54 +654,37 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
                     onPressed: _isRouting ? null : _confirmDestination,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.backgroundDark,
-                      disabledBackgroundColor:
-                          AppColors.backgroundDark.withOpacity(0.4),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
+                      disabledBackgroundColor: AppColors.backgroundDark.withOpacity(0.4),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
                     ),
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.electric_rickshaw_rounded,
                           color: AppColors.primary, size: 20),
                       const SizedBox(width: 8),
-                      Text('Confirm Destination',
-                          style: GoogleFonts.poppins(
-                            fontSize: 15, fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          )),
+                      Text('Confirm Destination', style: GoogleFonts.poppins(
+                          fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
                     ]),
                   ),
                 ),
               ]),
-            ).animate().slideY(
-                begin: 0.3, end: 0,
-                duration: 400.ms, curve: Curves.easeOut),
+            ).animate().slideY(begin: 0.3, end: 0, duration: 400.ms, curve: Curves.easeOut),
           ),
       ]),
     );
   }
 
   Widget _statBox(String value, String label, IconData icon, Color color) =>
-      Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.08),
+      Expanded(child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(color: color.withOpacity(0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withOpacity(0.2)),
-          ),
-          child: Column(children: [
-            Icon(icon, size: 16, color: color),
-            const SizedBox(height: 4),
-            Text(value, style: GoogleFonts.poppins(
-              fontSize: 14, fontWeight: FontWeight.w800, color: Colors.black87,
-            )),
-            Text(label, style: GoogleFonts.poppins(
-              fontSize: 10, color: Colors.black45,
-            )),
-          ]),
-        ),
-      );
+            border: Border.all(color: color.withOpacity(0.2))),
+        child: Column(children: [
+          Icon(icon, size: 16, color: color), const SizedBox(height: 4),
+          Text(value, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800,
+              color: Colors.black87)),
+          Text(label, style: GoogleFonts.poppins(fontSize: 10, color: Colors.black45)),
+        ]),
+      ));
 }
