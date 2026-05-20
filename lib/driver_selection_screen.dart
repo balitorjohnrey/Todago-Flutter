@@ -78,7 +78,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
       final trip = result['trip'] as Map<String, dynamic>? ?? {};
       // Navigate to waiting screen — shows live tracking once driver accepts
       Navigator.of(context).pushReplacement(PageRouteBuilder(
-        pageBuilder: (_, __, ___) => PassengerWaitingScreen(
+        pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
           tripId: trip['trip_id']?.toString() ?? '',
           driverName: _selectedDriver['driver_name']?.toString() ?? 'Driver',
           driverRating: _safeDouble(_selectedDriver['avg_rating'], 0.0),
@@ -86,8 +86,6 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
           plateNo: _selectedDriver['plate_no']?.toString() ?? '',
           etaMinutes: _safeInt(_selectedDriver['eta_minutes'], 5),
           distanceKm: _safeDouble(_selectedDriver['distance_km'], 1.0),
-          fare: widget.fareAmount,
-          serviceType: widget.serviceType,
         ),
         transitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (_, anim, __, child) =>
