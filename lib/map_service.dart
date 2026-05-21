@@ -3,7 +3,10 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 
-const String _googleApiKey = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
+const String _key = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
+const String _placesBase    = 'https://maps.googleapis.com/maps/api/place';
+const String _directionsBase = 'https://maps.googleapis.com/maps/api/directions/json';
+const String _geocodeBase    = 'https://maps.googleapis.com/maps/api/geocode/json';
 
 class MapRoute {
   final List<LatLng> points;
@@ -36,7 +39,8 @@ class PlaceSuggestion {
 }
 
 class MapService {
-  // ── Get real GPS location ─────────────────────────────────────────────────
+
+  // ── GPS location ──────────────────────────────────────────────────────────
   static Future<LatLng?> getCurrentLocation() async {
     try {
       bool enabled = await Geolocator.isLocationServiceEnabled();
@@ -57,7 +61,7 @@ class MapService {
     }
   }
 
-  // ── Stream position updates ───────────────────────────────────────────────
+  // ── Live position stream ──────────────────────────────────────────────────
   static Stream<LatLng> positionStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -67,49 +71,75 @@ class MapService {
     ).map((p) => LatLng(p.latitude, p.longitude));
   }
 
-  // ── Places Autocomplete ───────────────────────────────────────────────────
-  static Future<List<PlaceSuggestion>> searchPlaces(String query) async {
+  // ── Google Places Autocomplete ────────────────────────────────────────────
+  static Future<List<PlaceSuggestion>> searchPlaces(
+    String query, {
+    LatLng? locationBias,
+  }) async {
     if (query.trim().length < 2) return [];
     try {
+      final bias = locationBias ?? const LatLng(7.1907, 125.4553);
       final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/autocomplete/json'
+        '$_placesBase/autocomplete/json'
         '?input=${Uri.encodeComponent(query)}'
+        '&key=$_key'
+        '&language=en'
         '&components=country:ph'
-        '&location=7.1907,125.4553'  // bias toward Davao
-        '&radius=50000'
-        '&key=$_googleApiKey',
+        '&location=${bias.latitude},${bias.longitude}'
+        '&radius=50000',
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final predictions = data['predictions'] as List? ?? [];
-        return predictions.map((p) {
-          final structured = p['structured_formatting'] ?? {};
-          return PlaceSuggestion(
-            placeId: p['place_id'] as String? ?? '',
-            mainText: structured['main_text'] as String? ?? p['description'] as String? ?? '',
-            secondaryText: structured['secondary_text'] as String? ?? '',
-            fullText: p['description'] as String? ?? '',
-          );
-        }).toList();
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final status = data['status'] as String? ?? '';
+
+        // Log for debugging
+        if (status != 'OK' && status != 'ZERO_RESULTS') {
+          // status could be REQUEST_DENIED, NOT_FOUND, etc.
+        }
+
+        if (status == 'OK') {
+          final predictions = data['predictions'] as List? ?? [];
+          return predictions.map((p) {
+            final sf = p['structured_formatting'] as Map? ?? {};
+            return PlaceSuggestion(
+              placeId    : p['place_id'] as String? ?? '',
+              mainText   : sf['main_text'] as String?
+                           ?? p['description'] as String? ?? '',
+              secondaryText: sf['secondary_text'] as String? ?? '',
+              fullText   : p['description'] as String? ?? '',
+            );
+          }).toList();
+        }
       }
     } catch (_) {}
     return [];
   }
 
-  // ── Get lat/lng from Place ID ─────────────────────────────────────────────
+  // ── Google Place Details → LatLng ─────────────────────────────────────────
   static Future<LatLng?> getPlaceLatLng(String placeId) async {
+    // Encoded coordinate ID from fallback
+    if (placeId.startsWith('coord:')) {
+      final parts = placeId.split(':');
+      if (parts.length == 3) {
+        final lat = double.tryParse(parts[1]);
+        final lng = double.tryParse(parts[2]);
+        if (lat != null && lng != null) return LatLng(lat, lng);
+      }
+      return null;
+    }
+    // Google Place Details
     try {
       final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/place/details/json'
+        '$_placesBase/details/json'
         '?place_id=$placeId'
-        '&fields=geometry'
-        '&key=$_googleApiKey',
+        '&fields=geometry/location'
+        '&key=$_key',
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 10));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final loc = data['result']?['geometry']?['location'];
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final loc  = data['result']?['geometry']?['location'];
         if (loc != null) {
           return LatLng(
             (loc['lat'] as num).toDouble(),
@@ -121,17 +151,18 @@ class MapService {
     return null;
   }
 
-  // ── Reverse geocode ───────────────────────────────────────────────────────
+  // ── Google Geocoding — coords → address ───────────────────────────────────
   static Future<String> reverseGeocode(LatLng pos) async {
     try {
       final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json'
+        '$_geocodeBase'
         '?latlng=${pos.latitude},${pos.longitude}'
-        '&key=$_googleApiKey',
+        '&key=$_key'
+        '&language=en',
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data    = jsonDecode(res.body) as Map<String, dynamic>;
         final results = data['results'] as List?;
         if (results != null && results.isNotEmpty) {
           return results.first['formatted_address'] as String? ?? 'Your Location';
@@ -141,50 +172,54 @@ class MapService {
     return 'Your Location';
   }
 
-  // ── Fetch road-following route via Google Directions API ──────────────────
+  // ── Google Directions API — road-following route ───────────────────────────
   static Future<MapRoute?> fetchRoute(LatLng from, LatLng to) async {
     try {
       final uri = Uri.parse(
-        'https://maps.googleapis.com/maps/api/directions/json'
+        '$_directionsBase'
         '?origin=${from.latitude},${from.longitude}'
         '&destination=${to.latitude},${to.longitude}'
         '&mode=driving'
-        '&key=$_googleApiKey',
+        '&key=$_key'
+        '&language=en',
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final routes = data['routes'] as List?;
-        if (routes != null && routes.isNotEmpty) {
-          final route = routes.first;
-          final leg   = route['legs'].first;
+        final data   = jsonDecode(res.body) as Map<String, dynamic>;
+        final status = data['status'] as String? ?? '';
+        if (status == 'OK') {
+          final routes = data['routes'] as List?;
+          if (routes != null && routes.isNotEmpty) {
+            final route = routes.first as Map<String, dynamic>;
+            final leg   = (route['legs'] as List).first as Map<String, dynamic>;
 
-          final distMeters = (leg['distance']['value'] as num).toDouble();
-          final durSecs    = (leg['duration']['value'] as num).toDouble();
-          final distText   = leg['distance']['text'] as String? ?? '';
-          final durText    = leg['duration']['text'] as String? ?? '';
+            final distM    = (leg['distance']['value'] as num).toDouble();
+            final durS     = (leg['duration']['value'] as num).toDouble();
+            final distText = leg['distance']['text'] as String? ?? '';
+            final durText  = leg['duration']['text']  as String? ?? '';
 
-          // Decode polyline
-          final encodedPoly = route['overview_polyline']['points'] as String;
-          final points = _decodePolyline(encodedPoly);
+            // Decode Google encoded polyline
+            final encoded = route['overview_polyline']['points'] as String;
+            final points  = _decodePolyline(encoded);
 
-          return MapRoute(
-            points: points,
-            distanceKm: distMeters / 1000,
-            etaMinutes: (durSecs / 60).ceil(),
-            distanceText: distText,
-            durationText: durText,
-          );
+            return MapRoute(
+              points       : points,
+              distanceKm   : distM / 1000,
+              etaMinutes   : (durS / 60).ceil(),
+              distanceText : distText,
+              durationText : durText,
+            );
+          }
         }
       }
     } catch (_) {}
 
-    // Fallback: straight line
+    // Straight-line fallback only if Google fails
     final dist = _haversineKm(from, to);
     return MapRoute(
-      points: [from, to],
-      distanceKm: dist,
-      etaMinutes: (dist / 0.4).ceil(),
+      points     : [from, to],
+      distanceKm : dist,
+      etaMinutes : (dist / 0.4).ceil(),
     );
   }
 
@@ -193,56 +228,52 @@ class MapService {
     final points = <LatLng>[];
     int index = 0, len = encoded.length;
     int lat = 0, lng = 0;
-
     while (index < len) {
-      int shift = 0, result = 0, b;
+      int b, shift = 0, result = 0;
       do {
         b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1F) << shift;
+        result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
       lat += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
       shift = 0; result = 0;
       do {
         b = encoded.codeUnitAt(index++) - 63;
-        result |= (b & 0x1F) << shift;
+        result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
       lng += (result & 1) != 0 ? ~(result >> 1) : (result >> 1);
-
       points.add(LatLng(lat / 1e5, lng / 1e5));
     }
     return points;
   }
 
-  // ── Haversine straight-line distance (km) ─────────────────────────────────
+  // ── Haversine distance (km) ───────────────────────────────────────────────
   static double _haversineKm(LatLng a, LatLng b) {
     const r = 6371.0;
-    final dLat = _toRad(b.latitude  - a.latitude);
-    final dLng = _toRad(b.longitude - a.longitude);
-    final sinLat = _sin(dLat / 2);
-    final sinLng = _sin(dLng / 2);
-    final h = sinLat * sinLat +
-        _cos(_toRad(a.latitude)) * _cos(_toRad(b.latitude)) * sinLng * sinLng;
+    final dLat = _rad(b.latitude  - a.latitude);
+    final dLng = _rad(b.longitude - a.longitude);
+    final h = _sin2(dLat / 2) +
+        _cos(_rad(a.latitude)) * _cos(_rad(b.latitude)) * _sin2(dLng / 2);
     return 2 * r * _asin(_sqrt(h));
   }
 
-  static double _toRad(double d) => d * 3.14159265358979 / 180;
-  static double _sin(double x) {
-    double s = x, term = x;
+  static double _rad(double d)  => d * 3.14159265358979 / 180;
+  static double _sin2(double x) => _sinX(x) * _sinX(x);
+  static double _sinX(double x) {
+    double s = x, t = x;
     for (int i = 1; i <= 7; i++) {
-      term *= -x * x / ((2 * i) * (2 * i + 1));
-      s += term;
+      t *= -x * x / ((2 * i) * (2 * i + 1));
+      s += t;
     }
     return s;
   }
-  static double _cos(double x) => _sin(3.14159265358979 / 2 - x);
+  static double _cos(double x)  => _sinX(3.14159265358979 / 2 - x);
   static double _asin(double x) {
-    double s = x, term = x;
+    double s = x, t = x;
     for (int i = 1; i <= 7; i++) {
-      term *= (2.0 * i - 1) * (2.0 * i - 1) * x * x / ((2.0 * i) * (2.0 * i + 1));
-      s += term;
+      t *= (2.0*i-1)*(2.0*i-1)*x*x / ((2.0*i)*(2.0*i+1));
+      s += t;
     }
     return s;
   }
