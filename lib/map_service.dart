@@ -71,14 +71,16 @@ class MapService {
     ).map((p) => LatLng(p.latitude, p.longitude));
   }
 
-  // ── Google Places Autocomplete ────────────────────────────────────────────
+  // ── Google Places Autocomplete → Photon fallback ─────────────────────────
   static Future<List<PlaceSuggestion>> searchPlaces(
     String query, {
     LatLng? locationBias,
   }) async {
     if (query.trim().length < 2) return [];
+    final bias = locationBias ?? const LatLng(7.1907, 125.4553);
+
+    // 1st: Google Places Autocomplete (requires billing activated)
     try {
-      final bias = locationBias ?? const LatLng(7.1907, 125.4553);
       final uri = Uri.parse(
         '$_placesBase/autocomplete/json'
         '?input=${Uri.encodeComponent(query)}'
@@ -88,37 +90,84 @@ class MapService {
         '&location=${bias.latitude},${bias.longitude}'
         '&radius=50000',
       );
-      final res = await http.get(uri).timeout(const Duration(seconds: 10));
+      final res = await http.get(uri).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final data   = jsonDecode(res.body) as Map<String, dynamic>;
         final status = data['status'] as String? ?? '';
-
-        // Log for debugging
-        if (status != 'OK' && status != 'ZERO_RESULTS') {
-          // status could be REQUEST_DENIED, NOT_FOUND, etc.
-        }
-
         if (status == 'OK') {
           final predictions = data['predictions'] as List? ?? [];
-          return predictions.map((p) {
-            final sf = p['structured_formatting'] as Map? ?? {};
-            return PlaceSuggestion(
-              placeId    : p['place_id'] as String? ?? '',
-              mainText   : sf['main_text'] as String?
-                           ?? p['description'] as String? ?? '',
-              secondaryText: sf['secondary_text'] as String? ?? '',
-              fullText   : p['description'] as String? ?? '',
-            );
-          }).toList();
+          if (predictions.isNotEmpty) {
+            return predictions.map((p) {
+              final sf = p['structured_formatting'] as Map? ?? {};
+              return PlaceSuggestion(
+                placeId       : p['place_id'] as String? ?? '',
+                mainText      : sf['main_text'] as String?
+                                ?? p['description'] as String? ?? '',
+                secondaryText : sf['secondary_text'] as String? ?? '',
+                fullText      : p['description'] as String? ?? '',
+              );
+            }).toList();
+          }
         }
       }
+    } catch (_) {}
+
+    // 2nd: Photon geocoder (free, no key, works on Android, OSM-based)
+    return _searchPhoton(query, bias);
+  }
+
+  static Future<List<PlaceSuggestion>> _searchPhoton(
+      String query, LatLng bias) async {
+    try {
+      final uri = Uri.parse(
+        'https://photon.komoot.io/api/'
+        '?q=${Uri.encodeComponent(query)}'
+        '&lat=${bias.latitude}&lon=${bias.longitude}'
+        '&zoom=14&limit=8&lang=en',
+      );
+      final res = await http
+          .get(uri, headers: {'Accept': 'application/json'})
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return [];
+      final data     = jsonDecode(res.body) as Map<String, dynamic>;
+      final features = data['features'] as List? ?? [];
+      final results  = <PlaceSuggestion>[];
+      for (final f in features) {
+        final props  = f['properties'] as Map<String, dynamic>? ?? {};
+        final country = props['country'] as String? ?? '';
+        // Only Philippines results
+        if (country.isNotEmpty && country != 'Philippines') continue;
+        final coords = (f['geometry']?['coordinates'] as List?) ?? [0.0, 0.0];
+        final lon    = (coords[0] as num).toDouble();
+        final lat    = (coords[1] as num).toDouble();
+        final name   = props['name']     as String? ?? '';
+        final street = props['street']   as String? ?? '';
+        final city   = props['city']     as String?
+                    ?? props['town']     as String?
+                    ?? props['county']   as String? ?? '';
+        final mainText = name.isNotEmpty ? name
+                       : street.isNotEmpty ? street : city;
+        if (mainText.isEmpty) continue;
+        final secondary = [
+          if (street.isNotEmpty && mainText != street) street,
+          if (city.isNotEmpty)   city,
+          'Philippines',
+        ].join(', ');
+        results.add(PlaceSuggestion(
+          placeId       : 'coord:$lat:$lon',
+          mainText      : mainText,
+          secondaryText : secondary,
+          fullText      : '$mainText, $secondary',
+        ));
+      }
+      return results;
     } catch (_) {}
     return [];
   }
 
   // ── Google Place Details → LatLng ─────────────────────────────────────────
   static Future<LatLng?> getPlaceLatLng(String placeId) async {
-    // Encoded coordinate ID from fallback
+    // Photon result — coords already encoded in the ID
     if (placeId.startsWith('coord:')) {
       final parts = placeId.split(':');
       if (parts.length == 3) {
