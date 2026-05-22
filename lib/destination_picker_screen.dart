@@ -91,7 +91,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen> {
         Polyline(
           polylineId: const PolylineId('route'),
           points: points,
-          color: const Color(0xFFF5B731),
+          color: const Color(0xFF1A73E8),
           width: 5,
           jointType: JointType.round,
           startCap: Cap.roundCap,

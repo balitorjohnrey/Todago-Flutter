@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
-import 'passenger_waiting_screen.dart';
+import 'live_trip_tracking_screen.dart';
 
 class DriverSelectionScreen extends StatefulWidget {
   final String serviceType;

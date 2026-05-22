@@ -85,7 +85,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     setState(() {
       _polylines = { Polyline(
         polylineId: const PolylineId('route'), points: pts,
-        color: const Color(0xFFF5B731), width: 5,
+        color: const Color(0xFF1A73E8), width: 5,
         jointType: JointType.round, startCap: Cap.roundCap, endCap: Cap.roundCap) };
     });
   }

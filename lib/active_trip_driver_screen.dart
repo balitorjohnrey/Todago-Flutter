@@ -86,7 +86,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     setState(() {
       _polylines = { Polyline(
         polylineId: const PolylineId('route'), points: pts,
-        color: Colors.green, width: 5,
+        color: const Color(0xFF1A73E8), width: 5,
         jointType: JointType.round, startCap: Cap.roundCap, endCap: Cap.roundCap) };
     });
   }

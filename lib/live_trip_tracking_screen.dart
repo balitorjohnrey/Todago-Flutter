@@ -63,7 +63,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     final route = await MapService.fetchRoute(driverPos, myPos);
     if (mounted && route != null) {
       setState(() => _route = route);
-      _updatePolyline(route.points, const Color(0xFFF5B731));
+      _updatePolyline(route.points, const Color(0xFF1A73E8));
       _fitBounds(driverPos, myPos);
     }
 
