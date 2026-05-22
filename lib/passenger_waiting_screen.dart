@@ -33,27 +33,36 @@ class PassengerWaitingScreen extends StatefulWidget {
   });
 
   @override
-  State<PassengerWaitingScreen> createState() => _PassengerWaitingScreenState();
+  State<PassengerWaitingScreen> createState() =>
+      _PassengerWaitingScreenState();
 }
 
 class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseCtrl;
   GoogleMapController? _mapCtrl;
-  LatLng? _myLocation;
-  MapRoute? _route;
+  LatLng? _myLocation;   // passenger
+  LatLng? _driverPos;    // driver
+  MapRoute? _route;      // live road route
+  bool _isFetchingRoute = false;
+  bool _isNavigating = false;
+  bool _isCancelling = false;
+
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
 
   Timer? _pollTimer;
+  Timer? _routeRefreshTimer;
   Timer? _dotsTimer;
   Timer? _waitTimer;
   StreamSubscription<LatLng>? _locSub;
 
   int _dotsCount = 1;
   int _waitSeconds = 0;
-  bool _isCancelling = false;
-  bool _isNavigating = false;
+
+  // ── Live ETA / distance from real route ───────────────────────────────────
+  int get _liveEta => _route?.etaMinutes ?? widget.etaMinutes;
+  double get _liveDist => _route?.distanceKm ?? widget.distanceKm;
 
   String get _initials => widget.driverName
       .trim()
@@ -68,10 +77,9 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 2),
-    )..repeat();
+    _pulseCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 2))
+          ..repeat();
     _dotsTimer = Timer.periodic(const Duration(milliseconds: 600), (_) {
       if (mounted) setState(() => _dotsCount = (_dotsCount % 3) + 1);
     });
@@ -84,59 +92,115 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     Future.delayed(const Duration(seconds: 1), _checkStatus);
   }
 
+  // ── Initialization ────────────────────────────────────────────────────────
   Future<void> _init() async {
     final loc = await MapService.getCurrentLocation();
     if (!mounted) return;
+
     final myPos = loc ?? const LatLng(7.1907, 125.4553);
-    final driverPos = LatLng(myPos.latitude + 0.008, myPos.longitude + 0.006);
+    final driverPos =
+        LatLng(myPos.latitude + 0.008, myPos.longitude + 0.006);
+
     setState(() {
       _myLocation = myPos;
+      _driverPos = driverPos;
     });
+
     _updateMarkers(myPos, driverPos);
-    final route = await MapService.fetchRoute(driverPos, myPos);
-    if (mounted && route != null) {
-      setState(() => _route = route);
-      _updatePolyline(route.points);
-      _fitBounds(driverPos, myPos);
-    }
-    _locSub = MapService.positionStream().listen((pos) {
+
+    // Initial road route: driver → passenger
+    await _fetchAndDrawRoute(driverPos, myPos);
+    _fitBounds(driverPos, myPos);
+
+    // ── Passenger position stream ─────────────────────────────────────────
+    _locSub = MapService.positionStream().listen((pos) async {
       if (!mounted) return;
       setState(() => _myLocation = pos);
-      _markers = {
-        ..._markers.where((m) => m.markerId.value != 'passenger'),
-        Marker(
-          markerId: const MarkerId('passenger'),
-          position: pos,
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
-          infoWindow: const InfoWindow(title: 'You'),
-        ),
-      };
+      _updatePassengerMarker(pos);
+
+      // Refresh road route when passenger moves
+      if (_driverPos != null && !_isFetchingRoute) {
+        await _fetchAndDrawRoute(_driverPos!, pos);
+      }
+    });
+
+    // ── Periodic route refresh every 10 s as backup ──────────────────────
+    _routeRefreshTimer =
+        Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (!mounted || _driverPos == null || _myLocation == null) return;
+      await _fetchAndDrawRoute(_driverPos!, _myLocation!);
     });
   }
 
-  void _updateMarkers(LatLng my, LatLng driver) {
+  // ── Route helper ──────────────────────────────────────────────────────────
+  Future<void> _fetchAndDrawRoute(LatLng from, LatLng to) async {
+    if (_isFetchingRoute) return;
+    _isFetchingRoute = true;
+    try {
+      final route = await MapService.fetchRoute(from, to);
+      if (mounted && route != null) {
+        setState(() => _route = route);
+        _updatePolyline(route.points);
+      }
+    } finally {
+      _isFetchingRoute = false;
+    }
+  }
+
+  void _updateMarkers(LatLng passenger, LatLng driver) {
     setState(() {
       _markers = {
         Marker(
           markerId: const MarkerId('passenger'),
-          position: my,
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+          position: passenger,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueYellow),
           infoWindow: const InfoWindow(title: 'You'),
         ),
         Marker(
           markerId: const MarkerId('driver'),
           position: driver,
-          icon:
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-          infoWindow:
-              InfoWindow(title: widget.driverName, snippet: 'Coming to you'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(
+              title: widget.driverName, snippet: 'Coming to you'),
         ),
       };
     });
   }
 
+  void _updatePassengerMarker(LatLng pos) {
+    setState(() {
+      _markers = {
+        ..._markers.where((m) => m.markerId.value != 'passenger'),
+        Marker(
+          markerId: const MarkerId('passenger'),
+          position: pos,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueYellow),
+          infoWindow: const InfoWindow(title: 'You'),
+        ),
+      };
+    });
+  }
+
+  void _updateDriverMarker(LatLng pos) {
+    setState(() {
+      _markers = {
+        ..._markers.where((m) => m.markerId.value != 'driver'),
+        Marker(
+          markerId: const MarkerId('driver'),
+          position: pos,
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(
+              title: widget.driverName, snippet: 'Coming to you'),
+        ),
+      };
+    });
+  }
+
+  // ── Blue road-following polyline (same as destination_picker) ─────────────
   void _updatePolyline(List<LatLng> pts) {
     setState(() {
       _polylines = {
@@ -167,6 +231,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     _mapCtrl?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
+  // ── Status polling ────────────────────────────────────────────────────────
   Future<void> _checkStatus() async {
     if (_isNavigating || !mounted) return;
     try {
@@ -174,7 +239,24 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
       if (!mounted || _isNavigating) return;
       if (trip != null) {
         final status = trip['status']?.toString() ?? '';
-        if (status == 'accepted' || status == 'pickup' || status == 'ongoing') {
+
+        // Update driver marker if server provides coords
+        final driverLat =
+            double.tryParse(trip['driver_lat']?.toString() ?? '');
+        final driverLng =
+            double.tryParse(trip['driver_lng']?.toString() ?? '');
+        if (driverLat != null && driverLng != null) {
+          final newDriverPos = LatLng(driverLat, driverLng);
+          setState(() => _driverPos = newDriverPos);
+          _updateDriverMarker(newDriverPos);
+          if (_myLocation != null && !_isFetchingRoute) {
+            await _fetchAndDrawRoute(newDriverPos, _myLocation!);
+          }
+        }
+
+        if (status == 'accepted' ||
+            status == 'pickup' ||
+            status == 'ongoing') {
           _isNavigating = true;
           _stopTimers();
           Navigator.of(context).pushReplacement(
@@ -184,11 +266,13 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                 driverName:
                     trip['driver_name']?.toString() ?? widget.driverName,
                 driverRating: widget.driverRating,
-                todaBodyNumber: trip['toda_body_number']?.toString() ??
-                    widget.todaBodyNumber,
-                plateNo: trip['plate_no']?.toString() ?? widget.plateNo,
-                etaMinutes: widget.etaMinutes,
-                distanceKm: widget.distanceKm,
+                todaBodyNumber:
+                    trip['toda_body_number']?.toString() ??
+                        widget.todaBodyNumber,
+                plateNo:
+                    trip['plate_no']?.toString() ?? widget.plateNo,
+                etaMinutes: _liveEta,
+                distanceKm: _liveDist,
               ),
               transitionDuration: const Duration(milliseconds: 500),
               transitionsBuilder: (_, anim, __, child) =>
@@ -199,22 +283,19 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
           _isNavigating = true;
           _stopTimers();
           if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Driver declined. Please try again.',
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Driver declined. Please try again.',
                 style: GoogleFonts.poppins(
-                    fontSize: 13, fontWeight: FontWeight.w500),
-              ),
-              backgroundColor: AppColors.error,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              margin: const EdgeInsets.all(16),
-            ),
-          );
+                    fontSize: 13, fontWeight: FontWeight.w500)),
+            backgroundColor: AppColors.error,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+            margin: const EdgeInsets.all(16),
+          ));
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const PassengerHomeScreen()),
+            MaterialPageRoute(
+                builder: (_) => const PassengerHomeScreen()),
             (_) => false,
           );
         }
@@ -224,6 +305,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
 
   void _stopTimers() {
     _pollTimer?.cancel();
+    _routeRefreshTimer?.cancel();
     _dotsTimer?.cancel();
     _waitTimer?.cancel();
     _locSub?.cancel();
@@ -259,342 +341,331 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          // ── Map ──────────────────────────────────────────────────────────
-          Positioned.fill(
-            child: _myLocation == null
-                ? Container(
-                    color: const Color(0xFFE8EFF5),
-                    child: const Center(
-                      child:
-                          CircularProgressIndicator(color: AppColors.primary),
-                    ),
-                  )
-                : GoogleMap(
-                    initialCameraPosition:
-                        CameraPosition(target: _myLocation!, zoom: 15),
-                    onMapCreated: (ctrl) => _mapCtrl = ctrl,
-                    markers: _markers,
-                    polylines: _polylines,
-                    myLocationEnabled: true,
-                    myLocationButtonEnabled: false,
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                  ),
-          ),
+      body: Stack(children: [
+        // ── Map ────────────────────────────────────────────────────────────
+        Positioned.fill(
+          child: _myLocation == null
+              ? Container(
+                  color: const Color(0xFFE8EFF5),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                        color: AppColors.primary),
+                  ))
+              : GoogleMap(
+                  initialCameraPosition:
+                      CameraPosition(target: _myLocation!, zoom: 15),
+                  onMapCreated: (ctrl) {
+                    _mapCtrl = ctrl;
+                    if (_driverPos != null && _myLocation != null) {
+                      _fitBounds(_driverPos!, _myLocation!);
+                    }
+                  },
+                  markers: _markers,
+                  polylines: _polylines,
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: false,
+                  zoomControlsEnabled: false,
+                  mapToolbarEnabled: false,
+                ),
+        ),
 
-          // ── Top status bar ───────────────────────────────────────────────
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withAlpha(31),
-                        blurRadius: 12,
-                        offset: const Offset(0, 3),
+        // ── Top status bar ─────────────────────────────────────────────────
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(31),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    )
+                  ],
+                ),
+                child: Row(children: [
+                  AnimatedBuilder(
+                    animation: _pulseCtrl,
+                    builder: (_, __) => Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withAlpha(
+                          (102 + (153 * _pulseCtrl.value).round())
+                              .clamp(0, 255),
+                        ),
+                        shape: BoxShape.circle,
                       ),
-                    ],
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      AnimatedBuilder(
-                        animation: _pulseCtrl,
-                        builder: (_, __) => Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withAlpha(
-                              (102 + (153 * _pulseCtrl.value).round())
-                                  .clamp(0, 255),
-                            ),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Waiting for driver${'.' * _dotsCount}',
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.backgroundDark,
-                            ),
-                          ),
-                          Text(
-                            'Wait time: $_waitTime',
-                            style: GoogleFonts.poppins(
-                              fontSize: 11,
-                              color: AppColors.textHint,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withAlpha(26),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${widget.etaMinutes} min',
+                  const SizedBox(width: 10),
+                  Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Waiting for driver${'.' * _dotsCount}',
                           style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.backgroundDark,
                           ),
                         ),
+                        Text(
+                          'Wait time: $_waitTime',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: AppColors.textHint,
+                          ),
+                        ),
+                      ]),
+                  const Spacer(),
+                  // Re-center button
+                  GestureDetector(
+                    onTap: () {
+                      if (_driverPos != null && _myLocation != null) {
+                        _fitBounds(_driverPos!, _myLocation!);
+                      }
+                    },
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0F2F5),
+                        shape: BoxShape.circle,
                       ),
-                    ],
+                      child: const Icon(Icons.my_location_rounded,
+                          size: 16, color: Colors.black54),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  // Live ETA badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withAlpha(26),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '$_liveEta min',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ),
+
+        // ── Bottom card ────────────────────────────────────────────────────
+        Positioned(
+          bottom: 0,
+          left: 0,
+          right: 0,
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius:
+                  BorderRadius.vertical(top: Radius.circular(24)),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 20,
+                    offset: Offset(0, -4))
+              ],
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E0E0),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
               ),
-            ),
-          ),
+              const SizedBox(height: 16),
 
-          // ── Bottom card ──────────────────────────────────────────────────
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 20,
-                    offset: Offset(0, -4),
+              // Driver row
+              Row(children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: AppColors.backgroundDark,
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                ],
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Drag handle
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFE0E0E0),
-                        borderRadius: BorderRadius.circular(2),
+                  child: Center(
+                    child: Text(
+                      _initials,
+                      style: GoogleFonts.poppins(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Driver row
-                  Row(
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: AppColors.backgroundDark,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Center(
-                          child: Text(
-                            _initials,
-                            style: GoogleFonts.poppins(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              widget.driverName,
-                              style: GoogleFonts.poppins(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.backgroundDark,
-                              ),
-                            ),
-                            Text(
-                              widget.todaBodyNumber,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.textHint,
-                              ),
-                            ),
-                            if (widget.plateNo.isNotEmpty)
-                              Text(
-                                'Plate: ${widget.plateNo}',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 11,
-                                  color: AppColors.textHint,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.orange.withAlpha(26),
-                          borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: Colors.orange.withAlpha(77)),
-                        ),
-                        child: Text(
-                          'Waiting',
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.orange,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Distance / ETA / Fare row
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FA),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _info(
-                          '${widget.distanceKm.toStringAsFixed(1)} km',
-                          'Distance',
-                          Icons.route_rounded,
+                        Text(
+                          widget.driverName,
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.backgroundDark,
+                          ),
                         ),
-                        _divV(),
-                        _info(
-                          '${widget.etaMinutes} min',
-                          'ETA',
-                          Icons.schedule_rounded,
-                        ),
-                        _divV(),
-                        _info(
-                          '₱${widget.fare.toStringAsFixed(0)}',
-                          'Fare',
-                          Icons.payments_rounded,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Poll indicator
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Checking every 4 seconds...',
-                        style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          color: AppColors.textHint,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-
-                  // Cancel button
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: OutlinedButton(
-                      onPressed: _isCancelling ? null : _cancelRide,
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(
-                          color: Color(0xFFE0E0E0),
-                          width: 1.5,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                      ),
-                      child: _isCancelling
-                          ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : Text(
-                              'Cancel Ride',
+                        Row(children: [
+                          const Icon(Icons.star_rounded,
+                              color: AppColors.primary, size: 14),
+                          const SizedBox(width: 3),
+                          Text(
+                            widget.driverRating.toStringAsFixed(1),
+                            style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: AppColors.backgroundDark,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ]),
+                        if (widget.todaBodyNumber.isNotEmpty)
+                          Text(widget.todaBodyNumber,
                               style: GoogleFonts.poppins(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.error,
-                              ),
-                            ),
+                                  fontSize: 12,
+                                  color: AppColors.textHint)),
+                        if (widget.plateNo.isNotEmpty)
+                          Text('Plate: ${widget.plateNo}',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  color: AppColors.textHint)),
+                      ]),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withAlpha(26),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: Colors.orange.withAlpha(77)),
+                  ),
+                  child: Text(
+                    'Waiting',
+                    style: GoogleFonts.poppins(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.orange,
                     ),
                   ),
-                ],
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              // Distance / ETA / Fare — live from _route
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FA),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFEEEEEE)),
+                ),
+                child: Row(children: [
+                  _info('${_liveDist.toStringAsFixed(1)} km',
+                      'Distance', Icons.route_rounded),
+                  _divV(),
+                  _info('$_liveEta min', 'ETA',
+                      Icons.schedule_rounded),
+                  _divV(),
+                  _info('₱${widget.fare.toStringAsFixed(0)}', 'Fare',
+                      Icons.payments_rounded),
+                ]),
               ),
-            ),
+              const SizedBox(height: 12),
+
+              // Poll indicator
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: AppColors.primary),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Checking every 4 seconds...',
+                  style: GoogleFonts.poppins(
+                      fontSize: 11, color: AppColors.textHint),
+                ),
+              ]),
+              const SizedBox(height: 14),
+
+              // Cancel button
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton(
+                  onPressed: _isCancelling ? null : _cancelRide,
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(
+                        color: Color(0xFFE0E0E0), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: _isCancelling
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child:
+                              CircularProgressIndicator(strokeWidth: 2))
+                      : Text(
+                          'Cancel Ride',
+                          style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.error,
+                          ),
+                        ),
+                ),
+              ),
+            ]),
           ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 
   Widget _info(String v, String l, IconData icon) => Expanded(
-        child: Column(
-          children: [
-            Icon(icon, size: 18, color: AppColors.primary),
-            const SizedBox(height: 4),
-            Text(
-              v,
+        child: Column(children: [
+          Icon(icon, size: 18, color: AppColors.primary),
+          const SizedBox(height: 4),
+          Text(v,
               style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: AppColors.backgroundDark,
-              ),
-            ),
-            Text(
-              l,
-              style:
-                  GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint),
-            ),
-          ],
-        ),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark)),
+          Text(l,
+              style: GoogleFonts.poppins(
+                  fontSize: 10, color: AppColors.textHint)),
+        ]),
       );
 
-  Widget _divV() => Container(
-        width: 1,
-        height: 40,
-        color: const Color(0xFFEEEEEE),
-      );
+  Widget _divV() =>
+      Container(width: 1, height: 40, color: const Color(0xFFEEEEEE));
 }
