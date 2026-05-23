@@ -10,6 +10,8 @@ import 'auth_service.dart';
 import 'location_service.dart';
 import 'destination_picker_screen.dart';
 import 'live_trip_tracking_screen.dart';
+import 'rate_driver_screen.dart';
+import 'trip_service.dart';
 import 'splash_screen.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
@@ -23,11 +25,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Map<String, dynamic>? _user;
   GoogleMapController? _mapController;
   LatLng _currentLocation = const LatLng(7.1907, 125.4553);
-
   StreamSubscription<Position>? _locationStream;
 
   // ── Bookings state ──────────────────────────────────────────────────────
   int _bookingTab = 0;
+
+  // Upcoming trips (kept as mock for now — replace with API if needed)
   final List<Map<String, dynamic>> _upcoming = [
     {
       'trip_id': '', 'date': 'March 22, 2026', 'time': '08:00 AM',
@@ -46,23 +49,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       'eta_minutes': 0, 'distance_km': 0.0,
     },
   ];
-  final List<Map<String, dynamic>> _past = [
-    {
-      'date': 'March 20, 2026', 'time': '07:30 AM', 'pickup': 'Home',
-      'destination': 'DNSC', 'driver': 'Pedro Lopez', 'type': 'Solo',
-      'fare': '₱25', 'status': 'Completed', 'statusColor': Colors.grey, 'rating': 5,
-    },
-    {
-      'date': 'March 18, 2026', 'time': '05:00 PM', 'pickup': 'Panabo Market',
-      'destination': 'DNSC', 'driver': 'Maria Santos', 'type': 'Shared',
-      'fare': '₱15', 'status': 'Completed', 'statusColor': Colors.grey, 'rating': 4,
-    },
-    {
-      'date': 'March 15, 2026', 'time': '08:00 AM', 'pickup': 'DNSC',
-      'destination': 'Panabo Bus Terminal', 'driver': 'Jose Cruz', 'type': 'Solo',
-      'fare': '₱20', 'status': 'Cancelled', 'statusColor': Colors.red, 'rating': null,
-    },
-  ];
+
+  // Past trips loaded live from API
+  List<Map<String, dynamic>> _livePast = [];
+  bool _loadingPastTrips = false;
+
+  // Per-trip rating cache: tripId → star score (null = not yet rated)
+  final Map<String, int?> _tripRatings = {};
 
   // ── Wallet state ────────────────────────────────────────────────────────
   bool _balanceVisible = true;
@@ -88,12 +81,16 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
      'date': 'Mar 5, 2026', 'time': '04:00 AM', 'amount': -90.00,
      'icon': Icons.electric_rickshaw_rounded},
   ];
+
   List<Map<String, dynamic>> get _filteredTx {
     if (_walletTab == 1) return _transactions.where((t) => t['type'] == 'topup').toList();
     if (_walletTab == 2) return _transactions.where((t) => t['type'] == 'trip').toList();
     return _transactions;
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // LIFECYCLE
+  // ════════════════════════════════════════════════════════════════════════════
   @override
   void initState() {
     super.initState();
@@ -103,6 +100,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     ));
     _loadUser();
     _initLocation();
+    _loadPastTrips();
   }
 
   Future<void> _loadUser() async {
@@ -113,31 +111,72 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Future<void> _initLocation() async {
     final granted = await LocationService.requestPermission(context);
     if (!granted) return;
-
-    // One-time initial fix
     final pos = await LocationService.getCurrentPosition();
     if (pos != null && mounted) {
       final loc = LatLng(pos.latitude, pos.longitude);
       setState(() => _currentLocation = loc);
       _mapController?.animateCamera(CameraUpdate.newLatLngZoom(loc, 16));
     }
-
-    // Cancel any existing stream before starting a new one
     await _locationStream?.cancel();
-
-    // Continuous real-time updates
     _locationStream = Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 8, // update every 8 meters
+        distanceFilter: 8,
       ),
     ).listen((position) {
       if (!mounted) return;
       final loc = LatLng(position.latitude, position.longitude);
       setState(() => _currentLocation = loc);
-      // Smoothly follow the user's location on the map
       _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
     });
+  }
+
+  // ── Load past trips from API ─────────────────────────────────────────────
+  Future<void> _loadPastTrips() async {
+    if (_loadingPastTrips) return;
+    setState(() => _loadingPastTrips = true);
+    try {
+      final trips = await TripService.getCommuterHistory();
+      if (!mounted) return;
+      final past = trips
+          .where((t) =>
+              t['status'] == 'completed' || t['status'] == 'cancelled')
+          .toList();
+      setState(() {
+        _livePast = past;
+        _loadingPastTrips = false;
+      });
+
+      // Pre-populate rating cache from history (history now includes rating_score)
+      for (final t in past) {
+        final id = t['trip_id']?.toString() ?? '';
+        if (id.isEmpty) continue;
+        if (t['status'] == 'completed') {
+          if (t['rating_score'] != null) {
+            final score = t['rating_score'];
+            _tripRatings[id] =
+                score is int ? score : int.tryParse(score.toString());
+          } else if (!_tripRatings.containsKey(id)) {
+            // Mark as "checked, not yet rated"
+            setState(() => _tripRatings[id] = null);
+          }
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loadingPastTrips = false);
+    }
+  }
+
+  // ── Refresh single trip rating after returning from RateDriverScreen ──────
+  Future<void> _refreshTripRating(String tripId) async {
+    if (tripId.isEmpty) return;
+    final res = await TripService.getTripRating(tripId);
+    if (!mounted) return;
+    if (res['hasRated'] == true) {
+      final score = res['feedback']?['rating_score'];
+      setState(() => _tripRatings[tripId] =
+          score is int ? score : int.tryParse(score.toString()));
+    }
   }
 
   @override
@@ -152,6 +191,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     return name.toString().split(' ').first;
   }
 
+  // ════════════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -174,8 +216,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildHomeTab() {
     return Stack(children: [
-
-      // Live Google Map — follows user in real time
       SizedBox.expand(
         child: GoogleMap(
           onMapCreated: (controller) {
@@ -321,14 +361,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // BOOKINGS TAB
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildBookingsTab() {
-    final list = _bookingTab == 0 ? _upcoming : _past;
+    final list = _bookingTab == 0 ? _upcoming : _livePast;
     return SafeArea(
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('My Bookings', style: GoogleFonts.poppins(fontSize: 22,
-                fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
+            Text('My Bookings', style: GoogleFonts.poppins(
+                fontSize: 22, fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark)),
             Text('Track all your trips',
                 style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
             const SizedBox(height: 16),
@@ -338,23 +379,32 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   borderRadius: BorderRadius.circular(14)),
               child: Row(children: [
                 _bTabBtn('Upcoming (${_upcoming.length})', 0),
-                _bTabBtn('Past (${_past.length})', 1),
+                _bTabBtn('Past', 1),
               ]),
             ),
           ]),
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: list.isEmpty
-              ? _emptyBookings()
-              : ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-                  itemCount: list.length,
-                  itemBuilder: (_, i) => _bookingCard(list[i])
-                      .animate()
-                      .fadeIn(delay: Duration(milliseconds: 80 * i), duration: 400.ms)
-                      .slideY(begin: 0.1, end: 0),
-                ),
+          child: _bookingTab == 1 && _loadingPastTrips
+              ? const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary))
+              : list.isEmpty
+                  ? _emptyBookings()
+                  : RefreshIndicator(
+                      color: AppColors.primary,
+                      onRefresh: _loadPastTrips,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                        itemCount: list.length,
+                        itemBuilder: (_, i) => _bookingCard(list[i])
+                            .animate()
+                            .fadeIn(
+                                delay: Duration(milliseconds: 80 * i),
+                                duration: 400.ms)
+                            .slideY(begin: 0.1, end: 0),
+                      ),
+                    ),
         ),
       ]),
     );
@@ -364,18 +414,25 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final sel = _bookingTab == idx;
     return Expanded(
       child: GestureDetector(
-        onTap: () => setState(() => _bookingTab = idx),
+        onTap: () {
+          setState(() => _bookingTab = idx);
+          if (idx == 1 && _livePast.isEmpty) _loadPastTrips();
+        },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           padding: const EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
             color: sel ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(10),
-            boxShadow: sel ? [BoxShadow(color: Colors.black.withOpacity(0.07),
-                blurRadius: 8, offset: const Offset(0, 2))] : [],
+            boxShadow: sel
+                ? [BoxShadow(color: Colors.black.withOpacity(0.07),
+                    blurRadius: 8, offset: const Offset(0, 2))]
+                : [],
           ),
-          child: Text(label, textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(fontSize: 13,
+          child: Text(label,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(
+                  fontSize: 13,
                   fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                   color: sel ? AppColors.backgroundDark : AppColors.textHint)),
         ),
@@ -384,11 +441,50 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   }
 
   Widget _bookingCard(Map<String, dynamic> b) {
-    final isPast = _bookingTab == 1;
+    final isPast     = _bookingTab == 1;
+    final status     = b['status']?.toString() ?? '';
+    final tripId     = b['trip_id']?.toString() ?? '';
+    final isCompleted = status == 'completed';
+
+    // Rating state for this trip
+    final hasRatingData   = _tripRatings.containsKey(tripId);
+    final existingRating  = _tripRatings[tripId]; // null = not rated, int = rated
+
+    // Status badge colour
+    Color statusColor = AppColors.primary;
+    if (status == 'completed') statusColor = Colors.green;
+    if (status == 'cancelled') statusColor = Colors.red;
+    if (status == 'Confirmed') statusColor = Colors.green;
+    if (b['statusColor'] is Color) statusColor = b['statusColor'] as Color;
+
+    // Format date/time — handles both API timestamps and mock strings
+    String displayDate = b['date']?.toString() ?? '';
+    String displayTime = b['time']?.toString() ?? '';
+    if (b['request_timestamp'] != null) {
+      try {
+        final dt =
+            DateTime.parse(b['request_timestamp'].toString()).toLocal();
+        displayDate =
+            '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
+            '${dt.day.toString().padLeft(2, '0')}';
+        displayTime =
+            '${dt.hour.toString().padLeft(2, '0')}:'
+            '${dt.minute.toString().padLeft(2, '0')}';
+      } catch (_) {}
+    }
+
+    // Fare display
+    String fareDisplay = '—';
+    if (b['fare'] != null) {
+      final f = double.tryParse(b['fare'].toString());
+      fareDisplay = f != null ? '₱${f.toStringAsFixed(0)}' : b['fare'].toString();
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
-        color: Colors.white, borderRadius: BorderRadius.circular(18),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: const Color(0xFFEEEEEE)),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
             blurRadius: 10, offset: const Offset(0, 3))],
@@ -396,74 +492,213 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+          // ── Header ─────────────────────────────────────────────────────
           Row(children: [
-            const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.primary),
+            const Icon(Icons.calendar_today_rounded,
+                size: 14, color: AppColors.primary),
             const SizedBox(width: 6),
-            Text(b['date'] as String, style: GoogleFonts.poppins(fontSize: 13,
-                fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
+            Text(displayDate, style: GoogleFonts.poppins(
+                fontSize: 13, fontWeight: FontWeight.w700,
+                color: AppColors.backgroundDark)),
             const Spacer(),
-            _statusBadge(b['status'] as String, b['statusColor'] as Color),
+            _statusBadge(
+              status.isNotEmpty
+                  ? status[0].toUpperCase() + status.substring(1)
+                  : status,
+              statusColor,
+            ),
           ]),
           const SizedBox(height: 4),
           Row(children: [
-            const Icon(Icons.access_time_rounded, size: 13, color: AppColors.textHint),
+            const Icon(Icons.access_time_rounded,
+                size: 13, color: AppColors.textHint),
             const SizedBox(width: 5),
-            Text(b['time'] as String,
-                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
+            Text(displayTime, style: GoogleFonts.poppins(
+                fontSize: 12, color: AppColors.textHint)),
           ]),
           const SizedBox(height: 16),
+
+          // ── Route visualisation ────────────────────────────────────────
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Column(children: [
               Container(width: 10, height: 10,
-                  decoration: const BoxDecoration(color: AppColors.backgroundDark,
-                      shape: BoxShape.circle)),
-              Container(width: 1.5, height: 40, color: const Color(0xFFDDDDDD)),
+                  decoration: const BoxDecoration(
+                      color: AppColors.backgroundDark, shape: BoxShape.circle)),
+              Container(width: 1.5, height: 40,
+                  color: const Color(0xFFDDDDDD)),
               Container(width: 10, height: 10,
-                  decoration: const BoxDecoration(color: AppColors.primary,
-                      shape: BoxShape.circle)),
+                  decoration: const BoxDecoration(
+                      color: AppColors.primary, shape: BoxShape.circle)),
             ]),
             const SizedBox(width: 14),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Pickup', style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
-                Text(b['pickup'] as String, style: GoogleFonts.poppins(fontSize: 15,
-                    fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Pickup', style: GoogleFonts.poppins(
+                      fontSize: 10, color: AppColors.textHint)),
+                  Text(
+                    b['pickup_location']?.toString() ??
+                        b['pickup']?.toString() ?? '—',
+                    style: GoogleFonts.poppins(fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.backgroundDark),
+                  ),
+                ]),
+                const SizedBox(height: 18),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Destination', style: GoogleFonts.poppins(
+                      fontSize: 10, color: AppColors.textHint)),
+                  Text(
+                    b['destination']?.toString() ?? '—',
+                    style: GoogleFonts.poppins(fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.backgroundDark),
+                  ),
+                ]),
               ]),
-              const SizedBox(height: 18),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Destination',
-                    style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
-                Text(b['destination'] as String, style: GoogleFonts.poppins(fontSize: 15,
-                    fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
-              ]),
-            ])),
+            ),
           ]),
           const SizedBox(height: 14),
           const Divider(color: Color(0xFFF0F0F0), height: 1),
           const SizedBox(height: 12),
+
+          // ── Driver + fare ──────────────────────────────────────────────
           Row(children: [
-            const Icon(Icons.person_outline_rounded, size: 16, color: AppColors.textHint),
+            const Icon(Icons.person_outline_rounded,
+                size: 16, color: AppColors.textHint),
             const SizedBox(width: 6),
-            Text(b['driver'] as String,
-                style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
-            const Spacer(),
-            Text('${b['type']}  ',
-                style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
-            Text(b['fare'] as String, style: GoogleFonts.poppins(fontSize: 15,
-                fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
+            Expanded(
+              child: Text(
+                b['driver_name']?.toString() ??
+                    b['driver']?.toString() ?? '—',
+                style: GoogleFonts.poppins(
+                    fontSize: 13, color: AppColors.textHint),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Text(
+              '${(b['service_type']?.toString() ?? b['type']?.toString() ?? '').toUpperCase()}  ',
+              style: GoogleFonts.poppins(
+                  fontSize: 12, color: AppColors.textHint),
+            ),
+            Text(fareDisplay, style: GoogleFonts.poppins(
+                fontSize: 15, fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark)),
           ]),
-          if (isPast && b['rating'] != null) ...[
-            const SizedBox(height: 10),
-            Row(children: [
-              ...List.generate(5, (i) => Icon(
-                i < (b['rating'] as int) ? Icons.star_rounded : Icons.star_outline_rounded,
-                size: 16, color: AppColors.primary,
-              )),
-              const SizedBox(width: 6),
-              Text('You rated this trip',
-                  style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
-            ]),
+
+          // ── Rating section (completed past trips only) ─────────────────
+          if (isPast && isCompleted) ...[
+            const SizedBox(height: 14),
+            if (existingRating != null)
+              // Already rated — show submitted stars
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.primary.withOpacity(0.2)),
+                ),
+                child: Row(children: [
+                  ...List.generate(
+                    5,
+                    (i) => Icon(
+                      i < existingRating
+                          ? Icons.star_rounded
+                          : Icons.star_outline_rounded,
+                      size: 18,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text('Your rating: $existingRating/5',
+                      style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.backgroundDark)),
+                  const Spacer(),
+                  const Icon(Icons.check_circle_rounded,
+                      color: AppColors.success, size: 16),
+                ]),
+              )
+            else if (!hasRatingData)
+              // Still loading — placeholder shimmer
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F2F5),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              )
+            else
+              // Not yet rated — Rate Now button
+              SizedBox(
+                width: double.infinity,
+                height: 44,
+                child: ElevatedButton.icon(
+                  onPressed: tripId.isNotEmpty
+                      ? () {
+                          final driverName =
+                              b['driver_name']?.toString() ??
+                              b['driver']?.toString() ?? 'Driver';
+                          final driverRating = double.tryParse(
+                              b['driver_rating']?.toString() ?? '') ?? 0.0;
+                          final dest =
+                              b['destination']?.toString() ?? 'Destination';
+                          final fare = double.tryParse(
+                              b['fare']?.toString() ?? '') ?? 25.0;
+
+                          Navigator.of(context)
+                              .push(PageRouteBuilder(
+                                pageBuilder: (_, __, ___) => RateDriverScreen(
+                                  tripId:         tripId,
+                                  driverName:     driverName,
+                                  driverRating:   driverRating,
+                                  todaBodyNumber:
+                                      b['toda_body_number']?.toString() ?? '',
+                                  plateNo:
+                                      b['plate_no']?.toString() ?? '',
+                                  destination: dest,
+                                  fare:        fare,
+                                ),
+                                transitionDuration:
+                                    const Duration(milliseconds: 400),
+                                transitionsBuilder:
+                                    (_, anim, __, child) => SlideTransition(
+                                  position: Tween<Offset>(
+                                          begin: const Offset(0, 1),
+                                          end: Offset.zero)
+                                      .animate(CurvedAnimation(
+                                          parent: anim,
+                                          curve: Curves.easeOut)),
+                                  child: child,
+                                ),
+                              ))
+                              .then((_) => _refreshTripRating(tripId));
+                        }
+                      : null,
+                  icon: const Icon(Icons.star_rounded,
+                      color: AppColors.backgroundDark, size: 18),
+                  label: Text('Rate This Trip',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.backgroundDark)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                ),
+              ),
           ],
+
+          // ── Track / Cancel buttons (upcoming trips) ────────────────────
           if (!isPast) ...[
             const SizedBox(height: 12),
             Row(children: [
@@ -471,35 +706,51 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                 onPressed: () {},
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFEEEEEE)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   padding: const EdgeInsets.symmetric(vertical: 10),
                 ),
-                child: Text('Cancel', style: GoogleFonts.poppins(fontSize: 13,
-                    fontWeight: FontWeight.w600, color: AppColors.error)),
+                child: Text('Cancel', style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: AppColors.error)),
               )),
               const SizedBox(width: 10),
               Expanded(child: ElevatedButton(
-                onPressed: () => Navigator.of(context).push(PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
-                    tripId: b['trip_id']?.toString() ?? '',
-                    driverName: b['driver'] as String,
-                    driverRating: (b['driver_rating'] as num?)?.toDouble() ?? 4.8,
-                    todaBodyNumber: b['toda_body_number']?.toString() ?? 'TODA-01',
-                    plateNo: b['plate_no']?.toString() ?? '',
-                    etaMinutes: (b['eta_minutes'] as num?)?.toInt() ?? 5,
-                    distanceKm: (b['distance_km'] as num?)?.toDouble() ?? 1.2,
+                onPressed: () => Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
+                      tripId: b['trip_id']?.toString() ?? '',
+                      driverName:
+                          b['driver_name']?.toString() ??
+                          b['driver']?.toString() ?? '',
+                      driverRating:
+                          (b['driver_rating'] as num?)?.toDouble() ?? 4.8,
+                      todaBodyNumber:
+                          b['toda_body_number']?.toString() ?? 'TODA-01',
+                      plateNo: b['plate_no']?.toString() ?? '',
+                      etaMinutes:
+                          (b['eta_minutes'] as num?)?.toInt() ?? 5,
+                      distanceKm:
+                          (b['distance_km'] as num?)?.toDouble() ?? 1.2,
+                      destination: b['destination']?.toString(),
+                      fare: double.tryParse(b['fare']?.toString() ?? ''),
+                    ),
+                    transitionDuration:
+                        const Duration(milliseconds: 400),
+                    transitionsBuilder: (_, anim, __, child) =>
+                        FadeTransition(opacity: anim, child: child),
                   ),
-                  transitionDuration: const Duration(milliseconds: 400),
-                  transitionsBuilder: (_, anim, __, child) =>
-                      FadeTransition(opacity: anim, child: child),
-                )),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.backgroundDark,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  padding: const EdgeInsets.symmetric(vertical: 10), elevation: 0,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  elevation: 0,
                 ),
-                child: Text('Track', style: GoogleFonts.poppins(fontSize: 13,
-                    fontWeight: FontWeight.w600, color: Colors.white)),
+                child: Text('Track', style: GoogleFonts.poppins(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: Colors.white)),
               )),
             ]),
           ],
@@ -511,11 +762,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Widget _statusBadge(String status, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20),
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(color: color.withOpacity(0.3)),
         ),
-        child: Text(status, style: GoogleFonts.poppins(fontSize: 11,
-            fontWeight: FontWeight.w700, color: color)),
+        child: Text(status, style: GoogleFonts.poppins(
+            fontSize: 11, fontWeight: FontWeight.w700, color: color)),
       );
 
   Widget _emptyBookings() => Center(
@@ -526,12 +778,26 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               child: const Icon(Icons.calendar_today_rounded,
                   size: 32, color: AppColors.textHint)),
           const SizedBox(height: 16),
-          Text('No ${_bookingTab == 0 ? "upcoming" : "past"} trips',
-              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w700,
-                  color: AppColors.backgroundDark)),
+          Text(
+            'No ${_bookingTab == 0 ? "upcoming" : "past"} trips',
+            style: GoogleFonts.poppins(fontSize: 16,
+                fontWeight: FontWeight.w700, color: AppColors.backgroundDark),
+          ),
           const SizedBox(height: 6),
           Text('Your rides will appear here',
-              style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
+              style: GoogleFonts.poppins(
+                  fontSize: 13, color: AppColors.textHint)),
+          if (_bookingTab == 1) ...[
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: _loadPastTrips,
+              icon: const Icon(Icons.refresh_rounded,
+                  color: AppColors.primary),
+              label: Text('Refresh', style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w600,
+                  color: AppColors.primary)),
+            ),
+          ],
         ]),
       );
 
@@ -565,8 +831,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             ]),
             const SizedBox(height: 24),
             Row(children: [
-              _walletActionBtn(Icons.add_rounded, 'Top Up', AppColors.primary,
-                  AppColors.backgroundDark),
+              _walletActionBtn(Icons.add_rounded, 'Top Up',
+                  AppColors.primary, AppColors.backgroundDark),
               const SizedBox(width: 12),
               _walletActionBtn(Icons.arrow_upward_rounded, 'Cash Out',
                   Colors.white.withOpacity(0.12), Colors.white),
@@ -587,7 +853,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
           _wStat('Trips', '31', Icons.electric_rickshaw_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Saved', '₱48', Icons.card_giftcard_rounded, color: AppColors.success),
+          _wStat('Saved', '₱48', Icons.card_giftcard_rounded,
+              color: AppColors.success),
         ]),
       )),
       SliverToBoxAdapter(child: Padding(
@@ -615,7 +882,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         ]),
       )),
       SliverList(delegate: SliverChildBuilderDelegate(
-        (_, i) => Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+        (_, i) => Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
             child: _txCard(_filteredTx[i])),
         childCount: _filteredTx.length,
       )),
@@ -628,11 +896,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         onTap: _showTopUpSheet,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(color: bg,
+              borderRadius: BorderRadius.circular(14)),
           child: Column(children: [
             Icon(icon, color: fg, size: 22), const SizedBox(height: 4),
-            Text(label, style: GoogleFonts.poppins(fontSize: 12,
-                fontWeight: FontWeight.w600, color: fg)),
+            Text(label, style: GoogleFonts.poppins(
+                fontSize: 12, fontWeight: FontWeight.w600, color: fg)),
           ]),
         ),
       ));
@@ -641,9 +910,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           {Color color = AppColors.backgroundDark}) =>
       Expanded(child: Column(children: [
         Icon(icon, size: 18, color: color), const SizedBox(height: 6),
-        Text(val, style: GoogleFonts.poppins(fontSize: 16,
-            fontWeight: FontWeight.w800, color: color)),
-        Text(label, style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
+        Text(val, style: GoogleFonts.poppins(
+            fontSize: 16, fontWeight: FontWeight.w800, color: color)),
+        Text(label, style: GoogleFonts.poppins(
+            fontSize: 10, color: AppColors.textHint)),
       ]));
 
   Widget _linkedAcc(String emoji, String name, String detail,
@@ -656,15 +926,18 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         child: Row(children: [
           Text(emoji, style: const TextStyle(fontSize: 24)),
           const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(name, style: GoogleFonts.poppins(fontSize: 14,
                 fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
-            Text(detail, style: GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
+            Text(detail, style: GoogleFonts.poppins(
+                fontSize: 12, color: AppColors.textHint)),
           ])),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
-              color: connected ? AppColors.success.withOpacity(0.1)
+              color: connected
+                  ? AppColors.success.withOpacity(0.1)
                   : AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
             ),
@@ -685,10 +958,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         decoration: BoxDecoration(
           color: sel ? AppColors.backgroundDark : Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: sel ? AppColors.backgroundDark : const Color(0xFFEEEEEE)),
+          border: Border.all(
+              color: sel ? AppColors.backgroundDark : const Color(0xFFEEEEEE)),
         ),
-        child: Text(label, style: GoogleFonts.poppins(fontSize: 12,
-            fontWeight: FontWeight.w600,
+        child: Text(label, style: GoogleFonts.poppins(
+            fontSize: 12, fontWeight: FontWeight.w600,
             color: sel ? Colors.white : AppColors.textHint)),
       ),
     );
@@ -697,12 +971,16 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Widget _txCard(Map<String, dynamic> t) {
     final amount = t['amount'] as double;
     final isPos  = amount > 0;
-    final iconBg = t['type'] == 'topup' ? AppColors.success.withOpacity(0.1)
-        : t['type'] == 'cashback' ? AppColors.primary.withOpacity(0.1)
-        : const Color(0xFFF0F2F5);
-    final iconColor = t['type'] == 'topup' ? AppColors.success
-        : t['type'] == 'cashback' ? AppColors.primary
-        : AppColors.backgroundDark;
+    final iconBg = t['type'] == 'topup'
+        ? AppColors.success.withOpacity(0.1)
+        : t['type'] == 'cashback'
+            ? AppColors.primary.withOpacity(0.1)
+            : const Color(0xFFF0F2F5);
+    final iconColor = t['type'] == 'topup'
+        ? AppColors.success
+        : t['type'] == 'cashback'
+            ? AppColors.primary
+            : AppColors.backgroundDark;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: Colors.white,
@@ -710,19 +988,23 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           border: Border.all(color: const Color(0xFFEEEEEE))),
       child: Row(children: [
         Container(width: 42, height: 42,
-            decoration: BoxDecoration(color: iconBg, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: iconBg,
+                borderRadius: BorderRadius.circular(12)),
             child: Icon(t['icon'] as IconData, color: iconColor, size: 20)),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(t['title'] as String, style: GoogleFonts.poppins(fontSize: 13,
-              fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
-          Text(t['subtitle'] as String,
-              style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
-          Text('${t['date']} · ${t['time']}',
-              style: GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
+        Expanded(child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(t['title'] as String, style: GoogleFonts.poppins(
+              fontSize: 13, fontWeight: FontWeight.w700,
+              color: AppColors.backgroundDark)),
+          Text(t['subtitle'] as String, style: GoogleFonts.poppins(
+              fontSize: 11, color: AppColors.textHint)),
+          Text('${t['date']} · ${t['time']}', style: GoogleFonts.poppins(
+              fontSize: 10, color: AppColors.textHint)),
         ])),
         Text('${isPos ? '+' : ''}₱${amount.abs().toStringAsFixed(2)}',
-            style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w800,
+            style: GoogleFonts.poppins(
+                fontSize: 14, fontWeight: FontWeight.w800,
                 color: isPos ? AppColors.success : AppColors.backgroundDark)),
       ]),
     );
@@ -730,7 +1012,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   void _showTopUpSheet() {
     showModalBottomSheet(
-      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (_) => Container(
         decoration: const BoxDecoration(color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
@@ -742,27 +1025,31 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               decoration: BoxDecoration(color: Colors.grey[300],
                   borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
-          Text('Top Up Wallet', style: GoogleFonts.poppins(fontSize: 20,
-              fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
+          Text('Top Up Wallet', style: GoogleFonts.poppins(
+              fontSize: 20, fontWeight: FontWeight.w800,
+              color: AppColors.backgroundDark)),
           const SizedBox(height: 4),
           Text('Select amount and payment method',
               style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
           const SizedBox(height: 20),
           Wrap(spacing: 10, runSpacing: 10,
-            children: [50, 100, 200, 300, 500, 1000].map((amt) => GestureDetector(
-              onTap: () {},
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(color: const Color(0xFFF0F2F5),
-                    borderRadius: BorderRadius.circular(12)),
-                child: Text('₱$amt', style: GoogleFonts.poppins(fontSize: 14,
-                    fontWeight: FontWeight.w700, color: AppColors.backgroundDark)),
-              ),
-            )).toList(),
+            children: [50, 100, 200, 300, 500, 1000].map((amt) =>
+              GestureDetector(
+                onTap: () {},
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(color: const Color(0xFFF0F2F5),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: Text('₱$amt', style: GoogleFonts.poppins(
+                      fontSize: 14, fontWeight: FontWeight.w700,
+                      color: AppColors.backgroundDark)),
+                ),
+              )).toList(),
           ),
           const SizedBox(height: 20),
-          Text('Pay with', style: GoogleFonts.poppins(fontSize: 13,
-              fontWeight: FontWeight.w600, color: AppColors.backgroundDark)),
+          Text('Pay with', style: GoogleFonts.poppins(
+              fontSize: 13, fontWeight: FontWeight.w600,
+              color: AppColors.backgroundDark)),
           const SizedBox(height: 12),
           Row(children: [
             _payOpt('💙', 'GCash', true), const SizedBox(width: 10),
@@ -772,11 +1059,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           SizedBox(width: double.infinity, height: 52,
             child: ElevatedButton(
               onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.backgroundDark,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.backgroundDark,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
                   elevation: 0),
-              child: Text('Proceed to Top Up', style: GoogleFonts.poppins(fontSize: 15,
-                  fontWeight: FontWeight.w700, color: Colors.white)),
+              child: Text('Proceed to Top Up', style: GoogleFonts.poppins(
+                  fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white)),
             ),
           ),
         ]),
@@ -790,11 +1079,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       decoration: BoxDecoration(
         color: sel ? AppColors.backgroundDark : const Color(0xFFF0F2F5),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: sel ? AppColors.primary : Colors.transparent, width: 2),
+        border: Border.all(
+            color: sel ? AppColors.primary : Colors.transparent, width: 2),
       ),
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text(emoji, style: const TextStyle(fontSize: 20)), const SizedBox(width: 8),
-        Text(label, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w700,
+        Text(emoji, style: const TextStyle(fontSize: 20)),
+        const SizedBox(width: 8),
+        Text(label, style: GoogleFonts.poppins(fontSize: 14,
+            fontWeight: FontWeight.w700,
             color: sel ? Colors.white : AppColors.backgroundDark)),
       ]),
     ),
@@ -809,25 +1101,28 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       child: Column(children: [
         const SizedBox(height: 20),
         Container(width: 80, height: 80,
-            decoration: const BoxDecoration(color: AppColors.backgroundDark,
-                shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+                color: AppColors.backgroundDark, shape: BoxShape.circle),
             child: Center(child: Text(
               _firstName.isNotEmpty ? _firstName[0].toUpperCase() : 'R',
-              style: GoogleFonts.poppins(fontSize: 30, fontWeight: FontWeight.w800,
-                  color: AppColors.primary),
+              style: GoogleFonts.poppins(fontSize: 30,
+                  fontWeight: FontWeight.w800, color: AppColors.primary),
             ))),
         const SizedBox(height: 14),
-        Text(_user?['full_name'] ?? 'Rider', style: GoogleFonts.poppins(fontSize: 20,
-            fontWeight: FontWeight.w800, color: AppColors.backgroundDark)),
-        Text(_user?['email'] ?? '', style: GoogleFonts.poppins(fontSize: 13,
-            color: AppColors.textHint)),
+        Text(_user?['full_name'] ?? 'Rider', style: GoogleFonts.poppins(
+            fontSize: 20, fontWeight: FontWeight.w800,
+            color: AppColors.backgroundDark)),
+        Text(_user?['email'] ?? '', style: GoogleFonts.poppins(
+            fontSize: 13, color: AppColors.textHint)),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1),
+          decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20)),
-          child: Text('Passenger', style: GoogleFonts.poppins(fontSize: 12,
-              fontWeight: FontWeight.w600, color: AppColors.primary)),
+          child: Text('Passenger', style: GoogleFonts.poppins(
+              fontSize: 12, fontWeight: FontWeight.w600,
+              color: AppColors.primary)),
         ),
         const SizedBox(height: 32),
         _pItem(Icons.phone_rounded, 'Phone', _user?['phone'] ?? '—'),
@@ -841,15 +1136,18 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               await AuthService.logout();
               if (!mounted) return;
               Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const SplashScreen()), (_) => false,
+                MaterialPageRoute(builder: (_) => const SplashScreen()),
+                (_) => false,
               );
             },
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.error),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
-            child: Text('Logout', style: GoogleFonts.poppins(fontSize: 14,
-                fontWeight: FontWeight.w600, color: AppColors.error)),
+            child: Text('Logout', style: GoogleFonts.poppins(
+                fontSize: 14, fontWeight: FontWeight.w600,
+                color: AppColors.error)),
           ),
         ),
       ]),
@@ -857,15 +1155,18 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   }
 
   Widget _pItem(IconData icon, String label, String value) => Container(
-        margin: const EdgeInsets.only(bottom: 12), padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(color: const Color(0xFFF8F9FA),
             borderRadius: BorderRadius.circular(14)),
         child: Row(children: [
           Icon(icon, size: 20, color: AppColors.backgroundDark),
           const SizedBox(width: 14),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
-            Text(value, style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w600,
+            Text(label, style: GoogleFonts.poppins(
+                fontSize: 11, color: AppColors.textHint)),
+            Text(value, style: GoogleFonts.poppins(
+                fontSize: 14, fontWeight: FontWeight.w600,
                 color: AppColors.backgroundDark)),
           ]),
         ]),
@@ -876,10 +1177,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildBottomNav() {
     final tabs = [
-      {'icon': Icons.home_rounded, 'label': 'Home'},
-      {'icon': Icons.calendar_today_rounded, 'label': 'Bookings'},
-      {'icon': Icons.account_balance_wallet_rounded, 'label': 'Wallet'},
-      {'icon': Icons.person_rounded, 'label': 'Profile'},
+      {'icon': Icons.home_rounded,                    'label': 'Home'},
+      {'icon': Icons.calendar_today_rounded,          'label': 'Bookings'},
+      {'icon': Icons.account_balance_wallet_rounded,  'label': 'Wallet'},
+      {'icon': Icons.person_rounded,                  'label': 'Profile'},
     ];
     return Container(
       decoration: const BoxDecoration(color: Colors.white,
@@ -895,7 +1196,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               Icon(tabs[i]['icon'] as IconData, size: 22,
                   color: sel ? AppColors.backgroundDark : Colors.grey[400]),
               const SizedBox(height: 3),
-              Text(tabs[i]['label'] as String, style: GoogleFonts.poppins(fontSize: 10,
+              Text(tabs[i]['label'] as String, style: GoogleFonts.poppins(
+                  fontSize: 10,
                   fontWeight: sel ? FontWeight.w700 : FontWeight.w400,
                   color: sel ? AppColors.backgroundDark : Colors.grey[400])),
             ]),

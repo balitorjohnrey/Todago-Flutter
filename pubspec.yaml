@@ -17,6 +17,8 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_animate: ^4.2.0+1
   google_maps_flutter: ^2.9.0
+  speech_to_text: ^6.6.0
+  permission_handler: ^11.3.0
   cupertino_icons: ^1.0.2
 
   # Location & GPS
@@ -25,7 +27,6 @@ dependencies:
 
   # Local Notifications (permission prompts)
   flutter_local_notifications: ^17.0.0
-  permission_handler: ^11.3.0
 
 dev_dependencies:
   flutter_test:
