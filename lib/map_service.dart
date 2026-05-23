@@ -4,7 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 
 const String _key = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
-const String _placesBase    = 'https://maps.googleapis.com/maps/api/place';
+const String _placesBase     = 'https://maps.googleapis.com/maps/api/place';
 const String _directionsBase = 'https://maps.googleapis.com/maps/api/directions/json';
 const String _geocodeBase    = 'https://maps.googleapis.com/maps/api/geocode/json';
 
@@ -112,10 +112,11 @@ class MapService {
       }
     } catch (_) {}
 
-    // 2nd: Photon geocoder (free, no key, works on Android, OSM-based)
+    // 2nd: Photon geocoder fallback
     return _searchPhoton(query, bias);
   }
 
+  // ── Photon search (OSM-based, free, no key) ───────────────────────────────
   static Future<List<PlaceSuggestion>> _searchPhoton(
       String query, LatLng bias) async {
     try {
@@ -128,31 +129,54 @@ class MapService {
       final res = await http
           .get(uri, headers: {'Accept': 'application/json'})
           .timeout(const Duration(seconds: 10));
+
       if (res.statusCode != 200) return [];
+
       final data     = jsonDecode(res.body) as Map<String, dynamic>;
       final features = data['features'] as List? ?? [];
       final results  = <PlaceSuggestion>[];
+
       for (final f in features) {
-        final props  = f['properties'] as Map<String, dynamic>? ?? {};
+        final props = f['properties'] as Map<String, dynamic>? ?? {};
+
+        // ── FIX 1: country filter — allow empty country too ───────────────
         final country = props['country'] as String? ?? '';
-        // Only Philippines results
         if (country.isNotEmpty && country != 'Philippines') continue;
+
+        // ── Coordinates ───────────────────────────────────────────────────
         final coords = (f['geometry']?['coordinates'] as List?) ?? [0.0, 0.0];
         final lon    = (coords[0] as num).toDouble();
         final lat    = (coords[1] as num).toDouble();
-        final name   = props['name']     as String? ?? '';
-        final street = props['street']   as String? ?? '';
-        final city   = props['city']     as String?
-                    ?? props['town']     as String?
-                    ?? props['county']   as String? ?? '';
-        final mainText = name.isNotEmpty ? name
-                       : street.isNotEmpty ? street : city;
+
+        // ── FIX 2: read all possible city-level keys from Photon ──────────
+        final name     = props['name']     as String? ?? '';
+        final street   = props['street']   as String? ?? '';
+        final city     = props['city']     as String?
+                      ?? props['town']     as String?
+                      ?? props['locality'] as String?   // ← was missing
+                      ?? props['county']   as String? ?? '';
+        final district = props['district'] as String? ?? '';
+        final state    = props['state']    as String? ?? '';
+
+        // ── FIX 3: broader mainText fallback chain ────────────────────────
+        final mainText = name.isNotEmpty     ? name
+                       : street.isNotEmpty   ? street
+                       : city.isNotEmpty     ? city
+                       : district.isNotEmpty ? district
+                       : state;
+
         if (mainText.isEmpty) continue;
-        final secondary = [
-          if (street.isNotEmpty && mainText != street) street,
-          if (city.isNotEmpty)   city,
-          'Philippines',
-        ].join(', ');
+
+        // ── Build a clean secondary text ──────────────────────────────────
+        final secondaryParts = <String>[];
+        if (street.isNotEmpty && mainText != street)   secondaryParts.add(street);
+        if (city.isNotEmpty   && mainText != city)     secondaryParts.add(city);
+        if (district.isNotEmpty && mainText != district) secondaryParts.add(district);
+        if (state.isNotEmpty)                           secondaryParts.add(state);
+        secondaryParts.add('Philippines');
+
+        final secondary = secondaryParts.join(', ');
+
         results.add(PlaceSuggestion(
           placeId       : 'coord:$lat:$lon',
           mainText      : mainText,
@@ -160,6 +184,7 @@ class MapService {
           fullText      : '$mainText, $secondary',
         ));
       }
+
       return results;
     } catch (_) {}
     return [];
@@ -274,11 +299,11 @@ class MapService {
         if (status == 'OK') {
           final routes = data['routes'] as List?;
           if (routes != null && routes.isNotEmpty) {
-            final route    = routes.first as Map<String, dynamic>;
-            final leg      = (route['legs'] as List).first as Map<String, dynamic>;
-            final distM    = (leg['distance']['value'] as num).toDouble();
-            final durS     = (leg['duration']['value'] as num).toDouble();
-            final encoded  = route['overview_polyline']['points'] as String;
+            final route   = routes.first as Map<String, dynamic>;
+            final leg     = (route['legs'] as List).first as Map<String, dynamic>;
+            final distM   = (leg['distance']['value'] as num).toDouble();
+            final durS    = (leg['duration']['value'] as num).toDouble();
+            final encoded = route['overview_polyline']['points'] as String;
             return MapRoute(
               points       : _decodePolyline(encoded),
               distanceKm   : distM / 1000,
