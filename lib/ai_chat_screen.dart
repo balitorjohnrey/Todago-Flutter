@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart';
@@ -39,7 +40,7 @@ class AIChatScreen extends StatefulWidget {
   final String userType;
   final String userName;
 
-  /// Called when the AI suggests a navigation action and the user taps it.
+  /// Called when the AI suggests navigation and the user taps the action button.
   /// Commands: 'book_ride' | 'tab_0' | 'tab_1' | 'tab_2' | 'tab_3' | 'past_trips'
   final void Function(String cmd)? onNavigate;
 
@@ -56,20 +57,24 @@ class AIChatScreen extends StatefulWidget {
 
 class _AIChatScreenState extends State<AIChatScreen>
     with SingleTickerProviderStateMixin {
+  static const _storage      = FlutterSecureStorage();
+  static const _backendBase  =
+      'https://todago-backend-production.up.railway.app/api';
+
   // ── State ──────────────────────────────────────────────────────────────────
   final List<_Msg> _messages = [];
-  final List<Map<String, dynamic>> _history = []; // sent to API
-  final TextEditingController _ctrl = TextEditingController();
-  final ScrollController _scroll = ScrollController();
-  final FocusNode _focus = FocusNode();
+  final List<Map<String, dynamic>> _history = [];
+  final TextEditingController _ctrl   = TextEditingController();
+  final ScrollController      _scroll = ScrollController();
+  final FocusNode             _focus  = FocusNode();
 
-  bool _sending = false;
+  bool _sending   = false;
   bool _showChips = true;
 
   // ── Voice ──────────────────────────────────────────────────────────────────
   final SpeechToText _speech = SpeechToText();
-  bool _speechReady = false;
-  bool _isListening = false;
+  bool _speechReady  = false;
+  bool _isListening  = false;
   late AnimationController _micPulse;
 
   // ── Quick suggestion chips ─────────────────────────────────────────────────
@@ -93,7 +98,7 @@ class _AIChatScreenState extends State<AIChatScreen>
           'How to complete a trip?',
         ];
 
-  // ── System prompt ──────────────────────────────────────────────────────────
+  // ── System prompt (sent to backend, never exposed to client) ──────────────
   String get _systemPrompt => '''
 You are TodaGo AI Support — the friendly, intelligent assistant built directly into the TodaGo tricycle-hailing app for the Davao Region, Philippines.
 
@@ -166,44 +171,35 @@ TRIP FLOW:
 EARNINGS:
 • Commission: flat ₱5 per completed ride
 • Example: ₱25 fare → ₱5 commission → ₱20 to driver
-• Going online/offline does NOT affect pending payments
 
 RATINGS:
 • Passengers rate you 1–5 stars after each trip
 • Your avg_rating updates permanently in the system
 • Shown on your dashboard card
 • Improving rating: be on time, be friendly, keep vehicle clean
-
-REQUIREMENTS:
-• Must be registered with a TODA (Tricycle Operators & Drivers Association)
-• Need valid driver's license and vehicle plate number
-• Must verify TODA body number during registration
 '''}
 
 ━━━ NAVIGATION COMMANDS ━━━
-You can guide the user to specific app screens. Include EXACTLY ONE command at the very END of your message when navigation would genuinely help. Use this exact format — nothing else:
+You can guide the user to specific app screens. Include EXACTLY ONE command at the very END of your message when navigation would genuinely help. Use this exact format:
 
-[ACTION:book_ride|Book a Ride Now]        ← opens destination picker
-[ACTION:tab_0|Go to Home]                  ← switches to Home tab
-[ACTION:tab_1|View My Bookings]            ← switches to Bookings tab
-[ACTION:tab_2|Open My Wallet]              ← switches to Wallet tab
-[ACTION:tab_3|View My Profile]             ← switches to Profile tab
-[ACTION:past_trips|See Past Trips]         ← goes to past trips list
+[ACTION:book_ride|Book a Ride Now]
+[ACTION:tab_0|Go to Home]
+[ACTION:tab_1|View My Bookings]
+[ACTION:tab_2|Open My Wallet]
+[ACTION:tab_3|View My Profile]
+[ACTION:past_trips|See Past Trips]
 
-Rules for navigation commands:
-• Only include ONE per message
-• Only include if it genuinely helps the user get somewhere useful
-• The [ACTION:...] text will be HIDDEN from display and shown as a tappable button instead
-• Never use these for greetings or general answers
+Rules:
+• Only ONE per message
+• Only when it genuinely helps navigation
+• The [ACTION:...] will be hidden from display and shown as a button instead
 
 ━━━ RESPONSE RULES ━━━
-• Be friendly, concise, and helpful — max 120 words per response
-• Use simple language; a mix of English and Filipino expressions is natural (e.g., "Sige!", "Para sa inyo")
-• If asked something outside the TodaGo app, gently redirect: "I'm here to help with TodaGo specifically!"
-• For technical issues, empathize first, then guide step by step
-• Do NOT make up features or policies that don't exist
+• Be friendly, concise — max 120 words
+• Simple language; Filipino/English mix is natural ("Sige!", "Para sa inyo")
+• If asked about something outside TodaGo, gently redirect
 • Never ask for passwords or sensitive info
-• When unsure, say "Let me clarify — " rather than guessing
+• Keep responses focused and helpful
 ''';
 
   // ── Lifecycle ──────────────────────────────────────────────────────────────
@@ -215,7 +211,6 @@ Rules for navigation commands:
       duration: const Duration(milliseconds: 700),
     )..repeat(reverse: true);
     _initSpeech();
-    // Greeting
     WidgetsBinding.instance.addPostFrameCallback((_) => _addGreeting());
   }
 
@@ -224,11 +219,7 @@ Rules for navigation commands:
         ? 'Hi ${widget.userName.split(' ').first}! 👋 I\'m your TodaGo AI assistant. I can help you book rides, check your wallet, view trip history, and answer any questions about the app.\n\nWhat can I help you with today?'
         : 'Hi ${widget.userName.split(' ').first}! 👋 I\'m your TodaGo Driver AI assistant. I can help you with going online, understanding your earnings, improving your rating, and any questions about the driver app.\n\nWhat do you need help with?';
     setState(() {
-      _messages.add(_Msg(
-        id: 'greeting',
-        text: greeting,
-        isUser: false,
-      ));
+      _messages.add(_Msg(id: 'greeting', text: greeting, isUser: false));
     });
   }
 
@@ -252,6 +243,14 @@ Rules for navigation commands:
     super.dispose();
   }
 
+  // ── Get auth token (passenger or driver) ───────────────────────────────────
+  Future<String?> _getToken() async {
+    if (widget.userType == 'driver') {
+      return await _storage.read(key: 'driver_auth_token');
+    }
+    return await _storage.read(key: 'auth_token');
+  }
+
   // ── Send message ───────────────────────────────────────────────────────────
   Future<void> _send([String? override]) async {
     final text = (override ?? _ctrl.text).trim();
@@ -260,27 +259,22 @@ Rules for navigation commands:
     _focus.unfocus();
     setState(() { _sending = true; _showChips = false; });
 
-    // Add user message
-    final userMsg = _Msg(id: UniqueKey().toString(), text: text, isUser: true);
+    final userMsg = _Msg(
+        id: UniqueKey().toString(), text: text, isUser: true);
     setState(() => _messages.add(userMsg));
     _history.add({'role': 'user', 'content': text});
     _scrollToBottom();
 
     // Add typing indicator
     final typingId = UniqueKey().toString();
-    final typingMsg = _Msg(id: typingId, text: '', isUser: false, isTyping: true);
-    setState(() => _messages.add(typingMsg));
+    setState(() => _messages.add(
+        _Msg(id: typingId, text: '', isUser: false, isTyping: true)));
     _scrollToBottom();
 
-    // Call AI
     try {
       final aiText = await _callAI();
       if (!mounted) return;
-
-      // Parse navigation actions from response
       final parsed = _parseActions(aiText);
-
-      // Replace typing with real message
       setState(() {
         final idx = _messages.indexWhere((m) => m.id == typingId);
         if (idx != -1) {
@@ -300,7 +294,7 @@ Rules for navigation commands:
         if (idx != -1) {
           _messages[idx] = _Msg(
             id: typingId,
-            text: 'Sorry, I had trouble connecting. Please try again.',
+            text: 'Sorry, something went wrong. Please try again.',
             isUser: false,
           );
         }
@@ -311,21 +305,26 @@ Rules for navigation commands:
     _scrollToBottom();
   }
 
-  // ── AI API call ────────────────────────────────────────────────────────────
+  // ── AI call → goes through YOUR backend (API key stays on server) ──────────
   Future<String> _callAI() async {
+    final token = await _getToken();
+
     final response = await http.post(
-      Uri.parse('https://api.anthropic.com/v1/messages'),
-      headers: {'Content-Type': 'application/json'},
+      Uri.parse('$_backendBase/ai/chat'),
+      headers: {
+        'Content-Type': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
       body: jsonEncode({
-        'model': 'claude-sonnet-4-20250514',
+        'system':     _systemPrompt,
+        'messages':   _history,
         'max_tokens': 400,
-        'system': _systemPrompt,
-        'messages': _history,
       }),
-    ).timeout(const Duration(seconds: 20));
+    ).timeout(const Duration(seconds: 30));
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
+      // Anthropic response format: { content: [ { type: 'text', text: '...' } ] }
       return (data['content'] as List?)
               ?.firstWhere(
                 (c) => c['type'] == 'text',
@@ -335,24 +334,31 @@ Rules for navigation commands:
               .trim() ??
           'I could not generate a response.';
     }
-    throw Exception('API error ${response.statusCode}');
+
+    // Try to parse error message from backend
+    try {
+      final err = jsonDecode(response.body);
+      throw Exception(err['message'] ?? 'Status ${response.statusCode}');
+    } catch (_) {
+      throw Exception('Server returned status ${response.statusCode}');
+    }
   }
 
-  // ── Parse [ACTION:cmd|Label] from AI text ──────────────────────────────────
+  // ── Parse [ACTION:cmd|Label] from AI response ──────────────────────────────
   ({String text, List<_NavAction> actions}) _parseActions(String raw) {
     final actions = <_NavAction>[];
     final pattern = RegExp(r'\[ACTION:([^\|]+)\|([^\]]+)\]');
-    final clean = raw.replaceAllMapped(pattern, (m) {
+    final clean   = raw.replaceAllMapped(pattern, (m) {
       actions.add(_NavAction(m.group(2)!.trim(), m.group(1)!.trim()));
       return '';
     }).trim();
     return (text: clean, actions: actions);
   }
 
-  // ── Execute nav action ─────────────────────────────────────────────────────
+  // ── Execute navigation action ──────────────────────────────────────────────
   void _executeAction(_NavAction action) {
     HapticFeedback.lightImpact();
-    Navigator.of(context).pop(); // close chat
+    Navigator.of(context).pop();
     widget.onNavigate?.call(action.cmd);
   }
 
@@ -380,8 +386,8 @@ Rules for navigation commands:
         if (mounted) setState(() => _ctrl.text = r.recognizedWords);
       },
       listenFor: const Duration(seconds: 10),
-      pauseFor: const Duration(seconds: 3),
-      localeId: 'en_US',
+      pauseFor:  const Duration(seconds: 3),
+      localeId:  'en_US',
       cancelOnError: true,
     );
   }
@@ -405,7 +411,6 @@ Rules for navigation commands:
     });
   }
 
-  // ── Format time ────────────────────────────────────────────────────────────
   String _fmt(DateTime t) =>
       '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
@@ -434,7 +439,6 @@ Rules for navigation commands:
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Row(children: [
-            // Back button
             GestureDetector(
               onTap: () => Navigator.of(context).pop(),
               child: Container(
@@ -448,7 +452,6 @@ Rules for navigation commands:
               ),
             ),
             const SizedBox(width: 14),
-            // AI avatar
             Container(
               width: 42, height: 42,
               decoration: BoxDecoration(
@@ -529,19 +532,18 @@ Rules for navigation commands:
 
   Widget _buildBubble(_Msg msg) {
     if (msg.isTyping) return _buildTyping();
-
     final isUser = msg.isUser;
+
     return Padding(
       padding: EdgeInsets.only(
         bottom: 12,
-        left: isUser ? 48 : 0,
-        right: isUser ? 0 : 48,
+        left: isUser ? 56 : 0,
+        right: isUser ? 0 : 56,
       ),
       child: Column(
         crossAxisAlignment:
             isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          // Avatar + bubble row
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisAlignment:
@@ -564,13 +566,11 @@ Rules for navigation commands:
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
-                    color: isUser
-                        ? AppColors.backgroundDark
-                        : Colors.white,
+                    color: isUser ? AppColors.backgroundDark : Colors.white,
                     borderRadius: BorderRadius.only(
-                      topLeft: const Radius.circular(16),
-                      topRight: const Radius.circular(16),
-                      bottomLeft: Radius.circular(isUser ? 16 : 4),
+                      topLeft:     const Radius.circular(16),
+                      topRight:    const Radius.circular(16),
+                      bottomLeft:  Radius.circular(isUser ? 16 : 4),
                       bottomRight: Radius.circular(isUser ? 4 : 16),
                     ),
                     boxShadow: [
@@ -585,7 +585,9 @@ Rules for navigation commands:
                     msg.text,
                     style: GoogleFonts.poppins(
                       fontSize: 13.5,
-                      color: isUser ? Colors.white : const Color(0xFF1A1A2E),
+                      color: isUser
+                          ? Colors.white
+                          : const Color(0xFF1A1A2E),
                       height: 1.45,
                     ),
                   ),
@@ -613,29 +615,32 @@ Rules for navigation commands:
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 36),
               child: Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                children: msg.actions.map((a) => GestureDetector(
-                  onTap: () => _executeAction(a),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.arrow_forward_rounded,
-                          color: AppColors.backgroundDark, size: 14),
-                      const SizedBox(width: 6),
-                      Text(a.label,
-                          style: GoogleFonts.poppins(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.backgroundDark)),
-                    ]),
-                  ),
-                )).toList(),
+                spacing: 8, runSpacing: 6,
+                children: msg.actions
+                    .map((a) => GestureDetector(
+                          onTap: () => _executeAction(a),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                              const Icon(Icons.arrow_forward_rounded,
+                                  color: AppColors.backgroundDark, size: 14),
+                              const SizedBox(width: 6),
+                              Text(a.label,
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.backgroundDark)),
+                            ]),
+                          ),
+                        ))
+                    .toList(),
               ).animate().fadeIn(duration: 300.ms).slideX(begin: -0.1, end: 0),
             ),
         ],
@@ -646,7 +651,7 @@ Rules for navigation commands:
   // ── Typing indicator ───────────────────────────────────────────────────────
   Widget _buildTyping() {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12, right: 48),
+      padding: const EdgeInsets.only(bottom: 12, right: 56),
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         Container(
           width: 28, height: 28,
@@ -659,44 +664,44 @@ Rules for navigation commands:
               color: AppColors.backgroundDark, size: 16),
         ),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-              bottomLeft: Radius.circular(4),
+              topLeft:     Radius.circular(16),
+              topRight:    Radius.circular(16),
+              bottomLeft:  Radius.circular(4),
               bottomRight: Radius.circular(16),
             ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.06),
-                blurRadius: 8, offset: const Offset(0, 2),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               )
             ],
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: List.generate(
-            3,
-            (i) => AnimatedBuilder(
-              animation: _micPulse,
-              builder: (_, __) => Container(
-                width: 7, height: 7,
-                margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(
-                    i == 0
-                        ? (0.4 + 0.6 * _micPulse.value)
-                        : i == 1
-                            ? (0.4 + 0.6 *
-                                (((_micPulse.value + 0.33) % 1.0)))
-                            : (0.4 + 0.6 *
-                                (((_micPulse.value + 0.66) % 1.0))),
-                  ),
-                  shape: BoxShape.circle,
-                ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: List.generate(
+              3,
+              (i) => AnimatedBuilder(
+                animation: _micPulse,
+                builder: (_, __) {
+                  final offsets = [0.0, 0.33, 0.66];
+                  final v = ((_micPulse.value + offsets[i]) % 1.0);
+                  return Container(
+                    width: 7, height: 7,
+                    margin: EdgeInsets.only(right: i < 2 ? 5 : 0),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.3 + 0.7 * v),
+                      shape: BoxShape.circle,
+                    ),
+                  );
+                },
               ),
             ),
-          )),
+          ),
         ),
       ]),
     );
@@ -706,7 +711,7 @@ Rules for navigation commands:
   Widget _buildChips() {
     return Container(
       color: const Color(0xFFF5F6FA),
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
@@ -734,7 +739,8 @@ Rules for navigation commands:
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.04),
-                      blurRadius: 4, offset: const Offset(0, 1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
                     )
                   ],
                 ),
@@ -751,13 +757,17 @@ Rules for navigation commands:
     );
   }
 
-  // ── Input bar ──────────────────────────────────────────────────────────────
+  // ── Input bar ─────────────────────────────────────── FIXED: white + black ──
   Widget _buildInput() {
     return Container(
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, -2))
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, -2),
+          )
         ],
       ),
       child: SafeArea(
@@ -765,55 +775,63 @@ Rules for navigation commands:
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           child: Row(children: [
-            // Text field
+            // ── Text field — plain white, black text ──────────────────────
             Expanded(
               child: Container(
                 constraints: const BoxConstraints(maxHeight: 120),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF0F2F5),
+                  color: Colors.white,
                   borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: const Color(0xFFE0E0E0), width: 1.5),
                 ),
                 child: Row(children: [
                   const SizedBox(width: 16),
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
-                      focusNode: _focus,
-                      maxLines: null,
+                      focusNode:  _focus,
+                      maxLines:   null,
                       textCapitalization: TextCapitalization.sentences,
                       style: GoogleFonts.poppins(
-                          fontSize: 14, color: AppColors.backgroundDark),
+                        fontSize:  14,
+                        color:     Colors.black,      // ← black text
+                        fontWeight: FontWeight.w400,
+                      ),
+                      cursorColor: AppColors.primary,
                       decoration: InputDecoration(
                         hintText: _isListening
                             ? 'Listening...'
                             : 'Ask me anything...',
                         hintStyle: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: _isListening
-                                ? Colors.red.withOpacity(0.6)
-                                : AppColors.textHint),
-                        border: InputBorder.none,
+                          fontSize: 14,
+                          color: _isListening
+                              ? Colors.red.withOpacity(0.6)
+                              : Colors.black38,       // ← visible placeholder
+                        ),
+                        border:        InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 10),
+                        filled:     true,
+                        fillColor:  Colors.white,     // ← white background
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
                       ),
                       onSubmitted: (_) => _send(),
                     ),
                   ),
-                  // Mic button
+                  // Mic
                   GestureDetector(
                     onTap: _toggleMic,
                     child: Padding(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 8),
                       child: AnimatedBuilder(
                         animation: _micPulse,
                         builder: (_, __) => Container(
-                          width: 32, height: 32,
+                          width: 34, height: 34,
                           decoration: BoxDecoration(
                             color: _isListening
-                                ? Colors.red.withOpacity(
-                                    0.8 + 0.2 * _micPulse.value)
+                                ? Colors.red
+                                    .withOpacity(0.8 + 0.2 * _micPulse.value)
                                 : Colors.transparent,
                             shape: BoxShape.circle,
                           ),
@@ -823,7 +841,7 @@ Rules for navigation commands:
                                 : Icons.mic_none_rounded,
                             color: _isListening
                                 ? Colors.white
-                                : AppColors.textHint,
+                                : Colors.black45,     // ← visible on white
                             size: 20,
                           ),
                         ),
@@ -839,16 +857,25 @@ Rules for navigation commands:
               onTap: _sending ? null : _send,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 44, height: 44,
+                width: 46, height: 46,
                 decoration: BoxDecoration(
                   color: _sending
                       ? AppColors.primary.withOpacity(0.5)
                       : AppColors.primary,
                   shape: BoxShape.circle,
+                  boxShadow: _sending
+                      ? []
+                      : [
+                          BoxShadow(
+                            color: AppColors.primary.withOpacity(0.35),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          )
+                        ],
                 ),
                 child: _sending
                     ? const Padding(
-                        padding: EdgeInsets.all(11),
+                        padding: EdgeInsets.all(12),
                         child: CircularProgressIndicator(
                             strokeWidth: 2.5,
                             color: AppColors.backgroundDark))
