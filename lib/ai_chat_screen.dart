@@ -59,7 +59,7 @@ class _AIChatScreenState extends State<AIChatScreen>
     with SingleTickerProviderStateMixin {
   static const _storage      = FlutterSecureStorage();
   static const _backendBase  =
-      'https://todago-backend-production.up.railway.app/api';
+      'https://todago-backend-production.up.railway.app/api/ai';
 
   // ── State ──────────────────────────────────────────────────────────────────
   final List<_Msg> _messages = [];

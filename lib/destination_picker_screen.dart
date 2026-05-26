@@ -50,7 +50,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   // Your Railway backend URL — update this to your actual deployed URL.
   // The proxy calls Gemini and returns an Anthropic-compatible response,
   // so no other parsing changes are needed in this file.
-  static const String _aiProxyUrl = 'https://YOUR_RAILWAY_APP.railway.app/api/ai/chat';
+  static const String _aiProxyUrl = 'https://todago-backend-production.up.railway.app/api/ai/chat';
 
   // JWT token — pass this in from your auth state / session manager.
   // Replace with however you store the logged-in user's token.
@@ -95,14 +95,43 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
 
 
   Future<void> _initLocation() async {
-    final loc = await MapService.getCurrentLocation();
+    // ── Step 1: Show map IMMEDIATELY with default Davao coords ───────────
+    // Never block the UI waiting for GPS. The map appears instantly and
+    // updates smoothly once the real position arrives in the background.
+    const LatLng defaultPos = LatLng(7.1907, 125.4553);
+    if (mounted) {
+      setState(() { _myLocation = defaultPos; _loadingLoc = false; });
+      _setMyMarker(defaultPos);
+    }
+
+    // ── Step 2: Fetch real GPS with a hard 8-second timeout ───────────────
+    LatLng? realPos;
+    try {
+      realPos = await MapService.getCurrentLocation()
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {
+      // Timed out or permission denied — keep default coords, no crash
+      debugPrint('[Location] GPS timed out or unavailable, using default');
+    }
+
     if (!mounted) return;
-    final pos = loc ?? const LatLng(7.1907, 125.4553);
-    setState(() { _myLocation = pos; _loadingLoc = false; });
-    _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(pos, 16));
-    final address = await MapService.reverseGeocode(pos);
-    if (mounted) setState(() => _pickupName = address);
-    _setMyMarker(pos);
+
+    // ── Step 3: Smoothly update to real position if we got one ────────────
+    if (realPos != null) {
+      setState(() => _myLocation = realPos);
+      _setMyMarker(realPos!);
+      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(realPos!, 16));
+    }
+
+    // ── Step 4: Reverse-geocode in background (non-blocking) ─────────────
+    final pos = realPos ?? defaultPos;
+    try {
+      final address = await MapService.reverseGeocode(pos)
+          .timeout(const Duration(seconds: 6));
+      if (mounted) setState(() => _pickupName = address);
+    } catch (_) {
+      debugPrint('[Location] Reverse geocode timed out');
+    }
   }
 
   // ── Speech init ───────────────────────────────────────────────────────────
@@ -447,20 +476,9 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       body: Stack(children: [
 
         // ── Google Map ─────────────────────────────────────────────────────
+        // Map shows immediately — no loading gate. GPS updates it in the background.
         Positioned.fill(
-          child: _loadingLoc
-              ? Container(
-                  color: const Color(0xFFE8EFF5),
-                  child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const CircularProgressIndicator(color: AppColors.primary),
-                    const SizedBox(height: 16),
-                    Text('Getting your location...',
-                        style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            color: AppColors.backgroundDark,
-                            fontWeight: FontWeight.w500)),
-                  ])))
-              : GoogleMap(
+          child: GoogleMap(
                   initialCameraPosition: CameraPosition(
                       target: _myLocation ?? const LatLng(7.1907, 125.4553), zoom: 16),
                   onMapCreated: (ctrl) {
