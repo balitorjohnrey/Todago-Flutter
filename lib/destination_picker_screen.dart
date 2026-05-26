@@ -119,8 +119,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     // ── Step 3: Smoothly update to real position if we got one ────────────
     if (realPos != null) {
       setState(() => _myLocation = realPos);
-      _setMyMarker(realPos!);
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(realPos!, 16));
+      _setMyMarker(realPos);
+      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(realPos, 16));
     }
 
     // ── Step 4: Reverse-geocode in background (non-blocking) ─────────────
