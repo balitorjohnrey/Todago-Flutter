@@ -29,7 +29,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Map<String, dynamic>? _user;
   String? _passengerPhotoPath;
   GoogleMapController? _mapController;
-  LatLng _currentLocation = const LatLng(7.1907, 125.4553);
+  LatLng _currentLocation = const LatLng(12.8797, 121.7740);
+  bool _hasLiveLocation = false;
   StreamSubscription<Position>? _locationStream;
 
   // ── Bookings state ────────────────────────────────────────────────────────
@@ -144,7 +145,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final pos = await LocationService.getCurrentPosition();
     if (pos != null && mounted) {
       final loc = LatLng(pos.latitude, pos.longitude);
-      setState(() => _currentLocation = loc);
+      setState(() {
+        _currentLocation = loc;
+        _hasLiveLocation = true;
+      });
       _mapController?.animateCamera(CameraUpdate.newLatLngZoom(loc, 16));
     }
     await _locationStream?.cancel();
@@ -154,7 +158,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     ).listen((position) {
       if (!mounted) return;
       final loc = LatLng(position.latitude, position.longitude);
-      setState(() => _currentLocation = loc);
+      setState(() {
+        _currentLocation = loc;
+        _hasLiveLocation = true;
+      });
       _mapController?.animateCamera(CameraUpdate.newLatLng(loc));
     });
   }
@@ -421,23 +428,25 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         child: GoogleMap(
           onMapCreated: (controller) {
             _mapController = controller;
-            if (_currentLocation != const LatLng(7.1907, 125.4553)) {
+            if (_hasLiveLocation) {
               _mapController?.animateCamera(
                   CameraUpdate.newLatLngZoom(_currentLocation, 16));
             }
           },
-          initialCameraPosition:
-              CameraPosition(target: _currentLocation, zoom: 15.0),
+          initialCameraPosition: CameraPosition(
+              target: _currentLocation, zoom: _hasLiveLocation ? 15.0 : 5.0),
           zoomControlsEnabled: false,
           myLocationButtonEnabled: false,
-          markers: {
-            Marker(
-              markerId: const MarkerId('current_location'),
-              position: _currentLocation,
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                  BitmapDescriptor.hueYellow),
-            ),
-          },
+          markers: _hasLiveLocation
+              ? {
+                  Marker(
+                    markerId: const MarkerId('current_location'),
+                    position: _currentLocation,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueYellow),
+                  ),
+                }
+              : {},
         ),
       ),
 

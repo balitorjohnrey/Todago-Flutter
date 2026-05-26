@@ -36,6 +36,9 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   bool _showSugg = false;
   bool _loadingLoc = true;
   Timer? _debounce;
+  StreamSubscription<LatLng>? _locSub;
+  DateTime? _lastRouteRefresh;
+  DateTime? _lastReverseGeocode;
 
   // ── Voice search ──────────────────────────────────────────────────────────
   final SpeechToText _speech = SpeechToText();
@@ -59,6 +62,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   @override
   void dispose() {
     _debounce?.cancel();
+    _locSub?.cancel();
     _searchCtrl.dispose();
     _searchFocus.dispose();
     _mapCtrl?.dispose();
@@ -68,49 +72,112 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   }
 
   Future<void> _initLocation() async {
-    // ── Step 1: Show map IMMEDIATELY with default Davao coords ───────────
-    // Never block the UI waiting for GPS. The map appears instantly and
-    // updates smoothly once the real position arrives in the background.
-    const LatLng defaultPos = LatLng(7.1907, 125.4553);
-    if (mounted) {
-      setState(() {
-        _myLocation = defaultPos;
-        _loadingLoc = false;
-      });
-      _setMyMarker(defaultPos);
-    }
-
-    // ── Step 2: Fetch real GPS with a hard 8-second timeout ───────────────
+    // Wait for a real GPS fix before saving the passenger pickup point.
     LatLng? realPos;
     try {
       realPos = await MapService.getCurrentLocation()
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 6));
     } catch (_) {
       // Timed out or permission denied — keep default coords, no crash
-      debugPrint('[Location] GPS timed out or unavailable, using default');
+      debugPrint('[Location] GPS timed out or unavailable');
     }
 
     if (!mounted) return;
 
     // ── Step 3: Smoothly update to real position if we got one ────────────
     if (realPos != null) {
-      setState(() => _myLocation = realPos);
-      _setMyMarker(realPos);
-      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(realPos, 16));
+      await _applyLivePickup(realPos, moveCamera: true, forceRoute: true);
     }
 
     // ── Step 4: Reverse-geocode in background (non-blocking) ─────────────
-    final pos = realPos ?? defaultPos;
-    try {
-      final address = await MapService.reverseGeocode(pos)
-          .timeout(const Duration(seconds: 6));
-      if (mounted) setState(() => _pickupName = address);
-    } catch (_) {
-      debugPrint('[Location] Reverse geocode timed out');
+    if (realPos == null) {
+      setState(() {
+        _loadingLoc = false;
+        _pickupName = 'Getting live location...';
+      });
+      _showSnack('Waiting for your live GPS location.');
     }
+
+    _startLocationStream();
   }
 
   // ── Speech init ───────────────────────────────────────────────────────────
+  void _startLocationStream() {
+    _locSub?.cancel();
+    _locSub = MapService.positionStream().listen(
+      (pos) => _applyLivePickup(pos),
+      onError: (_) {
+        if (mounted) {
+          setState(() => _loadingLoc = false);
+        }
+      },
+    );
+  }
+
+  Future<void> _applyLivePickup(
+    LatLng pos, {
+    bool moveCamera = false,
+    bool forceRoute = false,
+  }) async {
+    if (!mounted) return;
+    final hadLocation = _myLocation != null;
+    setState(() {
+      _myLocation = pos;
+      _loadingLoc = false;
+    });
+    _setMyMarker(pos);
+
+    if (moveCamera || !hadLocation) {
+      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(pos, 16));
+    }
+
+    final now = DateTime.now();
+    if (_lastReverseGeocode == null ||
+        now.difference(_lastReverseGeocode!) > const Duration(seconds: 30)) {
+      _lastReverseGeocode = now;
+      try {
+        final address = await MapService.reverseGeocode(pos)
+            .timeout(const Duration(seconds: 6));
+        if (mounted) {
+          setState(() => _pickupName = address);
+          _setMyMarker(pos);
+        }
+      } catch (_) {
+        debugPrint('[Location] Reverse geocode timed out');
+      }
+    }
+
+    await _refreshRouteFromPickup(pos, force: forceRoute);
+  }
+
+  Future<void> _refreshRouteFromPickup(
+    LatLng pickup, {
+    bool force = false,
+  }) async {
+    final destination = _destination;
+    if (destination == null || _isRouting) return;
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastRouteRefresh != null &&
+        now.difference(_lastRouteRefresh!) < const Duration(seconds: 10)) {
+      return;
+    }
+    _lastRouteRefresh = now;
+
+    setState(() => _isRouting = true);
+    final route = await MapService.fetchRoute(pickup, destination);
+    if (!mounted) return;
+    setState(() {
+      _route = route;
+      _isRouting = false;
+    });
+    if (route != null) {
+      _setPolyline(route.points);
+      if (force) _fitBounds(pickup, destination);
+    }
+  }
+
   Future<void> _initSpeech() async {
     _speechAvailable = await _speech.initialize(
       onError: (e) {
@@ -201,7 +268,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       _isSearching = true;
       _showSugg = true;
     });
-    final results = await MapService.searchPlaces(q);
+    final results = await MapService.searchPlaces(q, locationBias: _myLocation);
     if (mounted)
       setState(() {
         _suggestions = results;
@@ -333,7 +400,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         _isSearching = true;
       });
 
-      final results = await MapService.searchPlaces(destination);
+      final results =
+          await MapService.searchPlaces(destination, locationBias: _myLocation);
       if (!mounted) return;
 
       if (results.isEmpty) {
@@ -405,6 +473,10 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   // ── Confirm ───────────────────────────────────────────────────────────────
   void _confirmDestination() {
     if (_destination == null) return;
+    if (_myLocation == null) {
+      _showSnack('Your live pickup location is still loading.');
+      return;
+    }
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => ServiceSelectionScreen(
         pickupName: _pickupName,
@@ -435,8 +507,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         Positioned.fill(
           child: GoogleMap(
               initialCameraPosition: CameraPosition(
-                  target: _myLocation ?? const LatLng(7.1907, 125.4553),
-                  zoom: 16),
+                  target: _myLocation ?? const LatLng(12.8797, 121.7740),
+                  zoom: _myLocation == null ? 5 : 16),
               onMapCreated: (ctrl) {
                 _mapCtrl = ctrl;
                 if (_myLocation != null) {

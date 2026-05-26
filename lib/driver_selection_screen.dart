@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'reservation_notification_service.dart';
 import 'trip_service.dart';
@@ -13,6 +14,8 @@ class DriverSelectionScreen extends StatefulWidget {
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
+  final LatLng? pickupLatLng;
+  final LatLng? destinationLatLng;
   final DateTime? scheduledAt;
 
   const DriverSelectionScreen({
@@ -23,6 +26,8 @@ class DriverSelectionScreen extends StatefulWidget {
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Davao del Norte State College',
+    this.pickupLatLng,
+    this.destinationLatLng,
     this.scheduledAt,
   });
 
@@ -75,6 +80,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             fare: widget.fareAmount,
             paymentMethod: 'cash',
             scheduledAt: widget.scheduledAt!,
+            pickupLatLng: widget.pickupLatLng,
+            destinationLatLng: widget.destinationLatLng,
           )
         : await TripService.requestRide(
             driverId: _selectedDriver['driver_id'] as String,
@@ -83,6 +90,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             serviceType: _normalizeServiceType(widget.serviceType),
             fare: widget.fareAmount,
             paymentMethod: 'cash',
+            pickupLatLng: widget.pickupLatLng,
+            destinationLatLng: widget.destinationLatLng,
           );
 
     if (!mounted) return;
@@ -132,6 +141,9 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
           plateNo: _selectedDriver['plate_no']?.toString() ?? '',
           etaMinutes: _safeInt(_selectedDriver['eta_minutes'], 5),
           distanceKm: _safeDouble(_selectedDriver['distance_km'], 1.0),
+          destination: widget.destinationName,
+          fare: widget.fareAmount,
+          destinationLatLng: widget.destinationLatLng,
         ),
         transitionDuration: const Duration(milliseconds: 500),
         transitionsBuilder: (_, anim, __, child) =>

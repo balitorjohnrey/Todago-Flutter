@@ -31,6 +31,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   StreamSubscription<LatLng>? _locSub;
   Timer? _routeRefreshTimer;
   Timer? _tripPollTimer;
+  DateTime? _lastLocationSync;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -66,18 +67,38 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     final loc = await MapService.getCurrentLocation();
     if (!mounted) return;
 
-    final myPos = loc ?? const LatLng(7.1907, 125.4553);
+    if (loc == null) {
+      final destLat =
+          double.tryParse(widget.trip['destination_lat']?.toString() ?? '');
+      final destLng =
+          double.tryParse(widget.trip['destination_lng']?.toString() ?? '');
+      if (destLat != null && destLng != null) {
+        setState(() => _destPoint = LatLng(destLat, destLng));
+      }
+      _startLocationStream();
+      _routeRefreshTimer =
+          Timer.periodic(const Duration(seconds: 10), (_) async {
+        if (!mounted || _myLocation == null || _destPoint == null) return;
+        await _fetchAndDrawRoute(_myLocation!, _destPoint!);
+      });
+      if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
+        _tripPollTimer = Timer.periodic(
+          const Duration(seconds: 5),
+          (_) => _pollTripStatus(),
+        );
+      }
+      return;
+    }
+    final myPos = loc;
 
     // Resolve destination coords from trip data
-    LatLng destPos;
+    LatLng? destPos;
     final destLat =
         double.tryParse(widget.trip['destination_lat']?.toString() ?? '');
     final destLng =
         double.tryParse(widget.trip['destination_lng']?.toString() ?? '');
     if (destLat != null && destLng != null) {
       destPos = LatLng(destLat, destLng);
-    } else {
-      destPos = LatLng(myPos.latitude - 0.010, myPos.longitude - 0.007);
     }
 
     setState(() {
@@ -85,21 +106,17 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _destPoint = destPos;
     });
 
-    _updateMarkers(myPos, destPos);
-    await _fetchAndDrawRoute(myPos, destPos);
-    _fitBounds(myPos, destPos);
+    _syncDriverLocation(myPos, force: true);
+    if (destPos != null) {
+      _updateMarkers(myPos, destPos);
+      await _fetchAndDrawRoute(myPos, destPos);
+      _fitBounds(myPos, destPos);
+    } else {
+      _updateDriverMarker(myPos);
+    }
 
     // ── Live driver position stream ───────────────────────────────────────
-    _locSub = MapService.positionStream().listen((pos) async {
-      if (!mounted) return;
-      setState(() => _myLocation = pos);
-      _updateDriverMarker(pos);
-
-      // Recalculate road route on every driver position update
-      if (_destPoint != null && !_isFetchingRoute) {
-        await _fetchAndDrawRoute(pos, _destPoint!);
-      }
-    });
+    _startLocationStream();
 
     // ── Periodic route refresh every 10 s as backup ──────────────────────
     _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
@@ -116,6 +133,33 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
+  void _startLocationStream() {
+    _locSub?.cancel();
+    _locSub = MapService.positionStream().listen((pos) async {
+      if (!mounted) return;
+      setState(() => _myLocation = pos);
+      _updateDriverMarker(pos);
+      _syncDriverLocation(pos);
+
+      if (_destPoint != null && !_isFetchingRoute) {
+        await _fetchAndDrawRoute(pos, _destPoint!);
+      }
+    });
+  }
+
+  void _syncDriverLocation(LatLng pos, {bool force = false}) {
+    final tripId = widget.trip['trip_id']?.toString() ?? '';
+    if (tripId.isEmpty) return;
+    final now = DateTime.now();
+    if (!force &&
+        _lastLocationSync != null &&
+        now.difference(_lastLocationSync!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLocationSync = now;
+    TripService.updateDriverLocation(tripId, pos);
+  }
+
   Future<void> _fetchAndDrawRoute(LatLng from, LatLng to) async {
     if (_isFetchingRoute) return;
     _isFetchingRoute = true;

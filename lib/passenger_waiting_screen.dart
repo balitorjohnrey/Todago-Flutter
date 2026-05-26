@@ -103,17 +103,12 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     final loc = await MapService.getCurrentLocation();
     if (!mounted) return;
 
-    final myPos = loc ?? const LatLng(7.1907, 125.4553);
-    final driverPos = LatLng(myPos.latitude + 0.008, myPos.longitude + 0.006);
+    if (loc != null) {
+      setState(() => _myLocation = loc);
+      _updatePassengerMarker(loc);
+    }
 
-    setState(() {
-      _myLocation = myPos;
-      _driverPos = driverPos;
-    });
-
-    _updateMarkers(myPos, driverPos);
-    await _fetchAndDrawRoute(driverPos, myPos);
-    _fitBounds(driverPos, myPos);
+    await _checkStatus();
 
     _locSub = MapService.positionStream().listen((pos) async {
       if (!mounted) return;
@@ -243,9 +238,14 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
         if (driverLat != null && driverLng != null) {
           final newDriverPos = LatLng(driverLat, driverLng);
           setState(() => _driverPos = newDriverPos);
-          _updateDriverMarker(newDriverPos);
-          if (_myLocation != null && !_isFetchingRoute) {
-            await _fetchAndDrawRoute(newDriverPos, _myLocation!);
+          final passengerPos = _myLocation;
+          if (passengerPos != null) {
+            _updateMarkers(passengerPos, newDriverPos);
+            if (!_isFetchingRoute) {
+              await _fetchAndDrawRoute(newDriverPos, passengerPos);
+            }
+          } else {
+            _updateDriverMarker(newDriverPos);
           }
         }
 

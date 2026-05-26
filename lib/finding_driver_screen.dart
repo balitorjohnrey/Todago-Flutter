@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'driver_selection_screen.dart';
 
@@ -12,6 +13,8 @@ class FindingDriverScreen extends StatefulWidget {
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
+  final LatLng? pickupLatLng;
+  final LatLng? destinationLatLng;
   final DateTime? scheduledAt;
 
   const FindingDriverScreen({
@@ -22,6 +25,8 @@ class FindingDriverScreen extends StatefulWidget {
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Destination',
+    this.pickupLatLng,
+    this.destinationLatLng,
     this.scheduledAt,
   });
 
@@ -73,6 +78,8 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
           onlineDrivers: widget.onlineDrivers,
           pickupName: widget.pickupName,
           destinationName: widget.destinationName,
+          pickupLatLng: widget.pickupLatLng,
+          destinationLatLng: widget.destinationLatLng,
           scheduledAt: widget.scheduledAt,
         ),
         transitionDuration: const Duration(milliseconds: 500),

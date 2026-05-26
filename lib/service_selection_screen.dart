@@ -126,6 +126,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         onlineDrivers: _onlineDrivers,
         pickupName: widget.pickupName,
         destinationName: widget.destinationName,
+        pickupLatLng: widget.pickupLatLng,
+        destinationLatLng: widget.destinationLatLng,
         scheduledAt: _isScheduled ? _scheduledAt : null,
       ),
       transitionDuration: const Duration(milliseconds: 400),

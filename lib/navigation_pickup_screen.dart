@@ -32,6 +32,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   StreamSubscription<LatLng>? _locSub;
   Timer? _routeRefreshTimer;
   Timer? _tripPollTimer;
+  DateTime? _lastLocationSync;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -66,18 +67,38 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     final loc = await MapService.getCurrentLocation();
     if (!mounted) return;
 
-    final myPos = loc ?? const LatLng(7.1907, 125.4553);
+    if (loc == null) {
+      final pickupLat =
+          double.tryParse(widget.trip['pickup_lat']?.toString() ?? '');
+      final pickupLng =
+          double.tryParse(widget.trip['pickup_lng']?.toString() ?? '');
+      if (pickupLat != null && pickupLng != null) {
+        setState(() => _pickupPoint = LatLng(pickupLat, pickupLng));
+      }
+      _startLocationStream();
+      _routeRefreshTimer =
+          Timer.periodic(const Duration(seconds: 10), (_) async {
+        if (!mounted || _myLocation == null || _pickupPoint == null) return;
+        await _fetchAndDrawRoute(_myLocation!, _pickupPoint!);
+      });
+      if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
+        _tripPollTimer = Timer.periodic(
+          const Duration(seconds: 5),
+          (_) => _pollTripStatus(),
+        );
+      }
+      return;
+    }
+    final myPos = loc;
 
-    // Try to resolve pickup from trip data, otherwise offset from driver
-    LatLng pickupPos;
+    // Try to resolve pickup from trip data.
+    LatLng? pickupPos;
     final pickupLat =
         double.tryParse(widget.trip['pickup_lat']?.toString() ?? '');
     final pickupLng =
         double.tryParse(widget.trip['pickup_lng']?.toString() ?? '');
     if (pickupLat != null && pickupLng != null) {
       pickupPos = LatLng(pickupLat, pickupLng);
-    } else {
-      pickupPos = LatLng(myPos.latitude - 0.006, myPos.longitude - 0.004);
     }
 
     setState(() {
@@ -85,21 +106,17 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       _pickupPoint = pickupPos;
     });
 
-    _updateMarkers(myPos, pickupPos);
-    await _fetchAndDrawRoute(myPos, pickupPos);
-    _fitBounds(myPos, pickupPos);
+    _syncDriverLocation(myPos, force: true);
+    if (pickupPos != null) {
+      _updateMarkers(myPos, pickupPos);
+      await _fetchAndDrawRoute(myPos, pickupPos);
+      _fitBounds(myPos, pickupPos);
+    } else {
+      _updateDriverMarker(myPos);
+    }
 
     // ── Live location stream ─────────────────────────────────────────────
-    _locSub = MapService.positionStream().listen((pos) async {
-      if (!mounted) return;
-      setState(() => _myLocation = pos);
-      _updateDriverMarker(pos);
-
-      // Recalculate road route on every position update
-      if (_pickupPoint != null && !_isFetchingRoute) {
-        await _fetchAndDrawRoute(pos, _pickupPoint!);
-      }
-    });
+    _startLocationStream();
 
     // ── Periodic route refresh every 10 s as backup ──────────────────────
     _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
@@ -116,6 +133,33 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
+  void _startLocationStream() {
+    _locSub?.cancel();
+    _locSub = MapService.positionStream().listen((pos) async {
+      if (!mounted) return;
+      setState(() => _myLocation = pos);
+      _updateDriverMarker(pos);
+      _syncDriverLocation(pos);
+
+      if (_pickupPoint != null && !_isFetchingRoute) {
+        await _fetchAndDrawRoute(pos, _pickupPoint!);
+      }
+    });
+  }
+
+  void _syncDriverLocation(LatLng pos, {bool force = false}) {
+    final tripId = widget.trip['trip_id']?.toString() ?? '';
+    if (tripId.isEmpty) return;
+    final now = DateTime.now();
+    if (!force &&
+        _lastLocationSync != null &&
+        now.difference(_lastLocationSync!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _lastLocationSync = now;
+    TripService.updateDriverLocation(tripId, pos);
+  }
+
   Future<void> _fetchAndDrawRoute(LatLng from, LatLng to) async {
     if (_isFetchingRoute) return;
     _isFetchingRoute = true;
@@ -258,12 +302,18 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     setState(() => _isConfirming = true);
     final tripId = widget.trip['trip_id']?.toString() ?? '';
     if (tripId.isNotEmpty) {
+      if (_myLocation != null) _syncDriverLocation(_myLocation!, force: true);
       await TripService.updateTripStatus(tripId, 'pickup');
     }
     if (!mounted) return;
     setState(() => _isConfirming = false);
+    final latestTrip = tripId.isNotEmpty
+        ? await TripService.getTripById(tripId, forDriver: true)
+        : null;
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(PageRouteBuilder(
-      pageBuilder: (_, __, ___) => ActiveTripDriverScreen(trip: widget.trip),
+      pageBuilder: (_, __, ___) =>
+          ActiveTripDriverScreen(trip: latestTrip ?? widget.trip),
       transitionDuration: const Duration(milliseconds: 500),
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -50,6 +51,8 @@ class TripService {
     required String serviceType,
     required double fare,
     required String paymentMethod,
+    LatLng? pickupLatLng,
+    LatLng? destinationLatLng,
   }) async {
     try {
       final token = await _getPassengerToken();
@@ -64,6 +67,12 @@ class TripService {
               'serviceType': serviceType,
               'fare': fare,
               'paymentMethod': paymentMethod,
+              if (pickupLatLng != null) 'pickupLat': pickupLatLng.latitude,
+              if (pickupLatLng != null) 'pickupLng': pickupLatLng.longitude,
+              if (destinationLatLng != null)
+                'destinationLat': destinationLatLng.latitude,
+              if (destinationLatLng != null)
+                'destinationLng': destinationLatLng.longitude,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -82,6 +91,8 @@ class TripService {
     required double fare,
     required String paymentMethod,
     required DateTime scheduledAt,
+    LatLng? pickupLatLng,
+    LatLng? destinationLatLng,
   }) async {
     try {
       final token = await _getPassengerToken();
@@ -97,6 +108,12 @@ class TripService {
               'fare': fare,
               'paymentMethod': paymentMethod,
               'scheduledPickupAt': scheduledAt.toUtc().toIso8601String(),
+              if (pickupLatLng != null) 'pickupLat': pickupLatLng.latitude,
+              if (pickupLatLng != null) 'pickupLng': pickupLatLng.longitude,
+              if (destinationLatLng != null)
+                'destinationLat': destinationLatLng.latitude,
+              if (destinationLatLng != null)
+                'destinationLng': destinationLatLng.longitude,
             }),
           )
           .timeout(const Duration(seconds: 15));
@@ -218,6 +235,31 @@ class TripService {
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  static Future<bool> updateDriverLocation(
+      String tripId, LatLng location) async {
+    if (tripId.isEmpty) return false;
+    try {
+      final token = await _getDriverToken();
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/driver-location'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'lat': location.latitude,
+              'lng': location.longitude,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      return false;
     }
   }
 

@@ -90,17 +90,13 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   Future<void> _init() async {
     final loc = await MapService.getCurrentLocation();
     if (!mounted) return;
-    final myPos = loc ?? const LatLng(7.1907, 125.4553);
-    final driverPos = LatLng(myPos.latitude + 0.008, myPos.longitude + 0.006);
-    setState(() {
-      _myLocation = myPos;
-      _driverPos = driverPos;
-    });
+    if (loc != null) {
+      setState(() => _myLocation = loc);
+      _updatePassengerMarker(loc);
+    }
 
     // Initial: driver approaching → show driver + passenger markers, route driver→passenger
-    _updateApproachingMarkers(myPos, driverPos);
-    await _fetchAndDrawRoute(driverPos, myPos);
-    _fitBounds(driverPos, myPos);
+    await _pollTrip();
 
     // ── Live passenger position stream ────────────────────────────────────
     _locSub = MapService.positionStream().listen((pos) async {
@@ -208,9 +204,14 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         if (driverLat != null && driverLng != null) {
           final newDriverPos = LatLng(driverLat, driverLng);
           setState(() => _driverPos = newDriverPos);
-          _updateDriverMarker(newDriverPos);
-          if (_myLocation != null && !_isFetchingRoute) {
-            await _fetchAndDrawRoute(newDriverPos, _myLocation!);
+          final passengerPos = _myLocation;
+          if (passengerPos != null) {
+            _updateApproachingMarkers(passengerPos, newDriverPos);
+            if (!_isFetchingRoute) {
+              await _fetchAndDrawRoute(newDriverPos, passengerPos);
+            }
+          } else {
+            _updateDriverMarker(newDriverPos);
           }
         }
       }
