@@ -29,6 +29,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
   StreamSubscription<LatLng>? _locSub;
   Timer? _routeRefreshTimer;
+  Timer? _tripPollTimer;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -74,8 +75,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     if (destLat != null && destLng != null) {
       destPos = LatLng(destLat, destLng);
     } else {
-      destPos =
-          LatLng(myPos.latitude - 0.010, myPos.longitude - 0.007);
+      destPos = LatLng(myPos.latitude - 0.010, myPos.longitude - 0.007);
     }
 
     setState(() {
@@ -100,11 +100,17 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     });
 
     // ── Periodic route refresh every 10 s as backup ──────────────────────
-    _routeRefreshTimer =
-        Timer.periodic(const Duration(seconds: 10), (_) async {
+    _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (!mounted || _myLocation == null || _destPoint == null) return;
       await _fetchAndDrawRoute(_myLocation!, _destPoint!);
     });
+
+    if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
+      _tripPollTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _pollTripStatus(),
+      );
+    }
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
@@ -128,17 +134,15 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
         Marker(
           markerId: const MarkerId('driver'),
           position: driver,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueOrange),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow: const InfoWindow(title: 'You (Driver)'),
         ),
         Marker(
           markerId: const MarkerId('destination'),
           position: dest,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueRed),
-          infoWindow:
-              InfoWindow(title: 'Destination', snippet: _destination),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          infoWindow: InfoWindow(title: 'Destination', snippet: _destination),
         ),
       };
     });
@@ -151,8 +155,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
         Marker(
           markerId: const MarkerId('driver'),
           position: pos,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueOrange),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow: const InfoWindow(title: 'You (Driver)'),
         ),
       };
@@ -194,8 +198,56 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   void dispose() {
     _locSub?.cancel();
     _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
     _mapCtrl?.dispose();
     super.dispose();
+  }
+
+  Future<void> _pollTripStatus() async {
+    final tripId = widget.trip['trip_id']?.toString() ?? '';
+    if (tripId.isEmpty || !mounted) return;
+    final trip = await TripService.getTripById(tripId, forDriver: true);
+    if (!mounted || trip == null) return;
+    if (trip['status']?.toString() == 'cancelled') {
+      _showPassengerCancelled();
+    }
+  }
+
+  Future<void> _showPassengerCancelled() async {
+    _locSub?.cancel();
+    _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
+    await TripService.updateDriverStatus('online');
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Trip Cancelled',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        content: Text('The passenger cancelled this trip.',
+            style: GoogleFonts.poppins(fontSize: 14)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.backgroundDark,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text('Back to Dashboard',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _completeTrip() async {
@@ -227,8 +279,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: Colors.white,
         contentPadding: const EdgeInsets.all(24),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -236,8 +287,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1),
-                shape: BoxShape.circle),
+                color: Colors.green.withOpacity(0.1), shape: BoxShape.circle),
             child: const Icon(Icons.check_circle_rounded,
                 color: Colors.green, size: 40),
           ),
@@ -252,8 +302,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           const SizedBox(height: 6),
           Text(
             'Thank you for the ride, $_passengerName!',
-            style: GoogleFonts.poppins(
-                fontSize: 13, color: AppColors.textHint),
+            style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 20),
@@ -263,18 +312,15 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 color: const Color(0xFFF8F9FA),
                 borderRadius: BorderRadius.circular(14)),
             child: Column(children: [
-              _earningsRow('Passenger Fare',
-                  '₱${_fare.toStringAsFixed(2)}', Colors.black),
+              _earningsRow('Passenger Fare', '₱${_fare.toStringAsFixed(2)}',
+                  Colors.black),
               const SizedBox(height: 6),
               _earningsRow('Commission (flat)',
                   '- ₱${actualComm.toStringAsFixed(2)}', Colors.red),
               const Divider(height: 16),
-              _earningsRow(
-                  'Your Earnings',
-                  '₱${actualEarnings.toStringAsFixed(2)}',
-                  Colors.green,
-                  bold: true,
-                  large: true),
+              _earningsRow('Your Earnings',
+                  '₱${actualEarnings.toStringAsFixed(2)}', Colors.green,
+                  bold: true, large: true),
             ]),
           ),
           const SizedBox(height: 20),
@@ -285,10 +331,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 Navigator.of(context).pop();
                 Navigator.of(context).pushAndRemoveUntil(
                   PageRouteBuilder(
-                    pageBuilder: (_, __, ___) =>
-                        const DriverDashboardScreen(),
-                    transitionDuration:
-                        const Duration(milliseconds: 500),
+                    pageBuilder: (_, __, ___) => const DriverDashboardScreen(),
+                    transitionDuration: const Duration(milliseconds: 500),
                     transitionsBuilder: (_, anim, __, child) =>
                         FadeTransition(opacity: anim, child: child),
                   ),
@@ -319,14 +363,13 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           {bool bold = false, bool large = false}) =>
       Row(children: [
         Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 13, color: AppColors.textHint)),
+            style:
+                GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
         const Spacer(),
         Text(value,
             style: GoogleFonts.poppins(
                 fontSize: large ? 18 : 13,
-                fontWeight:
-                    bold ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
                 color: valueColor)),
       ]);
 
@@ -344,8 +387,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
               ? Container(
                   color: const Color(0xFFE8EFF5),
                   child: const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primary),
+                    child: CircularProgressIndicator(color: AppColors.primary),
                   ))
               : GoogleMap(
                   initialCameraPosition:
@@ -396,17 +438,15 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                         decoration: BoxDecoration(
                           color: Colors.green.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: Colors.green.withOpacity(0.3)),
+                          border:
+                              Border.all(color: Colors.green.withOpacity(0.3)),
                         ),
-                        child:
-                            Row(mainAxisSize: MainAxisSize.min, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Container(
                             width: 7,
                             height: 7,
                             decoration: const BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle),
+                                color: Colors.green, shape: BoxShape.circle),
                           ),
                           const SizedBox(width: 6),
                           Text(
@@ -423,9 +463,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                       const SizedBox(height: 12),
                       // Live distance + time from _route
                       Row(children: [
-                        _navStat(
-                            '${dist.toStringAsFixed(1)} km',
-                            'Distance'),
+                        _navStat('${dist.toStringAsFixed(1)} km', 'Distance'),
                         const SizedBox(width: 24),
                         _navStat('$eta min', 'Time Left'),
                         const Spacer(),
@@ -466,8 +504,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                         ),
                       ]),
                     ]),
-              ).animate().fadeIn(duration: 400.ms).slideY(
-                  begin: -0.2, end: 0),
+              ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0),
             ),
           ),
         ),
@@ -480,8 +517,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           child: Container(
             decoration: const BoxDecoration(
               color: Colors.white,
-              borderRadius:
-                  BorderRadius.vertical(top: Radius.circular(24)),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
               boxShadow: [
                 BoxShadow(
                     color: Colors.black12,
@@ -492,8 +528,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
             child: SafeArea(
               top: false,
-              child:
-                  Column(mainAxisSize: MainAxisSize.min, children: [
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -546,8 +581,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                             Text(
                               'Verified Passenger',
                               style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: AppColors.textHint),
+                                  fontSize: 12, color: AppColors.textHint),
                             ),
                           ]),
                         ]),
@@ -558,47 +592,35 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 // Call / Message buttons
                 Row(children: [
                   Expanded(
-                      child: _actionBtn(Icons.phone_rounded, 'Call',
-                          Colors.green, () {})),
+                      child: _actionBtn(
+                          Icons.phone_rounded, 'Call', Colors.green, () {})),
                   const SizedBox(width: 10),
                   Expanded(
-                      child: _actionBtn(
-                          Icons.chat_bubble_rounded,
-                          'Message',
-                          AppColors.primary,
-                          () {})),
+                      child: _actionBtn(Icons.chat_bubble_rounded, 'Message',
+                          AppColors.primary, () {})),
                 ]),
                 const SizedBox(height: 14),
 
                 // Stats row — live from _route
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 12, horizontal: 8),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8F9FA),
                     borderRadius: BorderRadius.circular(14),
-                    border:
-                        Border.all(color: const Color(0xFFEEEEEE)),
+                    border: Border.all(color: const Color(0xFFEEEEEE)),
                   ),
                   child: Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         _tripStat('$eta min', 'Time Left',
-                            Icons.schedule_rounded,
-                            AppColors.primary),
+                            Icons.schedule_rounded, AppColors.primary),
                         _divV(),
-                        _tripStat(
-                            '${dist.toStringAsFixed(1)} km',
-                            'Distance',
-                            Icons.route_rounded,
-                            Colors.blue),
+                        _tripStat('${dist.toStringAsFixed(1)} km', 'Distance',
+                            Icons.route_rounded, Colors.blue),
                         _divV(),
-                        _tripStat(
-                            '₱${_driverEarnings.toStringAsFixed(0)}',
-                            'Earnings',
-                            Icons.payments_rounded,
-                            Colors.green),
+                        _tripStat('₱${_driverEarnings.toStringAsFixed(0)}',
+                            'Earnings', Icons.payments_rounded, Colors.green),
                       ]),
                 ),
                 const SizedBox(height: 16),
@@ -621,25 +643,22 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                         height: 36,
                         decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.2),
-                            borderRadius:
-                                BorderRadius.circular(10)),
+                            borderRadius: BorderRadius.circular(10)),
                         child: _isCompleting
                             ? const Center(
                                 child: SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white),
-                                ))
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white),
+                              ))
                             : const Icon(Icons.check_rounded,
                                 color: Colors.white, size: 22),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 'Complete Trip',
@@ -652,8 +671,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                               Text(
                                 'Tap when passenger reaches destination',
                                 style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    color: Colors.white70),
+                                    fontSize: 10, color: Colors.white70),
                               ),
                             ]),
                       ),
@@ -677,8 +695,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 fontWeight: FontWeight.w900,
                 color: AppColors.backgroundDark)),
         Text(l,
-            style: GoogleFonts.poppins(
-                fontSize: 11, color: AppColors.textHint)),
+            style:
+                GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
       ]);
 
   Widget _actionBtn(
@@ -697,15 +715,12 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             const SizedBox(width: 6),
             Text(label,
                 style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: color)),
+                    fontSize: 13, fontWeight: FontWeight.w700, color: color)),
           ]),
         ),
       );
 
-  Widget _tripStat(String v, String l, IconData icon, Color color) =>
-      Expanded(
+  Widget _tripStat(String v, String l, IconData icon, Color color) => Expanded(
         child: Column(children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(height: 4),
@@ -715,8 +730,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                   fontWeight: FontWeight.w800,
                   color: AppColors.backgroundDark)),
           Text(l,
-              style: GoogleFonts.poppins(
-                  fontSize: 10, color: AppColors.textHint)),
+              style:
+                  GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
         ]),
       );
 

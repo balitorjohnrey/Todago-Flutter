@@ -195,6 +195,35 @@ class DriverAuthService {
     return jsonDecode(raw) as Map<String, dynamic>;
   }
 
+  static Future<Map<String, dynamic>?> fetchProfile() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return await getDriver();
+
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/me'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final driver = data['driver'] as Map<String, dynamic>?;
+        if (driver != null) {
+          await _storage.write(key: _driverDataKey, value: jsonEncode(driver));
+          return driver;
+        }
+      }
+      return await getDriver();
+    } catch (_) {
+      return await getDriver();
+    }
+  }
+
   static Future<bool> isLoggedIn() async {
     final t = await getToken();
     return t != null && t.isNotEmpty;

@@ -9,6 +9,9 @@ import 'splash_screen.dart';
 import 'ride_request_screen.dart';
 import 'navigation_pickup_screen.dart';
 import 'ai_chat_screen.dart';
+import 'driver_profile_screen.dart';
+import 'profile_avatar.dart';
+import 'profile_photo_service.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -18,15 +21,17 @@ class DriverDashboardScreen extends StatefulWidget {
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     with SingleTickerProviderStateMixin {
-  bool _isOnline       = false;
-  bool _isUpdating     = false;
+  bool _isOnline = false;
+  bool _isUpdating = false;
   bool _isShowingPopup = false;
   late AnimationController _pulse;
 
   String _driverName = 'Driver';
-  String _todaBody   = '';
-  double _avgRating  = 0.0;
-  int    _totalTrips = 0;
+  String _todaBody = '';
+  String? _driverPhotoPath;
+  Map<String, dynamic>? _driverProfile;
+  double _avgRating = 0.0;
+  int _totalTrips = 0;
 
   Timer? _pollTimer;
 
@@ -41,13 +46,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   Future<void> _loadDriver() async {
-    final d = await DriverAuthService.getDriver();
+    final d = await DriverAuthService.fetchProfile();
+    final photoPath = await ProfilePhotoService.getPhotoPath(
+      ProfilePhotoService.driverPhotoKey,
+    );
     if (d != null && mounted) {
       setState(() {
+        _driverProfile = d;
         _driverName = d['driver_name']?.toString() ?? 'Driver';
-        _todaBody   = d['toda_body_number']?.toString() ?? '';
-        _avgRating  = (d['avg_rating'] ?? 0.0).toDouble();
-        _totalTrips = (d['total_trips'] ?? 0) as int;
+        _todaBody = d['toda_body_number']?.toString() ?? '';
+        _driverPhotoPath = photoPath;
+        _avgRating = _asDouble(d['avg_rating']);
+        _totalTrips = _asInt(d['total_trips']);
       });
     }
   }
@@ -70,7 +80,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _snack('You are now OFFLINE', Colors.grey[700]!);
       }
     } else {
-      _snack('Could not update status. Check your connection.', AppColors.error);
+      _snack(
+          'Could not update status. Check your connection.', AppColors.error);
     }
   }
 
@@ -92,6 +103,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     final trip = await TripService.fetchPendingTrip();
     if (trip == null || !mounted) return;
     setState(() => _isShowingPopup = true);
+    var acceptedOk = false;
     final accepted = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -99,7 +111,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       builder: (_) => RideRequestScreen(
         trip: trip,
         onAccept: () async {
-          await TripService.acceptTrip(trip['trip_id']?.toString() ?? '');
+          acceptedOk =
+              await TripService.acceptTrip(trip['trip_id']?.toString() ?? '');
         },
         onDecline: () async {
           await TripService.declineTrip(trip['trip_id']?.toString() ?? '');
@@ -108,7 +121,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     );
     if (!mounted) return;
     setState(() => _isShowingPopup = false);
-    if (accepted == true) {
+    if (accepted == true && acceptedOk) {
       Navigator.of(context).push(PageRouteBuilder(
         pageBuilder: (_, __, ___) => NavigationPickupScreen(trip: trip),
         transitionDuration: const Duration(milliseconds: 500),
@@ -118,6 +131,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
           child: child,
         ),
       ));
+    } else if (accepted == true) {
+      _snack('Passenger cancelled this request.', AppColors.error);
+      await TripService.updateDriverStatus('online');
     }
   }
 
@@ -136,8 +152,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg,
-          style: GoogleFonts.poppins(
-              fontSize: 13, fontWeight: FontWeight.w500)),
+          style:
+              GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
       backgroundColor: color,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -180,6 +196,33 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     ));
   }
 
+  void _openProfile() {
+    Navigator.of(context)
+        .push(PageRouteBuilder(
+          pageBuilder: (_, __, ___) =>
+              DriverProfileScreen(initialDriver: _driverProfile),
+          transitionDuration: const Duration(milliseconds: 400),
+          transitionsBuilder: (_, anim, __, child) => SlideTransition(
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+            child: child,
+          ),
+        ))
+        .then((_) => _loadDriver());
+  }
+
+  static double _asDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   // ════════════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════════════
@@ -212,9 +255,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                   color: AppColors.backgroundDark, size: 26),
               // Online dot
               Positioned(
-                top: 10, right: 10,
+                top: 10,
+                right: 10,
                 child: Container(
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   decoration: const BoxDecoration(
                     color: AppColors.success,
                     shape: BoxShape.circle,
@@ -223,28 +268,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ),
             ]),
           ),
-        ).animate()
-          .fadeIn(delay: 500.ms)
-          .scale(
-              begin: const Offset(0.6, 0.6),
-              end: const Offset(1, 1),
-              duration: 400.ms,
-              curve: Curves.elasticOut),
+        ).animate().fadeIn(delay: 500.ms).scale(
+            begin: const Offset(0.6, 0.6),
+            end: const Offset(1, 1),
+            duration: 400.ms,
+            curve: Curves.elasticOut),
       ),
 
       body: SafeArea(
         child: Column(children: [
-
           // ── Top bar ───────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
             child: Row(children: [
-              _iconBox(Icons.menu_rounded, null),
+              _iconBox(Icons.person_rounded, _openProfile),
               const Spacer(),
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
                   color: (_isOnline ? Colors.green : Colors.grey)
                       .withOpacity(0.15),
@@ -256,7 +298,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Container(
-                    width: 8, height: 8,
+                    width: 8,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: _isOnline ? Colors.green : Colors.grey,
                       shape: BoxShape.circle,
@@ -281,8 +324,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               decoration: BoxDecoration(
                 color: const Color(0xFF252540),
                 borderRadius: BorderRadius.circular(16),
@@ -332,18 +374,16 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                       // Main circle
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 400),
-                        width: 210, height: 210,
+                        width: 210,
+                        height: 210,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: _isOnline
-                              ? Colors.green
-                              : AppColors.primary,
+                          color: _isOnline ? Colors.green : AppColors.primary,
                           boxShadow: [
                             BoxShadow(
-                              color: (_isOnline
-                                      ? Colors.green
-                                      : AppColors.primary)
-                                  .withOpacity(0.4),
+                              color:
+                                  (_isOnline ? Colors.green : AppColors.primary)
+                                      .withOpacity(0.4),
                               blurRadius: 40,
                               spreadRadius: 8,
                             )
@@ -352,27 +392,25 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                         child: _isUpdating
                             ? const Center(
                                 child: SizedBox(
-                                  width: 36, height: 36,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 3,
-                                      color: Colors.white),
-                                ))
+                                width: 36,
+                                height: 36,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 3, color: Colors.white),
+                              ))
                             : Column(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.center,
+                                mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   if (!_isOnline)
-                                    const Icon(
-                                        Icons.location_on_rounded,
+                                    const Icon(Icons.location_on_rounded,
                                         color: AppColors.backgroundDark,
                                         size: 40)
                                   else
                                     SizedBox(
-                                      width: 46, height: 46,
+                                      width: 46,
+                                      height: 46,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 3,
-                                        color: Colors.white
-                                            .withOpacity(0.7),
+                                        color: Colors.white.withOpacity(0.7),
                                         strokeCap: StrokeCap.round,
                                       ),
                                     ),
@@ -425,58 +463,52 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
             ),
             child: Column(children: [
               Row(children: [
-                Container(
-                  width: 46, height: 46,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Text(_initials,
-                        style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
-                  ),
+                ProfileAvatar(
+                  initials: _initials,
+                  imagePath: _driverPhotoPath,
+                  size: 46,
+                  backgroundColor: AppColors.primary.withOpacity(0.15),
+                  foregroundColor: AppColors.primary,
+                  onTap: _openProfile,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    Text(_driverName,
-                        style: GoogleFonts.poppins(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white)),
-                    Row(children: [
-                      if (_avgRating > 0) ...[
-                        const Icon(Icons.star_rounded,
-                            color: AppColors.primary, size: 14),
-                        const SizedBox(width: 2),
-                        Text(_avgRating.toStringAsFixed(1),
+                        Text(_driverName,
                             style: GoogleFonts.poppins(
-                                fontSize: 12, color: Colors.white70)),
-                        const SizedBox(width: 6),
-                      ],
-                      Text('· $_todaBody',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12, color: Colors.white38)),
-                    ]),
-                  ]),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
+                        Row(children: [
+                          if (_avgRating > 0) ...[
+                            const Icon(Icons.star_rounded,
+                                color: AppColors.primary, size: 14),
+                            const SizedBox(width: 2),
+                            Text(_avgRating.toStringAsFixed(1),
+                                style: GoogleFonts.poppins(
+                                    fontSize: 12, color: Colors.white70)),
+                            const SizedBox(width: 6),
+                          ],
+                          Text('· $_todaBody',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.white38)),
+                        ]),
+                      ]),
                 ),
 
                 // ── AI Support chip ────────────────────────────────────────
                 GestureDetector(
                   onTap: _openChat,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.15),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: AppColors.primary.withOpacity(0.3)),
+                      border:
+                          Border.all(color: AppColors.primary.withOpacity(0.3)),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.support_agent_rounded,
@@ -493,11 +525,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ]),
               const SizedBox(height: 16),
               Row(children: [
-                _bottomStat(
-                    'Online Time', '0h 0m', Icons.access_time_rounded),
+                _bottomStat('Online Time', '0h 0m', Icons.access_time_rounded),
                 _bottomStat('Trips Today', '0', Icons.route_rounded),
-                _bottomStat(
-                    'Earnings', '₱0', Icons.attach_money_rounded),
+                _bottomStat('Earnings', '₱0', Icons.attach_money_rounded),
               ]),
             ]),
           ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
@@ -510,7 +540,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   Widget _iconBox(IconData icon, VoidCallback? onTap) => GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 38, height: 38,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(
             color: const Color(0xFF252540),
             borderRadius: BorderRadius.circular(10),
@@ -519,20 +550,18 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         ),
       );
 
-  Widget _statItem(
-          String label, String value, String sub, IconData icon) =>
+  Widget _statItem(String label, String value, String sub, IconData icon) =>
       Expanded(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               Icon(icon, color: AppColors.primary, size: 14),
               const SizedBox(width: 4),
               Text(label,
-                  style: GoogleFonts.poppins(
-                      fontSize: 10, color: Colors.white54)),
+                  style:
+                      GoogleFonts.poppins(fontSize: 10, color: Colors.white54)),
             ]),
             const SizedBox(height: 2),
             Text(value,
@@ -541,14 +570,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                     fontWeight: FontWeight.w800,
                     color: Colors.white)),
             Text(sub,
-                style: GoogleFonts.poppins(
-                    fontSize: 10, color: Colors.white54)),
+                style:
+                    GoogleFonts.poppins(fontSize: 10, color: Colors.white54)),
           ]),
         ),
       );
 
-  Widget _bottomStat(String label, String value, IconData icon) =>
-      Expanded(
+  Widget _bottomStat(String label, String value, IconData icon) => Expanded(
         child: Column(children: [
           Icon(icon, color: AppColors.primary, size: 18),
           const SizedBox(height: 4),
@@ -558,8 +586,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                   fontWeight: FontWeight.w700,
                   color: Colors.white)),
           Text(label,
-              style: GoogleFonts.poppins(
-                  fontSize: 10, color: Colors.white38)),
+              style: GoogleFonts.poppins(fontSize: 10, color: Colors.white38)),
         ]),
       );
 }

@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
 import 'active_trip_driver_screen.dart';
+import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
 
 class NavigationPickupScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
 
   StreamSubscription<LatLng>? _locSub;
   Timer? _routeRefreshTimer;
+  Timer? _tripPollTimer;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -66,10 +68,10 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
 
     // Try to resolve pickup from trip data, otherwise offset from driver
     LatLng pickupPos;
-    final pickupLat = double.tryParse(
-        widget.trip['pickup_lat']?.toString() ?? '');
-    final pickupLng = double.tryParse(
-        widget.trip['pickup_lng']?.toString() ?? '');
+    final pickupLat =
+        double.tryParse(widget.trip['pickup_lat']?.toString() ?? '');
+    final pickupLng =
+        double.tryParse(widget.trip['pickup_lng']?.toString() ?? '');
     if (pickupLat != null && pickupLng != null) {
       pickupPos = LatLng(pickupLat, pickupLng);
     } else {
@@ -102,6 +104,13 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       if (!mounted || _myLocation == null || _pickupPoint == null) return;
       await _fetchAndDrawRoute(_myLocation!, _pickupPoint!);
     });
+
+    if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
+      _tripPollTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _pollTripStatus(),
+      );
+    }
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
@@ -125,15 +134,15 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
         Marker(
           markerId: const MarkerId('driver'),
           position: driver,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueOrange),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow: const InfoWindow(title: 'You (Driver)'),
         ),
         Marker(
           markerId: const MarkerId('pickup'),
           position: pickup,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueAzure),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow:
               InfoWindow(title: _passengerName, snippet: 'Pickup Point'),
         ),
@@ -148,8 +157,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
         Marker(
           markerId: const MarkerId('driver'),
           position: pos,
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-              BitmapDescriptor.hueOrange),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow: const InfoWindow(title: 'You (Driver)'),
         ),
       };
@@ -191,8 +200,56 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   void dispose() {
     _locSub?.cancel();
     _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
     _mapCtrl?.dispose();
     super.dispose();
+  }
+
+  Future<void> _pollTripStatus() async {
+    final tripId = widget.trip['trip_id']?.toString() ?? '';
+    if (tripId.isEmpty || !mounted) return;
+    final trip = await TripService.getTripById(tripId, forDriver: true);
+    if (!mounted || trip == null) return;
+    if (trip['status']?.toString() == 'cancelled') {
+      _showPassengerCancelled();
+    }
+  }
+
+  Future<void> _showPassengerCancelled() async {
+    _locSub?.cancel();
+    _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
+    await TripService.updateDriverStatus('online');
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Trip Cancelled',
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+        content: Text('The passenger cancelled this trip.',
+            style: GoogleFonts.poppins(fontSize: 14)),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.backgroundDark,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+            child: Text('Back to Dashboard',
+                style: GoogleFonts.poppins(
+                    fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _confirmArrival() async {
@@ -364,8 +421,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
             child: SafeArea(
               top: false,
-              child:
-                  Column(mainAxisSize: MainAxisSize.min, children: [
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
                 // Drag handle
                 Center(
                   child: Container(
@@ -429,31 +485,24 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
 
                 // Stats row — live from _route
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      vertical: 12, horizontal: 8),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8F9FA),
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFFEEEEEE)),
                   ),
                   child: Row(
-                      mainAxisAlignment:
-                          MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _tripStat('$eta min', 'ETA',
-                            Icons.schedule_rounded, AppColors.primary),
+                        _tripStat('$eta min', 'ETA', Icons.schedule_rounded,
+                            AppColors.primary),
                         _divV(),
-                        _tripStat(
-                            '${dist.toStringAsFixed(1)} km',
-                            'Distance',
-                            Icons.route_rounded,
-                            Colors.blue),
+                        _tripStat('${dist.toStringAsFixed(1)} km', 'Distance',
+                            Icons.route_rounded, Colors.blue),
                         _divV(),
-                        _tripStat(
-                            '₱${_fare.toStringAsFixed(0)}',
-                            'Fare',
-                            Icons.payments_rounded,
-                            Colors.green),
+                        _tripStat('₱${_fare.toStringAsFixed(0)}', 'Fare',
+                            Icons.payments_rounded, Colors.green),
                       ]),
                 ),
                 const SizedBox(height: 16),
@@ -479,23 +528,20 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2.5, color: Colors.white))
                         : Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              const Icon(
-                                  Icons.check_circle_outline_rounded,
-                                  color: AppColors.primary,
-                                  size: 20),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Confirm Arrival at Pickup',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                                const Icon(Icons.check_circle_outline_rounded,
+                                    color: AppColors.primary, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Confirm Arrival at Pickup',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                            ]),
+                              ]),
                   ),
                 ),
               ]),
@@ -531,8 +577,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
         child: Icon(icon, color: c, size: 18),
       );
 
-  Widget _tripStat(String v, String l, IconData icon, Color color) =>
-      Expanded(
+  Widget _tripStat(String v, String l, IconData icon, Color color) => Expanded(
         child: Column(children: [
           Icon(icon, size: 16, color: color),
           const SizedBox(height: 4),
@@ -542,8 +587,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                   fontWeight: FontWeight.w800,
                   color: AppColors.backgroundDark)),
           Text(l,
-              style: GoogleFonts.poppins(
-                  fontSize: 10, color: AppColors.textHint)),
+              style:
+                  GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
         ]),
       );
 

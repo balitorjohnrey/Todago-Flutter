@@ -148,6 +148,46 @@ class TripService {
   }
 
   // ── Driver: update online/offline status ─────────────────────────────────
+  static Future<Map<String, dynamic>> cancelPassengerTrip(String tripId) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/status'),
+            headers: _headers(token),
+            body: jsonEncode({'status': 'cancelled'}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
+  static Future<Map<String, dynamic>?> getTripById(
+    String tripId, {
+    bool forDriver = false,
+  }) async {
+    if (tripId.isEmpty) return null;
+    try {
+      final token =
+          forDriver ? await _getDriverToken() : await _getPassengerToken();
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/$tripId'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['trip'];
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   static Future<bool> updateDriverStatus(String status) async {
     try {
       final token = await _getDriverToken();
@@ -257,9 +297,9 @@ class TripService {
   /// on failure (including duplicate-rating 409).
   static Future<Map<String, dynamic>> submitRating({
     required String tripId,
-    required int rating,       // 1–5
-    String? comment,           // optional free-text
-    List<String>? tags,        // optional quick-pick tags joined into comment
+    required int rating, // 1–5
+    String? comment, // optional free-text
+    List<String>? tags, // optional quick-pick tags joined into comment
   }) async {
     try {
       final token = await _getPassengerToken();
@@ -288,7 +328,10 @@ class TripService {
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       return data;
     } catch (e) {
-      return {'success': false, 'message': 'Connection failed. Please try again.'};
+      return {
+        'success': false,
+        'message': 'Connection failed. Please try again.'
+      };
     }
   }
 
