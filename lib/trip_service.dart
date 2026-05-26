@@ -74,6 +74,39 @@ class TripService {
     }
   }
 
+  static Future<Map<String, dynamic>> scheduleRide({
+    required String driverId,
+    required String pickupLocation,
+    required String destination,
+    required String serviceType,
+    required double fare,
+    required String paymentMethod,
+    required DateTime scheduledAt,
+  }) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/request'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'driverId': driverId,
+              'pickupLocation': pickupLocation,
+              'destination': destination,
+              'serviceType': serviceType,
+              'fare': fare,
+              'paymentMethod': paymentMethod,
+              'scheduledPickupAt': scheduledAt.toUtc().toIso8601String(),
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
   // ── Driver: poll for pending trip request ─────────────────────────────────
   static Future<Map<String, dynamic>?> fetchPendingTrip() async {
     try {
@@ -253,6 +286,30 @@ class TripService {
       final response = await http
           .get(
             Uri.parse('$_baseUrl/commuter/history'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 15));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final List trips = data['trips'] ?? [];
+        return trips.cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> getPassengerBookings() =>
+      getCommuterHistory();
+
+  static Future<List<Map<String, dynamic>>>
+      getDriverScheduledReservations() async {
+    try {
+      final token = await _getDriverToken();
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/driver/scheduled'),
             headers: _headers(token),
           )
           .timeout(const Duration(seconds: 15));

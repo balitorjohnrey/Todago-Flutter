@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
+import 'reservation_notification_service.dart';
 import 'trip_service.dart';
 import 'live_trip_tracking_screen.dart';
 
@@ -12,6 +13,7 @@ class DriverSelectionScreen extends StatefulWidget {
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
+  final DateTime? scheduledAt;
 
   const DriverSelectionScreen({
     super.key,
@@ -21,6 +23,7 @@ class DriverSelectionScreen extends StatefulWidget {
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Davao del Norte State College',
+    this.scheduledAt,
   });
 
   @override
@@ -48,6 +51,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
   }
 
   Map<String, dynamic> get _selectedDriver => widget.onlineDrivers[_selected];
+  bool get _isScheduled => widget.scheduledAt != null;
 
   String _normalizeServiceType(String raw) {
     final s = raw.toLowerCase().replaceAll(RegExp(r'[-\s]'), '');
@@ -62,25 +66,67 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
       _errorMessage = null;
     });
 
-    final result = await TripService.requestRide(
-      driverId: _selectedDriver['driver_id'] as String,
-      pickupLocation: widget.pickupName,
-      destination: widget.destinationName,
-      serviceType: _normalizeServiceType(widget.serviceType),
-      fare: widget.fareAmount,
-      paymentMethod: 'cash',
-    );
+    final result = _isScheduled
+        ? await TripService.scheduleRide(
+            driverId: _selectedDriver['driver_id'] as String,
+            pickupLocation: widget.pickupName,
+            destination: widget.destinationName,
+            serviceType: _normalizeServiceType(widget.serviceType),
+            fare: widget.fareAmount,
+            paymentMethod: 'cash',
+            scheduledAt: widget.scheduledAt!,
+          )
+        : await TripService.requestRide(
+            driverId: _selectedDriver['driver_id'] as String,
+            pickupLocation: widget.pickupName,
+            destination: widget.destinationName,
+            serviceType: _normalizeServiceType(widget.serviceType),
+            fare: widget.fareAmount,
+            paymentMethod: 'cash',
+          );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
       final trip = result['trip'] as Map<String, dynamic>? ?? {};
+      if (_isScheduled) {
+        await ReservationNotificationService.scheduleReservationReminders(
+          trip,
+          forDriver: false,
+        );
+        if (!mounted) return;
+        await showDialog<void>(
+          context: context,
+          builder: (_) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            title: Text('Reservation Scheduled',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w800)),
+            content: Text(
+              'Your TodaGo reservation is saved in Bookings. We will remind you 1 hour, 30 minutes, and 5 minutes before pickup.',
+              style: GoogleFonts.poppins(fontSize: 13, height: 1.5),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text('OK',
+                    style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w700, color: AppColors.primary)),
+              ),
+            ],
+          ),
+        );
+        if (mounted) Navigator.of(context).popUntil((route) => route.isFirst);
+        return;
+      }
+
       // Navigate to waiting screen — shows live tracking once driver accepts
       Navigator.of(context).pushReplacement(PageRouteBuilder(
         pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
           tripId: trip['trip_id']?.toString() ?? '',
           driverName: _selectedDriver['driver_name']?.toString() ?? 'Driver',
+          driverPhone: _selectedDriver['phone']?.toString(),
           driverRating: _safeDouble(_selectedDriver['avg_rating'], 0.0),
           todaBodyNumber: _selectedDriver['toda_body_number']?.toString() ?? '',
           plateNo: _selectedDriver['plate_no']?.toString() ?? '',
@@ -159,7 +205,10 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       fontWeight: FontWeight.w800,
                       color: AppColors.backgroundDark,
                     )).animate().fadeIn(delay: 100.ms),
-                Text('Select your preferred driver to continue',
+                Text(
+                    _isScheduled
+                        ? 'Select a driver for your reservation'
+                        : 'Select your preferred driver to continue',
                     style: GoogleFonts.poppins(
                       fontSize: 12,
                       color: AppColors.textHint,
@@ -362,6 +411,11 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                     _selectedDriver['driver_name']?.toString() ?? 'Driver'),
                 const SizedBox(height: 6),
                 _summaryRow('Service Type', widget.serviceType),
+                if (_isScheduled) ...[
+                  const SizedBox(height: 6),
+                  _summaryRow(
+                      'Pickup Time', _formatSchedule(widget.scheduledAt)),
+                ],
                 const SizedBox(height: 6),
                 _summaryRow('ETA',
                     '${_safeInt(_selectedDriver['eta_minutes'], 5)} min away'),
@@ -409,7 +463,10 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                           height: 22,
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: Colors.white))
-                      : Text('Confirm Driver & Start Ride',
+                      : Text(
+                          _isScheduled
+                              ? 'Confirm Reservation'
+                              : 'Confirm Driver & Start Ride',
                           style: GoogleFonts.poppins(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -444,4 +501,12 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
               color: AppColors.backgroundDark,
             )),
       ]);
+
+  String _formatSchedule(DateTime? value) {
+    if (value == null) return '-';
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    final minute = value.minute.toString().padLeft(2, '0');
+    final ampm = value.hour >= 12 ? 'PM' : 'AM';
+    return '${value.month}/${value.day}/${value.year} $hour:$minute $ampm';
+  }
 }

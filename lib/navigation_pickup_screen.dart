@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'contact_service.dart';
 import 'trip_service.dart';
 import 'active_trip_driver_screen.dart';
 import 'driver_dashboard_screen.dart';
@@ -35,6 +36,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
       widget.trip['commuter_name']?.toString() ?? 'Passenger';
+  String? get _passengerPhone => widget.trip['commuter_phone']?.toString();
   String get _pickupLocation =>
       widget.trip['pickup_location']?.toString() ?? 'Pickup Location';
   String get _paymentMethod =>
@@ -476,9 +478,11 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                         ]),
                   ),
                   Row(children: [
-                    _iconBtn(Icons.phone_rounded, Colors.green),
+                    _iconBtn(Icons.phone_rounded, Colors.green,
+                        () => _contactPassenger(call: true)),
                     const SizedBox(width: 8),
-                    _iconBtn(Icons.chat_bubble_rounded, AppColors.primary),
+                    _iconBtn(Icons.chat_bubble_rounded, AppColors.primary,
+                        () => _contactPassenger(call: false)),
                   ]),
                 ]),
                 const SizedBox(height: 14),
@@ -566,15 +570,36 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                 GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
       ]);
 
-  Widget _iconBtn(IconData icon, Color c) => Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: c.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(11),
-          border: Border.all(color: c.withOpacity(0.3)),
+  Future<void> _contactPassenger({required bool call}) async {
+    final ok = call
+        ? await ContactService.call(_passengerPhone)
+        : await ContactService.message(
+            _passengerPhone,
+            body: 'Hi, this is your TodaGo driver. I am on my way.',
+          );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Passenger phone number is not available.',
+            style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Widget _iconBtn(IconData icon, Color c, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: c.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(color: c.withOpacity(0.3)),
+          ),
+          child: Icon(icon, color: c, size: 18),
         ),
-        child: Icon(icon, color: c, size: 18),
       );
 
   Widget _tripStat(String v, String l, IconData icon, Color color) => Expanded(

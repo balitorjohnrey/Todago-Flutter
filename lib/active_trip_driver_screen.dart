@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'contact_service.dart';
 import 'trip_service.dart';
 import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
@@ -34,6 +35,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
       widget.trip['commuter_name']?.toString() ?? 'Passenger';
+  String? get _passengerPhone => widget.trip['commuter_phone']?.toString();
   String get _destination =>
       widget.trip['destination']?.toString() ?? 'Destination';
   String get _passengerInitials => _passengerName
@@ -592,12 +594,15 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 // Call / Message buttons
                 Row(children: [
                   Expanded(
-                      child: _actionBtn(
-                          Icons.phone_rounded, 'Call', Colors.green, () {})),
+                      child: _actionBtn(Icons.phone_rounded, 'Call',
+                          Colors.green, () => _contactPassenger(call: true))),
                   const SizedBox(width: 10),
                   Expanded(
-                      child: _actionBtn(Icons.chat_bubble_rounded, 'Message',
-                          AppColors.primary, () {})),
+                      child: _actionBtn(
+                          Icons.chat_bubble_rounded,
+                          'Message',
+                          AppColors.primary,
+                          () => _contactPassenger(call: false))),
                 ]),
                 const SizedBox(height: 14),
 
@@ -719,6 +724,23 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           ]),
         ),
       );
+
+  Future<void> _contactPassenger({required bool call}) async {
+    final ok = call
+        ? await ContactService.call(_passengerPhone)
+        : await ContactService.message(
+            _passengerPhone,
+            body: 'Hi, this is your TodaGo driver.',
+          );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Passenger phone number is not available.',
+            style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
 
   Widget _tripStat(String v, String l, IconData icon, Color color) => Expanded(
         child: Column(children: [

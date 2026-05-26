@@ -33,22 +33,42 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   bool _isLoading = false;
   List<Map<String, dynamic>> _onlineDrivers = [];
   bool _driversLoaded = false;
+  bool _isScheduled = false;
+  DateTime? _scheduledAt;
 
   final List<Map<String, dynamic>> _services = [
     {
-      'id': 'solo', 'name': 'Solo', 'subtitle': 'Ride alone, enjoy privacy',
-      'icon': Icons.person_rounded, 'passengers': '1 passenger',
-      'price': 25.0, 'priceLabel': '₱25–40', 'eta': '3–4 min', 'premium': false,
+      'id': 'solo',
+      'name': 'Solo',
+      'subtitle': 'Ride alone, enjoy privacy',
+      'icon': Icons.person_rounded,
+      'passengers': '1 passenger',
+      'price': 25.0,
+      'priceLabel': '₱25–40',
+      'eta': '3–4 min',
+      'premium': false,
     },
     {
-      'id': 'shared', 'name': 'Shared', 'subtitle': 'Share the ride, save money',
-      'icon': Icons.people_rounded, 'passengers': 'Up to 3 passengers',
-      'price': 15.0, 'priceLabel': '₱15–25', 'eta': '8–12 min', 'premium': false,
+      'id': 'shared',
+      'name': 'Shared',
+      'subtitle': 'Share the ride, save money',
+      'icon': Icons.people_rounded,
+      'passengers': 'Up to 3 passengers',
+      'price': 15.0,
+      'priceLabel': '₱15–25',
+      'eta': '8–12 min',
+      'premium': false,
     },
     {
-      'id': 'express', 'name': 'Toda-Express', 'subtitle': 'Priority pickup, fastest route',
-      'icon': Icons.bolt_rounded, 'passengers': '1–2 passengers',
-      'price': 90.0, 'priceLabel': '₱90–100', 'eta': '1–3 min', 'premium': true,
+      'id': 'express',
+      'name': 'Toda-Express',
+      'subtitle': 'Priority pickup, fastest route',
+      'icon': Icons.bolt_rounded,
+      'passengers': '1–2 passengers',
+      'price': 90.0,
+      'priceLabel': '₱90–100',
+      'eta': '1–3 min',
+      'premium': true,
     },
   ];
 
@@ -81,16 +101,32 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       return;
     }
 
+    if (_isScheduled) {
+      final scheduledAt = _scheduledAt;
+      if (scheduledAt == null) {
+        _showSnack(
+            'Select a pickup time for your reservation.', AppColors.error);
+        return;
+      }
+      if (scheduledAt
+          .isBefore(DateTime.now().add(const Duration(minutes: 5)))) {
+        _showSnack('Choose a pickup time at least 5 minutes from now.',
+            AppColors.error);
+        return;
+      }
+    }
+
     setState(() => _isLoading = true);
 
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => FindingDriverScreen(
-        serviceType:   _services[_selected]['name'] as String,
-        price:         _services[_selected]['priceLabel'] as String,
-        fareAmount:    _services[_selected]['price'] as double,
+        serviceType: _services[_selected]['name'] as String,
+        price: _services[_selected]['priceLabel'] as String,
+        fareAmount: _services[_selected]['price'] as double,
         onlineDrivers: _onlineDrivers,
-        pickupName:      widget.pickupName,
+        pickupName: widget.pickupName,
         destinationName: widget.destinationName,
+        scheduledAt: _isScheduled ? _scheduledAt : null,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) =>
@@ -100,13 +136,64 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     setState(() => _isLoading = false);
   }
 
+  Future<void> _pickSchedule() async {
+    final now = DateTime.now();
+    final firstDate = now;
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _scheduledAt ?? now.add(const Duration(hours: 1)),
+      firstDate: firstDate,
+      lastDate: now.add(const Duration(days: 30)),
+    );
+    if (selectedDate == null || !mounted) return;
+
+    final selectedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(
+        _scheduledAt ?? now.add(const Duration(hours: 1)),
+      ),
+    );
+    if (selectedTime == null) return;
+
+    final value = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+      selectedTime.hour,
+      selectedTime.minute,
+    );
+    if (value.isBefore(now.add(const Duration(minutes: 5)))) {
+      _showSnack(
+          'Choose a pickup time at least 5 minutes from now.', AppColors.error);
+      return;
+    }
+    setState(() => _scheduledAt = value);
+  }
+
+  void _showSnack(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message, style: GoogleFonts.poppins(fontSize: 13)),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+
+  String _formatSchedule(DateTime? value) {
+    if (value == null) return 'Select pickup time';
+    final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+    final minute = value.minute.toString().padLeft(2, '0');
+    final ampm = value.hour >= 12 ? 'PM' : 'AM';
+    return '${value.month}/${value.day}/${value.year}  $hour:$minute $ampm';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(children: [
-
           // ── Header ────────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
@@ -114,7 +201,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               GestureDetector(
                 onTap: () => Navigator.of(context).pop(),
                 child: Container(
-                  width: 40, height: 40,
+                  width: 40,
+                  height: 40,
                   decoration: BoxDecoration(
                     color: const Color(0xFFF5F5F5),
                     borderRadius: BorderRadius.circular(12),
@@ -125,18 +213,23 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               ),
               const SizedBox(width: 14),
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Select Service', style: GoogleFonts.poppins(
-                  fontSize: 20, fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-                Text('Choose your ride type', style: GoogleFonts.poppins(
-                  fontSize: 12, color: AppColors.textHint,
-                )),
+                Text('Select Service',
+                    style: GoogleFonts.poppins(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.backgroundDark,
+                    )),
+                Text('Choose your ride type',
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.textHint,
+                    )),
               ]),
               const Spacer(),
               // Online drivers count badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: _onlineDrivers.isNotEmpty
                       ? Colors.green.withOpacity(0.1)
@@ -150,10 +243,12 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Container(
-                    width: 7, height: 7,
+                    width: 7,
+                    height: 7,
                     decoration: BoxDecoration(
                       color: _onlineDrivers.isNotEmpty
-                          ? Colors.green : Colors.orange,
+                          ? Colors.green
+                          : Colors.orange,
                       shape: BoxShape.circle,
                     ),
                   ),
@@ -163,9 +258,11 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                         ? '${_onlineDrivers.length} online'
                         : 'Loading...',
                     style: GoogleFonts.poppins(
-                      fontSize: 11, fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
                       color: _onlineDrivers.isNotEmpty
-                          ? Colors.green : Colors.orange,
+                          ? Colors.green
+                          : Colors.orange,
                     ),
                   ),
                 ]),
@@ -181,7 +278,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               itemCount: _services.length,
               itemBuilder: (_, i) {
-                final s          = _services[i];
+                final s = _services[i];
                 final isSelected = _selected == i;
                 return GestureDetector(
                   onTap: () => setState(() => _selected = i),
@@ -195,14 +292,16 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                           : const Color(0xFFF8F9FA),
                       borderRadius: BorderRadius.circular(18),
                       border: Border.all(
-                        color: isSelected ? AppColors.primary : Colors.transparent,
+                        color:
+                            isSelected ? AppColors.primary : Colors.transparent,
                         width: 2,
                       ),
                     ),
                     child: Row(children: [
                       AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
-                        width: 52, height: 52,
+                        width: 52,
+                        height: 52,
                         decoration: BoxDecoration(
                           color: isSelected
                               ? AppColors.primary
@@ -213,15 +312,19 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                             color: AppColors.backgroundDark, size: 26),
                       ),
                       const SizedBox(width: 16),
-                      Expanded(child: Column(
+                      Expanded(
+                          child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(children: [
-                            Text(s['name'] as String, style: GoogleFonts.poppins(
-                              fontSize: 16, fontWeight: FontWeight.w700,
-                              color: isSelected
-                                  ? Colors.white : AppColors.backgroundDark,
-                            )),
+                            Text(s['name'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: isSelected
+                                      ? Colors.white
+                                      : AppColors.backgroundDark,
+                                )),
                             if (s['premium'] == true) ...[
                               const SizedBox(width: 8),
                               Container(
@@ -231,49 +334,61 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                                   color: AppColors.primary,
                                   borderRadius: BorderRadius.circular(8),
                                 ),
-                                child: Text('PREMIUM', style: GoogleFonts.poppins(
-                                  fontSize: 9, fontWeight: FontWeight.w800,
-                                  color: AppColors.backgroundDark,
-                                )),
+                                child: Text('PREMIUM',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.backgroundDark,
+                                    )),
                               ),
                             ],
                           ]),
-                          Text(s['subtitle'] as String, style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: isSelected
-                                ? Colors.white54 : AppColors.textHint,
-                          )),
+                          Text(s['subtitle'] as String,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: isSelected
+                                    ? Colors.white54
+                                    : AppColors.textHint,
+                              )),
                           const SizedBox(height: 8),
                           Row(children: [
                             _badge(Icons.person_outline_rounded,
                                 s['passengers'] as String, isSelected),
                             const SizedBox(width: 8),
                             _badge(Icons.schedule_rounded,
-                                'Arrives ${s['eta']}', isSelected, green: true),
+                                'Arrives ${s['eta']}', isSelected,
+                                green: true),
                           ]),
                         ],
                       )),
-                      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                        Text(s['priceLabel'] as String, style: GoogleFonts.poppins(
-                          fontSize: 16, fontWeight: FontWeight.w800,
-                          color: isSelected
-                              ? AppColors.primary : AppColors.backgroundDark,
-                        )),
-                        if (!_driversLoaded)
-                          const SizedBox(
-                            width: 12, height: 12,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.primary),
-                          )
-                        else
-                          Text('${_onlineDrivers.length} available',
-                              style: GoogleFonts.poppins(
-                                fontSize: 10,
-                                color: _onlineDrivers.isNotEmpty
-                                    ? Colors.green : Colors.orange,
-                                fontWeight: FontWeight.w600,
-                              )),
-                      ]),
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(s['priceLabel'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : AppColors.backgroundDark,
+                                )),
+                            if (!_driversLoaded)
+                              const SizedBox(
+                                width: 12,
+                                height: 12,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: AppColors.primary),
+                              )
+                            else
+                              Text('${_onlineDrivers.length} available',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    color: _onlineDrivers.isNotEmpty
+                                        ? Colors.green
+                                        : Colors.orange,
+                                    fontWeight: FontWeight.w600,
+                                  )),
+                          ]),
                     ]),
                   ),
                 ).animate().fadeIn(
@@ -291,7 +406,6 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
             ),
             child: Column(children: [
-
               // No drivers warning
               if (_driversLoaded && _onlineDrivers.isEmpty)
                 Container(
@@ -306,25 +420,80 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                     const Icon(Icons.warning_rounded,
                         color: Colors.orange, size: 18),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(
+                    Expanded(
+                        child: Text(
                       'No drivers online right now. Try again in a few minutes.',
                       style: GoogleFonts.poppins(
                           fontSize: 12, color: Colors.orange[800]),
                     )),
                     GestureDetector(
                       onTap: _loadOnlineDrivers,
-                      child: Text('Retry', style: GoogleFonts.poppins(
-                        fontSize: 12, fontWeight: FontWeight.w700,
-                        color: Colors.orange,
-                      )),
+                      child: Text('Retry',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.orange,
+                          )),
                     ),
                   ]),
                 ),
 
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F2F5),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(children: [
+                  _scheduleModeButton('Ride Now', Icons.bolt_rounded, false),
+                  _scheduleModeButton(
+                      'Schedule', Icons.event_available_rounded, true),
+                ]),
+              ),
+              if (_isScheduled) ...[
+                const SizedBox(height: 10),
+                GestureDetector(
+                  onTap: _pickSchedule,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBF0),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.primary.withOpacity(0.35)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.notifications_active_rounded,
+                          color: AppColors.primary, size: 18),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _formatSchedule(_scheduledAt),
+                          style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: AppColors.backgroundDark,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Text('Change',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ]),
+                  ),
+                ),
+              ],
+
+              const SizedBox(height: 12),
+
               // Destination row
               Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF8F9FA),
                   borderRadius: BorderRadius.circular(12),
@@ -333,24 +502,27 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                   const Icon(Icons.location_on_rounded,
                       color: AppColors.primary, size: 18),
                   const SizedBox(width: 10),
-                  Expanded(child: Text(
+                  Expanded(
+                      child: Text(
                     'To: ${widget.destinationName}',
                     style: GoogleFonts.poppins(
-                      fontSize: 13, color: AppColors.backgroundDark,
+                      fontSize: 13,
+                      color: AppColors.backgroundDark,
                       fontWeight: FontWeight.w500,
                     ),
                   )),
-                  Text('Change', style: GoogleFonts.poppins(
-                    fontSize: 12, color: AppColors.primary,
-                    fontWeight: FontWeight.w600,
-                  )),
+                  Text('Change',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      )),
                 ]),
               ),
 
-              const SizedBox(height: 12),
-
               SizedBox(
-                width: double.infinity, height: 52,
+                width: double.infinity,
+                height: 52,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _confirmRide,
                   style: ElevatedButton.styleFrom(
@@ -363,12 +535,15 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          width: 22, height: 22,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: Colors.white))
-                      : Text('Find a Driver', style: GoogleFonts.poppins(
-                          fontSize: 15, fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                      : Text(_isScheduled ? 'Reserve Ride' : 'Find a Driver',
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white)),
                 ),
               ),
             ]),
@@ -378,24 +553,64 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     );
   }
 
-  Widget _badge(IconData icon, String label, bool dark,
-          {bool green = false}) =>
+  Widget _badge(IconData icon, String label, bool dark, {bool green = false}) =>
       Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 12,
+        Icon(icon,
+            size: 12,
             color: green
                 ? Colors.green
                 : dark
                     ? Colors.white54
                     : AppColors.textHint),
         const SizedBox(width: 3),
-        Text(label, style: GoogleFonts.poppins(
-          fontSize: 11,
-          color: green
-              ? Colors.green
-              : dark
-                  ? Colors.white54
-                  : AppColors.textHint,
-          fontWeight: FontWeight.w500,
-        )),
+        Text(label,
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: green
+                  ? Colors.green
+                  : dark
+                      ? Colors.white54
+                      : AppColors.textHint,
+              fontWeight: FontWeight.w500,
+            )),
       ]);
+
+  Widget _scheduleModeButton(String label, IconData icon, bool scheduled) {
+    final selected = _isScheduled == scheduled;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() {
+            _isScheduled = scheduled;
+            if (scheduled && _scheduledAt == null) {
+              _scheduledAt = DateTime.now().add(const Duration(hours: 1));
+            }
+          });
+          if (scheduled) _pickSchedule();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon,
+                size: 16,
+                color:
+                    selected ? AppColors.backgroundDark : AppColors.textHint),
+            const SizedBox(width: 6),
+            Text(label,
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                  color:
+                      selected ? AppColors.backgroundDark : AppColors.textHint,
+                )),
+          ]),
+        ),
+      ),
+    );
+  }
 }

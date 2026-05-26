@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'contact_service.dart';
 import 'trip_service.dart';
 import 'passenger_home_screen.dart';
 import 'rate_driver_screen.dart';
@@ -15,6 +16,7 @@ class LiveTripTrackingScreen extends StatefulWidget {
   final double driverRating;
   final String todaBodyNumber;
   final String plateNo;
+  final String? driverPhone;
   final int etaMinutes;
   final double distanceKm;
   final String? destination;
@@ -32,6 +34,7 @@ class LiveTripTrackingScreen extends StatefulWidget {
     required this.driverRating,
     required this.todaBodyNumber,
     required this.plateNo,
+    this.driverPhone,
     required this.etaMinutes,
     required this.distanceKm,
     this.destination,
@@ -60,6 +63,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String _phase = 'approaching'; // ← NEW
 
   String _destination = '';
+  String? _driverPhone;
   double _fare = 0;
 
   Set<Marker> _markers = {};
@@ -76,6 +80,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   void initState() {
     super.initState();
     _destination = widget.destination ?? '';
+    _driverPhone = widget.driverPhone;
     _fare = widget.fare ?? 0;
     _destPoint = widget.destinationLatLng; // store destination coords early
     _init();
@@ -154,6 +159,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       }
       if (trip['fare'] != null) {
         _fare = double.tryParse(trip['fare'].toString()) ?? _fare;
+      }
+      if (trip['driver_phone'] != null) {
+        _driverPhone = trip['driver_phone'].toString();
       }
 
       // ── Grab destination coords from trip data if not yet set ─────────
@@ -809,9 +817,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   ),
                 ),
                 Row(children: [
-                  _actionBtn(Icons.phone_rounded, Colors.green),
+                  _actionBtn(Icons.phone_rounded, Colors.green,
+                      () => _contactDriver(call: true)),
                   const SizedBox(width: 10),
-                  _actionBtn(Icons.chat_bubble_rounded, AppColors.primary),
+                  _actionBtn(Icons.chat_bubble_rounded, AppColors.primary,
+                      () => _contactDriver(call: false)),
                 ]),
               ]),
               const SizedBox(height: 14),
@@ -895,14 +905,35 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         ]),
       ]);
 
-  Widget _actionBtn(IconData icon, Color color) => Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
+  Future<void> _contactDriver({required bool call}) async {
+    final ok = call
+        ? await ContactService.call(_driverPhone)
+        : await ContactService.message(
+            _driverPhone,
+            body: 'Hi, this is your TodaGo passenger.',
+          );
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Driver phone number is not available.',
+            style: GoogleFonts.poppins(fontSize: 13)),
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
+  Widget _actionBtn(IconData icon, Color color, VoidCallback onTap) =>
+      GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withOpacity(0.3)),
+          ),
+          child: Icon(icon, color: color, size: 20),
         ),
-        child: Icon(icon, color: color, size: 20),
       );
 }

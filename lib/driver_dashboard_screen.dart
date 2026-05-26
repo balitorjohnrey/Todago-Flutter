@@ -12,6 +12,7 @@ import 'ai_chat_screen.dart';
 import 'driver_profile_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
+import 'reservation_notification_service.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -34,6 +35,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   int _totalTrips = 0;
 
   Timer? _pollTimer;
+  Timer? _scheduledSyncTimer;
 
   @override
   void initState() {
@@ -43,6 +45,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _loadDriver();
+    _syncScheduledReservations();
+    _scheduledSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) {
+      if (mounted) _syncScheduledReservations();
+    });
   }
 
   Future<void> _loadDriver() async {
@@ -102,6 +108,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     if (_isShowingPopup) return;
     final trip = await TripService.fetchPendingTrip();
     if (trip == null || !mounted) return;
+    if (trip['trip_type']?.toString() == 'scheduled') {
+      await ReservationNotificationService.scheduleReservationReminders(
+        trip,
+        forDriver: true,
+      );
+      if (!mounted) return;
+    }
     setState(() => _isShowingPopup = true);
     var acceptedOk = false;
     final accepted = await showDialog<bool>(
@@ -137,6 +150,15 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     }
   }
 
+  Future<void> _syncScheduledReservations() async {
+    final trips = await TripService.getDriverScheduledReservations();
+    if (trips.isEmpty) return;
+    await ReservationNotificationService.scheduleForTrips(
+      trips,
+      forDriver: true,
+    );
+  }
+
   Future<void> _logout() async {
     _stopPolling();
     if (_isOnline) await TripService.updateDriverStatus('offline');
@@ -164,6 +186,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
 
   @override
   void dispose() {
+    _scheduledSyncTimer?.cancel();
     _stopPolling();
     _pulse.dispose();
     super.dispose();

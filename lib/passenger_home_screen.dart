@@ -16,6 +16,7 @@ import 'splash_screen.dart';
 import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
+import 'reservation_notification_service.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -33,46 +34,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   // ── Bookings state ────────────────────────────────────────────────────────
   int _bookingTab = 0;
-  final List<Map<String, dynamic>> _upcoming = [
-    {
-      'trip_id': '',
-      'date': 'March 22, 2026',
-      'time': '08:00 AM',
-      'pickup': 'DNSC',
-      'destination': 'Night Market',
-      'driver': 'Juan Reyes',
-      'type': 'Solo',
-      'fare': '₱20',
-      'status': 'Confirmed',
-      'statusColor': Colors.green,
-      'driver_rating': 4.8,
-      'toda_body_number': 'TODA-01',
-      'plate_no': 'ABC 123',
-      'eta_minutes': 5,
-      'distance_km': 1.2,
-    },
-    {
-      'trip_id': '',
-      'date': 'March 23, 2026',
-      'time': '08:00 AM',
-      'pickup': 'DNSC',
-      'destination': 'Panabo Bus Terminal',
-      'driver': 'To be assigned',
-      'type': 'Solo',
-      'fare': '₱20',
-      'status': 'Pending',
-      'statusColor': AppColors.primary,
-      'driver_rating': 0.0,
-      'toda_body_number': 'TBA',
-      'plate_no': '',
-      'eta_minutes': 0,
-      'distance_km': 0.0,
-    },
-  ];
-
+  List<Map<String, dynamic>> _upcoming = [];
   List<Map<String, dynamic>> _livePast = [];
-  bool _loadingPastTrips = false;
+  bool _loadingBookings = false;
   final Map<String, int?> _tripRatings = {};
+  Timer? _bookingsTimer;
 
   // ── Wallet state ──────────────────────────────────────────────────────────
   bool _balanceVisible = true;
@@ -156,7 +122,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     _loadUser();
     _loadProfilePhoto();
     _initLocation();
-    _loadPastTrips();
+    _loadBookings();
+    _startBookingsRealtime();
   }
 
   Future<void> _loadUser() async {
@@ -192,20 +159,42 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     });
   }
 
-  Future<void> _loadPastTrips() async {
-    if (_loadingPastTrips) return;
-    setState(() => _loadingPastTrips = true);
+  void _startBookingsRealtime() {
+    _bookingsTimer?.cancel();
+    _bookingsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _loadBookings(silent: true);
+    });
+  }
+
+  Future<void> _loadBookings({bool silent = false}) async {
+    if (_loadingBookings) return;
+    if (!silent && mounted) setState(() => _loadingBookings = true);
     try {
-      final trips = await TripService.getCommuterHistory();
+      final trips = await TripService.getPassengerBookings();
       if (!mounted) return;
-      final past = trips
-          .where(
-              (t) => t['status'] == 'completed' || t['status'] == 'cancelled')
-          .toList();
-      setState(() {
-        _livePast = past;
-        _loadingPastTrips = false;
+      final upcoming = <Map<String, dynamic>>[];
+      final past = <Map<String, dynamic>>[];
+      for (final trip in trips) {
+        if (_isPastBooking(trip)) {
+          past.add(trip);
+        } else {
+          upcoming.add(trip);
+        }
+      }
+      upcoming.sort((a, b) {
+        final ad = _bookingDateTime(a) ?? DateTime.now();
+        final bd = _bookingDateTime(b) ?? DateTime.now();
+        return ad.compareTo(bd);
       });
+      setState(() {
+        _upcoming = upcoming;
+        _livePast = past;
+        _loadingBookings = false;
+      });
+      await ReservationNotificationService.scheduleForTrips(
+        upcoming.where((t) => t['trip_type']?.toString() == 'scheduled'),
+        forDriver: false,
+      );
       for (final t in past) {
         final id = t['trip_id']?.toString() ?? '';
         if (id.isEmpty || t['status'] != 'completed') continue;
@@ -218,8 +207,19 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         }
       }
     } catch (_) {
-      if (mounted) setState(() => _loadingPastTrips = false);
+      if (mounted) setState(() => _loadingBookings = false);
     }
+  }
+
+  bool _isPastBooking(Map<String, dynamic> trip) {
+    final status = trip['status']?.toString().toLowerCase() ?? '';
+    return status == 'completed' || status == 'cancelled';
+  }
+
+  DateTime? _bookingDateTime(Map<String, dynamic> trip) {
+    final raw = trip['scheduled_pickup_at'] ?? trip['request_timestamp'];
+    if (raw == null) return null;
+    return DateTime.tryParse(raw.toString())?.toLocal();
   }
 
   Future<void> _refreshTripRating(String tripId) async {
@@ -233,8 +233,52 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     }
   }
 
+  Future<void> _cancelBooking(Map<String, dynamic> booking) async {
+    final tripId = booking['trip_id']?.toString() ?? '';
+    if (tripId.isEmpty) return;
+    final result = await TripService.cancelPassengerTrip(tripId);
+    if (!mounted) return;
+    if (result['success'] == true) {
+      await ReservationNotificationService.cancelForTrip(
+        tripId,
+        forDriver: false,
+      );
+      _showSnack('Booking cancelled.', AppColors.success);
+      await _loadBookings();
+    } else {
+      _showSnack(result['message']?.toString() ?? 'Could not cancel booking.',
+          AppColors.error);
+    }
+  }
+
+  void _openBookingTracking(Map<String, dynamic> booking) {
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
+        tripId: booking['trip_id']?.toString() ?? '',
+        driverName: booking['driver_name']?.toString() ??
+            booking['driver']?.toString() ??
+            '',
+        driverPhone: booking['driver_phone']?.toString(),
+        driverRating: double.tryParse(booking['driver_rating']?.toString() ??
+                booking['avg_rating']?.toString() ??
+                '') ??
+            0.0,
+        todaBodyNumber: booking['toda_body_number']?.toString() ?? '',
+        plateNo: booking['plate_no']?.toString() ?? '',
+        etaMinutes: (booking['eta_minutes'] as num?)?.toInt() ?? 5,
+        distanceKm: (booking['distance_km'] as num?)?.toDouble() ?? 1.2,
+        destination: booking['destination']?.toString(),
+        fare: double.tryParse(booking['fare']?.toString() ?? ''),
+      ),
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ));
+  }
+
   @override
   void dispose() {
+    _bookingsTimer?.cancel();
     _locationStream?.cancel();
     _mapController?.dispose();
     super.dispose();
@@ -583,14 +627,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         ),
         const SizedBox(height: 12),
         Expanded(
-          child: _bookingTab == 1 && _loadingPastTrips
+          child: _loadingBookings && list.isEmpty
               ? const Center(
                   child: CircularProgressIndicator(color: AppColors.primary))
               : list.isEmpty
                   ? _emptyBookings()
                   : RefreshIndicator(
                       color: AppColors.primary,
-                      onRefresh: _loadPastTrips,
+                      onRefresh: _loadBookings,
                       child: ListView.builder(
                         padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
                         itemCount: list.length,
@@ -613,7 +657,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       child: GestureDetector(
         onTap: () {
           setState(() => _bookingTab = idx);
-          if (idx == 1 && _livePast.isEmpty) _loadPastTrips();
+          if (idx == 1 && _livePast.isEmpty) _loadBookings();
         },
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
@@ -643,28 +687,33 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   Widget _bookingCard(Map<String, dynamic> b) {
     final isPast = _bookingTab == 1;
-    final status = b['status']?.toString() ?? '';
+    final status = b['status']?.toString().toLowerCase() ?? '';
     final tripId = b['trip_id']?.toString() ?? '';
     final isCompleted = status == 'completed';
+    final isScheduled =
+        b['trip_type']?.toString() == 'scheduled' || status == 'scheduled';
+    final canTrack =
+        ['requested', 'accepted', 'pickup', 'ongoing'].contains(status);
     final hasRatingData = _tripRatings.containsKey(tripId);
     final existingRating = _tripRatings[tripId];
 
     Color statusColor = AppColors.primary;
     if (status == 'completed') statusColor = Colors.green;
     if (status == 'cancelled') statusColor = Colors.red;
-    if (status == 'Confirmed') statusColor = Colors.green;
+    if (status == 'accepted') statusColor = Colors.green;
+    if (status == 'requested') statusColor = Colors.orange;
+    if (status == 'scheduled') statusColor = AppColors.primary;
     if (b['statusColor'] is Color) statusColor = b['statusColor'] as Color;
 
     String displayDate = b['date']?.toString() ?? '';
     String displayTime = b['time']?.toString() ?? '';
-    if (b['request_timestamp'] != null) {
-      try {
-        final dt = DateTime.parse(b['request_timestamp'].toString()).toLocal();
-        displayDate = '${dt.year}-${dt.month.toString().padLeft(2, '0')}-'
-            '${dt.day.toString().padLeft(2, '0')}';
-        displayTime = '${dt.hour.toString().padLeft(2, '0')}:'
-            '${dt.minute.toString().padLeft(2, '0')}';
-      } catch (_) {}
+    final bookingDate = _bookingDateTime(b);
+    if (bookingDate != null) {
+      displayDate =
+          '${bookingDate.year}-${bookingDate.month.toString().padLeft(2, '0')}-'
+          '${bookingDate.day.toString().padLeft(2, '0')}';
+      displayTime = '${bookingDate.hour.toString().padLeft(2, '0')}:'
+          '${bookingDate.minute.toString().padLeft(2, '0')}';
     }
 
     String fareDisplay = '—';
@@ -701,9 +750,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     color: AppColors.backgroundDark)),
             const Spacer(),
             _statusBadge(
-              status.isNotEmpty
-                  ? status[0].toUpperCase() + status.substring(1)
-                  : status,
+              _statusLabel(status),
               statusColor,
             ),
           ]),
@@ -898,7 +945,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             Row(children: [
               Expanded(
                   child: OutlinedButton(
-                onPressed: () {},
+                onPressed: tripId.isEmpty ? null : () => _cancelBooking(b),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Color(0xFFEEEEEE)),
                   shape: RoundedRectangleBorder(
@@ -914,26 +961,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
               const SizedBox(width: 10),
               Expanded(
                   child: ElevatedButton(
-                onPressed: () => Navigator.of(context).push(PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => LiveTripTrackingScreen(
-                    tripId: b['trip_id']?.toString() ?? '',
-                    driverName: b['driver_name']?.toString() ??
-                        b['driver']?.toString() ??
-                        '',
-                    driverRating:
-                        (b['driver_rating'] as num?)?.toDouble() ?? 4.8,
-                    todaBodyNumber:
-                        b['toda_body_number']?.toString() ?? 'TODA-01',
-                    plateNo: b['plate_no']?.toString() ?? '',
-                    etaMinutes: (b['eta_minutes'] as num?)?.toInt() ?? 5,
-                    distanceKm: (b['distance_km'] as num?)?.toDouble() ?? 1.2,
-                    destination: b['destination']?.toString(),
-                    fare: double.tryParse(b['fare']?.toString() ?? ''),
-                  ),
-                  transitionDuration: const Duration(milliseconds: 400),
-                  transitionsBuilder: (_, anim, __, child) =>
-                      FadeTransition(opacity: anim, child: child),
-                )),
+                onPressed: canTrack ? () => _openBookingTracking(b) : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.backgroundDark,
                   shape: RoundedRectangleBorder(
@@ -941,7 +969,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   elevation: 0,
                 ),
-                child: Text('Track',
+                child: Text(isScheduled && !canTrack ? 'Reserved' : 'Track',
                     style: GoogleFonts.poppins(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -966,6 +994,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                 fontSize: 11, fontWeight: FontWeight.w700, color: color)),
       );
 
+  String _statusLabel(String status) {
+    if (status == 'scheduled') return 'Reserved';
+    if (status.isEmpty) return status;
+    return status[0].toUpperCase() + status.substring(1);
+  }
+
   Widget _emptyBookings() => Center(
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           Container(
@@ -989,7 +1023,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           if (_bookingTab == 1) ...[
             const SizedBox(height: 16),
             TextButton.icon(
-              onPressed: _loadPastTrips,
+              onPressed: _loadBookings,
               icon: const Icon(Icons.refresh_rounded, color: AppColors.primary),
               label: Text('Refresh',
                   style: GoogleFonts.poppins(

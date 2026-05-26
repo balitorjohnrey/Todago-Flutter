@@ -273,6 +273,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                 tripId: trip['trip_id']?.toString() ?? widget.tripId,
                 driverName:
                     trip['driver_name']?.toString() ?? widget.driverName,
+                driverPhone: trip['driver_phone']?.toString(),
                 driverRating: widget.driverRating,
                 todaBodyNumber: trip['toda_body_number']?.toString() ??
                     widget.todaBodyNumber,
