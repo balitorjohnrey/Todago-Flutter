@@ -285,57 +285,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     ));
   }
 
-  // ── AI Chat navigation handler ────────────────────────────────────────────
-  void _handleChatNav(String cmd) {
-    switch (cmd) {
-      case 'tab_0':
-        setState(() => _selectedTab = 0);
-        break;
-      case 'tab_1':
-        setState(() {
-          _selectedTab = 1;
-          _bookingTab = 0;
-        });
-        break;
-      case 'tab_2':
-        setState(() => _selectedTab = 2);
-        break;
-      case 'tab_3':
-        setState(() => _selectedTab = 3);
-        break;
-      case 'past_trips':
-        setState(() {
-          _selectedTab = 1;
-          _bookingTab = 1;
-        });
-        break;
-      case 'book_ride':
-        setState(() => _selectedTab = 0);
-        Future.delayed(const Duration(milliseconds: 200), () {
-          if (!mounted) return;
-          Navigator.of(context).push(PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const DestinationPickerScreen(),
-            transitionDuration: const Duration(milliseconds: 400),
-            transitionsBuilder: (_, anim, __, child) => SlideTransition(
-              position:
-                  Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-                      .animate(
-                          CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-              child: child,
-            ),
-          ));
-        });
-        break;
-    }
-  }
-
-  // ── Open AI chat ──────────────────────────────────────────────────────────
+  // ── Open FAQ chatbot ──────────────────────────────────────────────────────
   void _openChat() {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => AIChatScreen(
         userType: 'passenger',
         userName: _user?['full_name']?.toString() ?? 'Passenger',
-        onNavigate: _handleChatNav,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(
@@ -364,7 +319,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           ],
         ),
 
-        // ── Floating AI Chat Button ──────────────────────────────────────
+        // ── Floating FAQ chatbot button ─────────────────────────────────
         Positioned(
           bottom: 76, // just above the bottom nav
           right: 16,
@@ -385,7 +340,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                 ],
               ),
               child: Stack(alignment: Alignment.center, children: [
-                const Icon(Icons.support_agent_rounded,
+                const Icon(Icons.question_answer_rounded,
                     color: AppColors.primary, size: 26),
                 // Notification dot
                 Positioned(

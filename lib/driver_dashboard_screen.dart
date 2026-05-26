@@ -176,16 +176,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       .map((w) => w.isNotEmpty ? w[0].toUpperCase() : '')
       .join();
 
-  // ── Open AI Chat ──────────────────────────────────────────────────────────
+  // ── Open FAQ chatbot ──────────────────────────────────────────────────────
   void _openChat() {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => AIChatScreen(
         userType: 'driver',
         userName: _driverName,
-        onNavigate: (_) {
-          // Drivers have a single-screen dashboard, so no tab navigation.
-          // The AI can still answer questions and guide via text.
-        },
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(
@@ -231,7 +227,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
 
-      // ── Floating AI Chat Button ────────────────────────────────────────────
+      // ── Floating FAQ chatbot button ────────────────────────────────────────
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 8),
         child: GestureDetector(
@@ -251,7 +247,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ],
             ),
             child: Stack(alignment: Alignment.center, children: [
-              const Icon(Icons.support_agent_rounded,
+              const Icon(Icons.question_answer_rounded,
                   color: AppColors.backgroundDark, size: 26),
               // Online dot
               Positioned(
@@ -498,7 +494,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                       ]),
                 ),
 
-                // ── AI Support chip ────────────────────────────────────────
+                // ── FAQ help chip ──────────────────────────────────────────
                 GestureDetector(
                   onTap: _openChat,
                   child: Container(
@@ -511,10 +507,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                           Border.all(color: AppColors.primary.withOpacity(0.3)),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.support_agent_rounded,
+                      const Icon(Icons.question_answer_rounded,
                           color: AppColors.primary, size: 14),
                       const SizedBox(width: 4),
-                      Text('AI Help',
+                      Text('FAQ Help',
                           style: GoogleFonts.poppins(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
