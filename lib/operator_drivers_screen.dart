@@ -246,20 +246,23 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
       );
     }
 
-    return RefreshIndicator(
-      onRefresh: _loadDrivers,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
-        physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: _filtered.length,
-        itemBuilder: (_, i) => _driverRow(_filtered[i]),
-      ),
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _filtered.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) => _driverRow(_filtered[i]),
     );
   }
 
   Widget _driverRow(Map<String, dynamic> driver) {
     final verified = _isVerified(driver);
     final active = _isActive(driver);
+    final driverName = _value(driver['driver_name'], fallback: 'Driver');
+    final bodyNumber = _value(driver['toda_body_number']);
+    final plateNo = _value(driver['plate_no']);
+    final licenseNo = _value(driver['license_no']);
+    final phone = _value(driver['phone']);
     final statusText = verified
         ? (active ? driver['status']?.toString() ?? 'active' : 'offline')
         : 'pending';
@@ -286,7 +289,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
         Expanded(
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(driver['driver_name']?.toString() ?? 'Driver',
+            Text(driverName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.poppins(
@@ -296,7 +299,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
                 )),
             const SizedBox(height: 4),
             Text(
-              '${driver['toda_body_number'] ?? '-'} - ${driver['plate_no'] ?? '-'}',
+              '$bodyNumber - $plateNo',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style:
@@ -304,50 +307,75 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
             ),
             const SizedBox(height: 4),
             Text(
-              'License ${driver['license_no'] ?? '-'}',
+              'License $licenseNo',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style:
                   GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint),
             ),
+            if (phone != '-') ...[
+              const SizedBox(height: 4),
+              Text(
+                phone,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                    fontSize: 11, color: AppColors.textHint),
+              ),
+            ],
           ]),
         ),
         const SizedBox(width: 10),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           _statusPill(statusText, statusColor),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 34,
-            child: verified
-                ? OutlinedButton(
-                    onPressed: () => _setApproval(driver, false),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.error,
-                      side: const BorderSide(color: AppColors.error),
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                    child: Text('Revoke',
-                        style: GoogleFonts.poppins(
-                            fontSize: 11, fontWeight: FontWeight.w700)),
-                  )
-                : ElevatedButton.icon(
-                    onPressed: () => _setApproval(driver, true),
-                    icon: const Icon(Icons.check_rounded, size: 16),
-                    label: Text('Approve',
-                        style: GoogleFonts.poppins(
-                            fontSize: 11, fontWeight: FontWeight.w700)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.backgroundDark,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      elevation: 0,
-                    ),
-                  ),
+          _actionButton(
+            label: verified ? 'Revoke' : 'Approve',
+            icon: verified ? Icons.close_rounded : Icons.check_rounded,
+            color: verified ? AppColors.error : AppColors.backgroundDark,
+            filled: !verified,
+            onTap: () => _setApproval(driver, !verified),
           ),
         ]),
       ]),
     );
   }
+
+  String _value(dynamic value, {String fallback = '-'}) {
+    final text = value?.toString().trim() ?? '';
+    return text.isEmpty || text.toLowerCase() == 'null' ? fallback : text;
+  }
+
+  Widget _actionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required bool filled,
+    required VoidCallback onTap,
+  }) =>
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: filled ? color : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 15, color: filled ? Colors.white : color),
+            const SizedBox(width: 4),
+            Text(label,
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: filled ? Colors.white : color,
+                )),
+          ]),
+        ),
+      );
 
   Widget _statusPill(String label, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
