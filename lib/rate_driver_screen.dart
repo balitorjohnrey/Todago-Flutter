@@ -9,7 +9,7 @@ import 'passenger_home_screen.dart';
 class RateDriverScreen extends StatefulWidget {
   final String tripId;
   final String driverName;
-  final double driverRating;   // current avg before this rating
+  final double driverRating; // current avg before this rating
   final String todaBodyNumber;
   final String plateNo;
   final String destination;
@@ -32,23 +32,45 @@ class RateDriverScreen extends StatefulWidget {
 
 class _RateDriverScreenState extends State<RateDriverScreen> {
   int _selectedStars = 0;
-  int _hoveredStars  = 0;           // for tap animation tracking
   final Set<String> _selectedTags = {};
   final TextEditingController _commentCtrl = TextEditingController();
   bool _isSubmitting = false;
-  bool _submitted    = false;
+  bool _submitted = false;
 
   // ── Tag options by star tier ──────────────────────────────────────────────
   static const Map<int, List<String>> _tagsByRating = {
-    5: ['Safe Driver', 'Very Friendly', 'On Time', 'Clean Vehicle',
-        'Great Route', 'Professional', 'Would Ride Again'],
-    4: ['Good Driver', 'Friendly', 'Mostly On Time', 'Clean Vehicle',
-        'Good Route', 'Comfortable'],
+    5: [
+      'Safe Driver',
+      'Very Friendly',
+      'On Time',
+      'Clean Vehicle',
+      'Great Route',
+      'Professional',
+      'Would Ride Again'
+    ],
+    4: [
+      'Good Driver',
+      'Friendly',
+      'Mostly On Time',
+      'Clean Vehicle',
+      'Good Route',
+      'Comfortable'
+    ],
     3: ['Average', 'Okay Driver', 'Acceptable', 'Could Be Better'],
-    2: ['Late Arrival', 'Reckless Driving', 'Unfriendly', 'Dirty Vehicle',
-        'Wrong Route'],
-    1: ['Very Late', 'Dangerous Driving', 'Rude', 'Scam Attempt',
-        'Wrong Destination'],
+    2: [
+      'Late Arrival',
+      'Reckless Driving',
+      'Unfriendly',
+      'Dirty Vehicle',
+      'Wrong Route'
+    ],
+    1: [
+      'Very Late',
+      'Dangerous Driving',
+      'Rude',
+      'Scam Attempt',
+      'Wrong Destination'
+    ],
   };
 
   List<String> get _currentTags =>
@@ -56,23 +78,35 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
 
   String get _ratingLabel {
     switch (_selectedStars) {
-      case 1: return 'Poor';
-      case 2: return 'Fair';
-      case 3: return 'Okay';
-      case 4: return 'Good';
-      case 5: return 'Excellent!';
-      default: return 'Tap to rate';
+      case 1:
+        return 'Poor';
+      case 2:
+        return 'Fair';
+      case 3:
+        return 'Okay';
+      case 4:
+        return 'Good';
+      case 5:
+        return 'Excellent!';
+      default:
+        return 'Tap to rate';
     }
   }
 
   Color get _ratingColor {
     switch (_selectedStars) {
-      case 1: return AppColors.error;
-      case 2: return Colors.orange;
-      case 3: return Colors.amber;
-      case 4: return AppColors.primary;
-      case 5: return AppColors.success;
-      default: return AppColors.textHint;
+      case 1:
+        return AppColors.error;
+      case 2:
+        return Colors.orange;
+      case 3:
+        return Colors.amber;
+      case 4:
+        return AppColors.primary;
+      case 5:
+        return AppColors.success;
+      default:
+        return AppColors.textHint;
     }
   }
 
@@ -95,10 +129,11 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
     setState(() => _isSubmitting = true);
 
     final result = await TripService.submitRating(
-      tripId:  widget.tripId,
-      rating:  _selectedStars,
-      comment: _commentCtrl.text.trim().isEmpty ? null : _commentCtrl.text.trim(),
-      tags:    _selectedTags.toList(),
+      tripId: widget.tripId,
+      rating: _selectedStars,
+      comment:
+          _commentCtrl.text.trim().isEmpty ? null : _commentCtrl.text.trim(),
+      tags: _selectedTags.toList(),
     );
 
     if (!mounted) return;
@@ -115,7 +150,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
       final msg = result['message']?.toString() ?? 'Something went wrong.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg,
-            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+            style:
+                GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
         backgroundColor:
             msg.contains('already') ? AppColors.primary : AppColors.error,
         behavior: SnackBarBehavior.floating,
@@ -180,22 +216,22 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
             const SizedBox(height: 8),
             Text(
               'It helps improve the TodaGo experience.',
-              style: GoogleFonts.poppins(
-                  fontSize: 13, color: AppColors.textHint),
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint),
             ).animate().fadeIn(delay: 300.ms),
             const SizedBox(height: 28),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: List.generate(
                 _selectedStars,
-                (i) => Icon(Icons.star_rounded,
-                        color: AppColors.primary, size: 32)
-                    .animate(delay: Duration(milliseconds: 100 * i))
-                    .scale(
-                        begin: const Offset(0, 0),
-                        end: const Offset(1, 1),
-                        duration: 300.ms,
-                        curve: Curves.bounceOut),
+                (i) =>
+                    Icon(Icons.star_rounded, color: AppColors.primary, size: 32)
+                        .animate(delay: Duration(milliseconds: 100 * i))
+                        .scale(
+                            begin: const Offset(0, 0),
+                            end: const Offset(1, 1),
+                            duration: 300.ms,
+                            curve: Curves.bounceOut),
               ),
             ),
           ],
@@ -258,8 +294,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
 
                 Text(
                   'Rate your ride with',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13, color: Colors.white54),
+                  style:
+                      GoogleFonts.poppins(fontSize: 13, color: Colors.white54),
                 ),
                 Text(
                   widget.driverName,
@@ -379,36 +415,35 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                                 : const Color(0xFFF0F2F5),
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                              color: sel
-                                  ? AppColors.primary
-                                  : Colors.transparent,
+                              color:
+                                  sel ? AppColors.primary : Colors.transparent,
                               width: 1.5,
                             ),
                           ),
-                          child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                if (sel) ...[
-                                  const Icon(Icons.check_rounded,
-                                      color: AppColors.primary, size: 13),
-                                  const SizedBox(width: 4),
-                                ],
-                                Text(
-                                  tag,
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: sel
-                                        ? Colors.white
-                                        : AppColors.backgroundDark,
-                                  ),
-                                ),
-                              ]),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            if (sel) ...[
+                              const Icon(Icons.check_rounded,
+                                  color: AppColors.primary, size: 13),
+                              const SizedBox(width: 4),
+                            ],
+                            Text(
+                              tag,
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: sel
+                                    ? Colors.white
+                                    : AppColors.backgroundDark,
+                              ),
+                            ),
+                          ]),
                         ),
                       );
                     }).toList(),
-                  ).animate().fadeIn(duration: 300.ms).slideY(
-                      begin: 0.1, end: 0),
+                  )
+                      .animate()
+                      .fadeIn(duration: 300.ms)
+                      .slideY(begin: 0.1, end: 0),
                   const SizedBox(height: 20),
 
                   // ── Optional comment ───────────────────────────────────────
@@ -428,8 +463,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                     style: GoogleFonts.poppins(
                         fontSize: 14, color: AppColors.backgroundDark),
                     decoration: InputDecoration(
-                      hintText:
-                          'Tell us more about your experience...',
+                      hintText: 'Tell us more about your experience...',
                       hintStyle: GoogleFonts.poppins(
                           fontSize: 13, color: AppColors.textHint),
                       filled: true,
@@ -437,18 +471,16 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                       contentPadding: const EdgeInsets.all(14),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                            color: Color(0xFFEEEEEE)),
+                        borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                            color: Color(0xFFEEEEEE)),
+                        borderSide: const BorderSide(color: Color(0xFFEEEEEE)),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                            color: AppColors.primary, width: 2),
+                        borderSide:
+                            BorderSide(color: AppColors.primary, width: 2),
                       ),
                       counterStyle: GoogleFonts.poppins(
                           fontSize: 10, color: AppColors.textHint),
@@ -463,9 +495,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                   width: double.infinity,
                   height: 54,
                   child: ElevatedButton(
-                    onPressed: (_selectedStars == 0 || _isSubmitting)
-                        ? null
-                        : _submit,
+                    onPressed:
+                        (_selectedStars == 0 || _isSubmitting) ? null : _submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _selectedStars > 0
                           ? AppColors.backgroundDark
@@ -480,11 +511,9 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                             width: 22,
                             height: 22,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2.5,
-                                color: Colors.white))
+                                strokeWidth: 2.5, color: Colors.white))
                         : Row(
-                            mainAxisAlignment:
-                                MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(
                                 Icons.send_rounded,
@@ -533,8 +562,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
   }
 
   Widget _infoChip(IconData icon, String label) => Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.08),
           borderRadius: BorderRadius.circular(20),

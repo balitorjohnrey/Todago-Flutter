@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
+import 'admin_login_screen.dart';
 import 'auth_service.dart';
 import 'register_screen.dart';
 import 'role_selection_screen.dart';
@@ -245,6 +246,31 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ).animate().fadeIn(delay: 700.ms),
+              const SizedBox(height: 18),
+              Center(
+                child: TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const AdminLoginScreen(),
+                    transitionDuration: const Duration(milliseconds: 400),
+                    transitionsBuilder: (_, anim, __, child) => SlideTransition(
+                      position: Tween<Offset>(
+                              begin: const Offset(0, 1), end: Offset.zero)
+                          .animate(CurvedAnimation(
+                              parent: anim, curve: Curves.easeOut)),
+                      child: child,
+                    ),
+                  )),
+                  icon: const Icon(Icons.admin_panel_settings_rounded, size: 17),
+                  label: Text('Admin Secret Access',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      )),
+                  style: TextButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                  ),
+                ),
+              ).animate().fadeIn(delay: 760.ms),
               const SizedBox(height: 40),
             ],
           ),

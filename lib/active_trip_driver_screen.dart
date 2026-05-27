@@ -53,8 +53,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     return double.tryParse(f.toString()) ?? 25.0;
   }
 
-  static const double _commissionAmt = 5.0;
-  double get _driverEarnings => _fare - _commissionAmt;
+  double get _driverEarnings => _fare;
 
   @override
   void initState() {
@@ -317,9 +316,6 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     final actualEarnings = earnings != null
         ? parseFare(earnings['your_earnings'], _driverEarnings)
         : _driverEarnings;
-    final actualComm = earnings != null
-        ? parseFare(earnings['commission_amt'], _commissionAmt)
-        : _commissionAmt;
 
     await showDialog(
       context: context,
@@ -360,9 +356,6 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             child: Column(children: [
               _earningsRow('Passenger Fare', '₱${_fare.toStringAsFixed(2)}',
                   Colors.black),
-              const SizedBox(height: 6),
-              _earningsRow('Commission (flat)',
-                  '- ₱${actualComm.toStringAsFixed(2)}', Colors.red),
               const Divider(height: 16),
               _earningsRow('Your Earnings',
                   '₱${actualEarnings.toStringAsFixed(2)}', Colors.green,

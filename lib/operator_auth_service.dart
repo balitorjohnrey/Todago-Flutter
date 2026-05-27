@@ -196,6 +196,59 @@ class OperatorAuthService {
     return jsonDecode(raw) as Map<String, dynamic>;
   }
 
+  static Future<Map<String, dynamic>?> fetchProfile() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return await getOperator();
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final operator = data['operator'] as Map<String, dynamic>?;
+        if (operator != null) {
+          await _storage.write(
+            key: _operatorDataKey,
+            value: jsonEncode(operator),
+          );
+          return operator;
+        }
+      }
+      return await getOperator();
+    } catch (_) {
+      return await getOperator();
+    }
+  }
+
+  static Future<Map<String, dynamic>?> fetchStats() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return null;
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/stats'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 12));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        return data['stats'] as Map<String, dynamic>?;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> fetchDrivers() async {
     try {
       final token = await getToken();
@@ -203,6 +256,30 @@ class OperatorAuthService {
 
       final response = await http.get(
         Uri.parse('$_baseUrl/drivers'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final drivers = data['drivers'] as List<dynamic>? ?? [];
+        return drivers.whereType<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchFleet() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return [];
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/fleet'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',

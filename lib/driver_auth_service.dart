@@ -66,11 +66,12 @@ class DriverAuthService {
   //
   // Only vehicle details are needed from the form.
   static Future<DriverAuthResponse> register({
+    required String driverType,
     required String licenseNo,
     required String todaBodyNumber,
     required String plateNo,
     String? vehicleColor,
-    String? todaId,
+    String? todaAssociation,
   }) async {
     try {
       // Get main account token — required for registration
@@ -92,12 +93,14 @@ class DriverAuthService {
               'Authorization': 'Bearer $mainToken', // ← FIX: send main token
             },
             body: jsonEncode({
+              'driverType': driverType,
               'licenseNo': licenseNo.trim(),
               'todaBodyNumber': todaBodyNumber.trim(),
               'plateNo': plateNo.trim(),
               if (vehicleColor != null && vehicleColor.isNotEmpty)
                 'vehicleColor': vehicleColor,
-              if (todaId != null && todaId.isNotEmpty) 'todaId': todaId,
+              if (todaAssociation != null && todaAssociation.isNotEmpty)
+                'todaAssociation': todaAssociation.trim(),
               // name, phone, email are NOT sent — backend reads them from
               // the main account using the token
             }),
@@ -133,9 +136,10 @@ class DriverAuthService {
   // ── Login driver ──────────────────────────────────────────────────────────────
   // TODA body number + plate number + main account password
   static Future<DriverAuthResponse> login({
-    required String todaBodyNumber,
-    required String plateNo,
+    required String driverType,
+    required String licenseNo,
     required String password,
+    String? todaAssociation,
   }) async {
     try {
       final response = await http
@@ -143,8 +147,10 @@ class DriverAuthService {
             Uri.parse('$_baseUrl/login'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
-              'todaBodyNumber': todaBodyNumber.trim(),
-              'plateNo': plateNo.trim(),
+              'driverType': driverType,
+              'licenseNo': licenseNo.trim(),
+              if (todaAssociation != null && todaAssociation.isNotEmpty)
+                'todaAssociation': todaAssociation.trim(),
               'password': password,
             }),
           )

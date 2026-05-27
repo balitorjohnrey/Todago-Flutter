@@ -17,6 +17,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   bool _isLoading = false;
   bool _isFetchingAccount = true; // true while loading main account data
   String? _errorMessage;
+  bool _withAssociation = false;
 
   // Step 1 — Personal Info (read-only, auto-filled from main account)
   final _fullNameCtrl = TextEditingController();
@@ -115,6 +116,11 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       setState(() => _errorMessage = 'Please fill in all required fields');
       return;
     }
+    if (_withAssociation && _todaBranchCtrl.text.trim().isEmpty) {
+      setState(
+          () => _errorMessage = 'Enter your TODA Association Name or Code');
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -124,11 +130,12 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     // ── FIX: driverName / phone / email are NOT passed here anymore. ──────────
     // The backend reads them from the main account via the Authorization token.
     final result = await DriverAuthService.register(
+      driverType: _withAssociation ? 'associated' : 'independent',
       licenseNo: _licenseCtrl.text,
       todaBodyNumber: _bodyNumberCtrl.text,
       plateNo: _plateCtrl.text,
       vehicleColor: _colorCtrl.text.isNotEmpty ? _colorCtrl.text : null,
-      todaId: _todaBranchCtrl.text.isNotEmpty ? _todaBranchCtrl.text : null,
+      todaAssociation: _withAssociation ? _todaBranchCtrl.text.trim() : null,
     );
 
     if (!mounted) return;
@@ -356,30 +363,62 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           const SizedBox(height: 8),
-          Text('TODA Association',
+          Text('Driver Type',
               style: GoogleFonts.poppins(
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
                 color: AppColors.backgroundDark,
               )),
-          Text('Link to a registered TODA, or leave blank if independent',
+          Text('Choose how your driver application should be verified',
               style:
                   GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 24),
 
-          _lbl('TODA Association Name or Code'),
-          const SizedBox(height: 6),
-          _fld(
-            controller: _todaBranchCtrl,
-            hint: 'Panabo City TODA or association code',
-            icon: Icons.location_on_outlined,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Associated drivers need operator approval before going online.',
-            style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
-          ),
+          Row(children: [
+            Expanded(
+              child: _driverTypeCard(
+                title: 'No Association',
+                subtitle: 'Admin verifies your license',
+                icon: Icons.badge_outlined,
+                selected: !_withAssociation,
+                onTap: () => setState(() {
+                  _withAssociation = false;
+                  _todaBranchCtrl.clear();
+                  _errorMessage = null;
+                }),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _driverTypeCard(
+                title: 'With Association',
+                subtitle: 'Operator approves your TODA membership',
+                icon: Icons.groups_rounded,
+                selected: _withAssociation,
+                onTap: () => setState(() {
+                  _withAssociation = true;
+                  _errorMessage = null;
+                }),
+              ),
+            ),
+          ]),
           const SizedBox(height: 18),
+
+          if (_withAssociation) ...[
+            _lbl('TODA Association Name or Code', required: true),
+            const SizedBox(height: 6),
+            _fld(
+              controller: _todaBranchCtrl,
+              hint: 'Panabo City TODA or association code',
+              icon: Icons.location_on_outlined,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Your application will appear in the operator Driver Management list.',
+              style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+            ),
+            const SizedBox(height: 18),
+          ],
 
           // Benefits card
           Container(
@@ -405,7 +444,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               const SizedBox(height: 10),
               _benefit(
                   'Registered TODA membership is reviewed by its operator'),
-              _benefit('Independent drivers can register with a valid license'),
+              _benefit('Independent drivers are reviewed by TodaGo admin'),
               _benefit('Your vehicle details stay tied to your main account'),
             ]),
           ),
@@ -536,6 +575,51 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       );
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  Widget _driverTypeCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) =>
+      GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.primary.withOpacity(0.14)
+                : Colors.grey[50],
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected ? AppColors.primary : Colors.grey[200]!,
+              width: selected ? 2 : 1,
+            ),
+          ),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(icon,
+                size: 24,
+                color: selected ? AppColors.primary : AppColors.textHint),
+            const SizedBox(height: 10),
+            Text(title,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+            const SizedBox(height: 4),
+            Text(subtitle,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                  height: 1.25,
+                )),
+          ]),
+        ),
+      );
 
   Widget _benefit(String text) => Padding(
         padding: const EdgeInsets.only(bottom: 4),

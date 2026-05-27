@@ -1,11 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
+import 'operator_auth_service.dart';
 import 'operator_fleet_map_screen.dart';
 import 'operator_drivers_screen.dart';
-import 'operator_financials_screen.dart';
 import 'splash_screen.dart';
 
 class OperatorDashboardScreen extends StatefulWidget {
@@ -17,6 +18,57 @@ class OperatorDashboardScreen extends StatefulWidget {
 }
 
 class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
+  Map<String, dynamic>? _operator;
+  Map<String, dynamic> _stats = {};
+  Timer? _refreshTimer;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboard();
+    _refreshTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (mounted) _loadDashboard(silent: true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadDashboard({bool silent = false}) async {
+    if (!silent) setState(() => _isLoading = true);
+    final results = await Future.wait([
+      OperatorAuthService.fetchProfile(),
+      OperatorAuthService.fetchStats(),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _operator = results[0];
+      _stats = results[1] ?? {};
+      _isLoading = false;
+    });
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is double) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  String _money(dynamic value) {
+    final amount = _asDouble(value);
+    return 'PHP ${amount.toStringAsFixed(0)}';
+  }
+
   Future<void> _logout() async {
     await AuthService.logout();
     if (!mounted) return;
@@ -32,10 +84,6 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
 
   void _onDriverManagement() {
     _pushOperatorTool(const OperatorDriversScreen());
-  }
-
-  void _onFinancials() {
-    _pushOperatorTool(const OperatorFinancialsScreen());
   }
 
   void _pushOperatorTool(Widget screen) {
@@ -134,7 +182,8 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: Center(
-                                    child: Text('3',
+                                    child: Text(
+                                        '${_asInt(_stats['pending_drivers'])}',
                                         style: GoogleFonts.poppins(
                                           fontSize: 9,
                                           fontWeight: FontWeight.w700,
@@ -174,13 +223,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Davao-Central TODA',
+                                Text(
+                                    _operator?['association_name']
+                                            ?.toString() ??
+                                        'TODA Association',
                                     style: GoogleFonts.poppins(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     )),
-                                Text('Association #001 • Verified',
+                                Text(
+                                    '${_operator?['association_code'] ?? '-'} - ${(_operator?['toda_verified'] == true) ? 'Verified' : 'Pending Verification'}',
                                     style: GoogleFonts.poppins(
                                       fontSize: 12,
                                       color: Colors.white54,
@@ -207,7 +260,10 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                                             shape: BoxShape.circle,
                                           )),
                                       const SizedBox(width: 5),
-                                      Text('LTFRB Registered',
+                                      Text(
+                                          (_operator?['toda_verified'] == true)
+                                              ? 'LTFRB Registered'
+                                              : 'LTFRB Pending',
                                           style: GoogleFonts.poppins(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w600,
@@ -258,37 +314,37 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                         icon: Icons.people_rounded,
                         iconColor: const Color(0xFF5B8CFF),
                         label: 'ACTIVE DRIVERS',
-                        value: '315',
-                        sub: 'of 402 total',
-                        badge: '+12',
+                        value: '${_asInt(_stats['active_drivers'])}',
+                        sub: 'of ${_asInt(_stats['total_drivers'])} total',
+                        badge: '${_asInt(_stats['offline_drivers'])} off',
                         badgeColor: AppColors.success,
                       ),
                       _statCard(
                         icon: Icons.trending_up_rounded,
                         iconColor: AppColors.primary,
                         label: 'TRIPS TODAY',
-                        value: '1,850',
-                        sub: 'and counting',
-                        badge: '+8%',
+                        value: '${_asInt(_stats['trips_today'])}',
+                        sub: _isLoading ? 'refreshing' : 'completed today',
+                        badge: 'LIVE',
                         badgeColor: AppColors.success,
                       ),
                       _statCard(
                         icon: Icons.attach_money_rounded,
                         iconColor: AppColors.success,
-                        label: 'TODA REVENUE',
-                        value: '₱92,500',
+                        label: 'GROSS REVENUE',
+                        value: _money(_stats['gross_revenue']),
                         sub: "today's gross",
-                        badge: '+15%',
+                        badge: 'TODAY',
                         badgeColor: AppColors.success,
                       ),
                       _statCard(
-                        icon: Icons.receipt_long_rounded,
-                        iconColor: AppColors.error,
-                        label: 'COMMISSION DUE',
-                        value: '₱9,250',
-                        sub: 'to TodaGo',
-                        badge: 'PENDING',
-                        badgeColor: AppColors.error,
+                        icon: Icons.pending_actions_rounded,
+                        iconColor: Colors.orange,
+                        label: 'PENDING DRIVERS',
+                        value: '${_asInt(_stats['pending_drivers'])}',
+                        sub: 'awaiting approval',
+                        badge: 'QUEUE',
+                        badgeColor: Colors.orange,
                       ),
                     ],
                   ).animate().fadeIn(delay: 150.ms, duration: 400.ms),
@@ -321,7 +377,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                                     )),
                               ]),
                               const SizedBox(height: 8),
-                              Text('4.75',
+                              Text(
+                                  _asDouble(_stats['avg_rating'])
+                                      .toStringAsFixed(2),
                                   style: GoogleFonts.poppins(
                                     fontSize: 36,
                                     fontWeight: FontWeight.w900,
@@ -338,9 +396,12 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                                 children: List.generate(
                                     5,
                                     (i) => Icon(
-                                          i < 4
+                                          i <
+                                                  _asDouble(
+                                                          _stats['avg_rating'])
+                                                      .floor()
                                               ? Icons.star_rounded
-                                              : Icons.star_half_rounded,
+                                              : Icons.star_border_rounded,
                                           color: AppColors.backgroundDark,
                                           size: 18,
                                         )),
@@ -399,16 +460,8 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
 
                   const SizedBox(height: 12),
 
-                  // Row 2: Financials + Logout
                   Row(
                     children: [
-                      Expanded(
-                          child: _actionCard(
-                        icon: Icons.bar_chart_rounded,
-                        label: 'Financials',
-                        onTap: _onFinancials,
-                      )),
-                      const SizedBox(width: 12),
                       Expanded(
                           child: _actionCard(
                         icon: Icons.logout_rounded,

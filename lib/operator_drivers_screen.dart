@@ -248,6 +248,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
     return RefreshIndicator(
       onRefresh: _loadDrivers,
       child: ListView.builder(
+        padding: const EdgeInsets.all(14),
         itemCount: _filtered.length,
         itemBuilder: (_, i) => _driverRow(_filtered[i], i),
       ),
@@ -265,8 +266,13 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
         : AppColors.primary;
 
     return Container(
-      color: index % 2 == 0 ? Colors.white : const Color(0xFFFAFAFA),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           width: 10,
