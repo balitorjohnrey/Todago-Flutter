@@ -23,7 +23,8 @@ class DriverAuthService {
   static const _storage = FlutterSecureStorage();
 
   // Keys — main account token lives under 'auth_token' (set by AuthService)
-  static const _mainTokenKey = 'auth_token';    // ← written by AuthService on login/register
+  static const _mainTokenKey =
+      'auth_token'; // ← written by AuthService on login/register
   static const _driverTokenKey = 'driver_auth_token';
   static const _driverDataKey = 'driver_data';
 
@@ -37,16 +38,14 @@ class DriverAuthService {
       final token = await _storage.read(key: _mainTokenKey);
       if (token == null || token.isEmpty) return null;
 
-      final response = await http
-          .get(
-            Uri.parse(
-                'https://todago-backend-production.up.railway.app/api/auth/me'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse(
+            'https://todago-backend-production.up.railway.app/api/auth/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -200,15 +199,13 @@ class DriverAuthService {
       final token = await getToken();
       if (token == null || token.isEmpty) return await getDriver();
 
-      final response = await http
-          .get(
-            Uri.parse('$_baseUrl/me'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -221,6 +218,29 @@ class DriverAuthService {
       return await getDriver();
     } catch (_) {
       return await getDriver();
+    }
+  }
+
+  static Future<Map<String, dynamic>?> fetchTodayStats() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return null;
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/stats/today'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['stats'] as Map<String, dynamic>?;
+      }
+      return null;
+    } catch (_) {
+      return null;
     }
   }
 

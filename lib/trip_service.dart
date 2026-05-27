@@ -22,12 +22,22 @@ class TripService {
       };
 
   // ── Passenger: fetch online drivers ───────────────────────────────────────
-  static Future<List<Map<String, dynamic>>> fetchOnlineDrivers() async {
+  static Future<List<Map<String, dynamic>>> fetchOnlineDrivers({
+    LatLng? pickupLatLng,
+  }) async {
     try {
       final token = await _getPassengerToken();
+      final uri = Uri.parse('$_baseUrl/drivers/online').replace(
+        queryParameters: pickupLatLng == null
+            ? null
+            : {
+                'pickupLat': pickupLatLng.latitude.toString(),
+                'pickupLng': pickupLatLng.longitude.toString(),
+              },
+      );
       final response = await http
           .get(
-            Uri.parse('$_baseUrl/drivers/online'),
+            uri,
             headers: _headers(token),
           )
           .timeout(const Duration(seconds: 15));

@@ -7,6 +7,7 @@ import 'package:speech_to_text/speech_to_text.dart';
 import 'app_theme.dart';
 import 'service_selection_screen.dart';
 import 'map_service.dart';
+import 'panabo_config.dart';
 
 class DestinationPickerScreen extends StatefulWidget {
   const DestinationPickerScreen({super.key});
@@ -34,7 +35,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   bool _isSearching = false;
   bool _isRouting = false;
   bool _showSugg = false;
-  bool _loadingLoc = true;
+  bool _loadingLoc = false;
   Timer? _debounce;
   StreamSubscription<LatLng>? _locSub;
   DateTime? _lastRouteRefresh;
@@ -72,11 +73,13 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   }
 
   Future<void> _initLocation() async {
+    _startLocationStream();
+
     // Wait for a real GPS fix before saving the passenger pickup point.
     LatLng? realPos;
     try {
       realPos = await MapService.getCurrentLocation()
-          .timeout(const Duration(seconds: 6));
+          .timeout(const Duration(seconds: 2));
     } catch (_) {
       // Timed out or permission denied — keep default coords, no crash
       debugPrint('[Location] GPS timed out or unavailable');
@@ -93,12 +96,9 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     if (realPos == null) {
       setState(() {
         _loadingLoc = false;
-        _pickupName = 'Getting live location...';
+        _pickupName = 'Getting live location in Panabo City...';
       });
-      _showSnack('Waiting for your live GPS location.');
     }
-
-    _startLocationStream();
   }
 
   // ── Speech init ───────────────────────────────────────────────────────────
@@ -268,7 +268,10 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       _isSearching = true;
       _showSugg = true;
     });
-    final results = await MapService.searchPlaces(q, locationBias: _myLocation);
+    final results = await MapService.searchPlaces(
+      q,
+      locationBias: _myLocation ?? PanaboConfig.cityCenter,
+    );
     if (mounted)
       setState(() {
         _suggestions = results;
@@ -400,8 +403,10 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         _isSearching = true;
       });
 
-      final results =
-          await MapService.searchPlaces(destination, locationBias: _myLocation);
+      final results = await MapService.searchPlaces(
+        destination,
+        locationBias: _myLocation ?? PanaboConfig.cityCenter,
+      );
       if (!mounted) return;
 
       if (results.isEmpty) {
@@ -496,7 +501,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   }
 
   String _estimateFare(double km) =>
-      (15 + (km * 5)).round().clamp(15, 300).toString();
+      PanaboFarePolicy.fareForDistanceKm(km).toStringAsFixed(0);
 
   @override
   Widget build(BuildContext context) {
@@ -507,8 +512,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         Positioned.fill(
           child: GoogleMap(
               initialCameraPosition: CameraPosition(
-                  target: _myLocation ?? const LatLng(12.8797, 121.7740),
-                  zoom: _myLocation == null ? 5 : 16),
+                  target: _myLocation ?? PanaboConfig.cityCenter,
+                  zoom: _myLocation == null ? 14.5 : 16),
               onMapCreated: (ctrl) {
                 _mapCtrl = ctrl;
                 if (_myLocation != null) {

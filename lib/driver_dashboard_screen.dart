@@ -33,9 +33,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   Map<String, dynamic>? _driverProfile;
   double _avgRating = 0.0;
   int _totalTrips = 0;
+  int _tripsToday = 0;
+  int _onlineSecondsToday = 0;
+  double _earningsToday = 0.0;
 
   Timer? _pollTimer;
   Timer? _scheduledSyncTimer;
+  Timer? _statsTimer;
+  Timer? _onlineTickTimer;
 
   @override
   void initState() {
@@ -45,6 +50,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
     _loadDriver();
+    _loadTodayStats();
+    _startStatsRealtime();
     _syncScheduledReservations();
     _scheduledSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) {
       if (mounted) _syncScheduledReservations();
@@ -64,7 +71,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _driverPhotoPath = photoPath;
         _avgRating = _asDouble(d['avg_rating']);
         _totalTrips = _asInt(d['total_trips']);
+        _isOnline = ['online', 'on_trip'].contains(d['status']?.toString());
       });
+      if (_isOnline) {
+        _startPolling();
+      } else {
+        _stopPolling();
+      }
     }
   }
 
@@ -78,6 +91,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     setState(() => _isUpdating = false);
     if (ok) {
       setState(() => _isOnline = !_isOnline);
+      await _loadTodayStats();
       if (_isOnline) {
         _startPolling();
         _snack('You are now ONLINE 🟢 — waiting for passengers', Colors.green);
@@ -159,6 +173,44 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     );
   }
 
+  void _startStatsRealtime() {
+    _statsTimer?.cancel();
+    _onlineTickTimer?.cancel();
+    _statsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _loadTodayStats();
+    });
+    _onlineTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _isOnline) {
+        setState(() => _onlineSecondsToday++);
+      }
+    });
+  }
+
+  Future<void> _loadTodayStats() async {
+    final stats = await DriverAuthService.fetchTodayStats();
+    if (stats == null || !mounted) return;
+    setState(() {
+      _tripsToday = _asInt(stats['trips_today']);
+      _onlineSecondsToday = _asInt(stats['online_seconds_today']);
+      _earningsToday = _asDouble(
+        stats['driver_earnings_today'] ?? stats['earnings_today'],
+      );
+      _avgRating = _asDouble(stats['avg_rating'] ?? _avgRating);
+      _totalTrips = _asInt(stats['total_trips'] ?? _totalTrips);
+      final status = stats['status']?.toString();
+      if (status != null && status.isNotEmpty) {
+        _isOnline = status == 'online' || status == 'on_trip';
+      }
+    });
+  }
+
+  String _formatDuration(int seconds) {
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final hours = safeSeconds ~/ 3600;
+    final minutes = (safeSeconds % 3600) ~/ 60;
+    return '${hours}h ${minutes}m';
+  }
+
   Future<void> _logout() async {
     _stopPolling();
     if (_isOnline) await TripService.updateDriverStatus('offline');
@@ -187,6 +239,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   @override
   void dispose() {
     _scheduledSyncTimer?.cancel();
+    _statsTimer?.cancel();
+    _onlineTickTimer?.cancel();
     _stopPolling();
     _pulse.dispose();
     super.dispose();
@@ -351,17 +405,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               child: Row(children: [
                 _statItem(
                   "Today's Earnings",
-                  '₱0.00',
-                  'Start accepting rides',
+                  'PHP ${_earningsToday.toStringAsFixed(2)}',
+                  _tripsToday > 0 ? '$_tripsToday trips today' : 'No trips yet',
                   Icons.attach_money_rounded,
                 ),
                 Container(width: 1, height: 40, color: Colors.white12),
                 _statItem(
-                  'Total Trips',
-                  '$_totalTrips',
+                  'Trips Today',
+                  '$_tripsToday',
                   _avgRating > 0
                       ? '${_avgRating.toStringAsFixed(1)} ⭐'
-                      : 'No rating yet',
+                      : '$_totalTrips total trips',
                   Icons.trending_up_rounded,
                 ),
               ]),
@@ -544,9 +598,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ]),
               const SizedBox(height: 16),
               Row(children: [
-                _bottomStat('Online Time', '0h 0m', Icons.access_time_rounded),
-                _bottomStat('Trips Today', '0', Icons.route_rounded),
-                _bottomStat('Earnings', '₱0', Icons.attach_money_rounded),
+                _bottomStat('Online Time', _formatDuration(_onlineSecondsToday),
+                    Icons.access_time_rounded),
+                _bottomStat('Trips Today', '$_tripsToday', Icons.route_rounded),
+                _bottomStat(
+                    'Earnings',
+                    'PHP ${_earningsToday.toStringAsFixed(0)}',
+                    Icons.attach_money_rounded),
               ]),
             ]),
           ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),

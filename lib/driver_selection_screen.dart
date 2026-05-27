@@ -490,7 +490,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
 
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
-              child: Text('Fare may vary based on actual distance and traffic',
+              child: Text('Fare follows the Panabo tricycle rate table',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
                       fontSize: 11, color: AppColors.textHint)),

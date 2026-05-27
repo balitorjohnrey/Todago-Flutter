@@ -17,6 +17,7 @@ import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
+import 'panabo_config.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -29,7 +30,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   Map<String, dynamic>? _user;
   String? _passengerPhotoPath;
   GoogleMapController? _mapController;
-  LatLng _currentLocation = const LatLng(12.8797, 121.7740);
+  LatLng _currentLocation = PanaboConfig.cityCenter;
   bool _hasLiveLocation = false;
   StreamSubscription<Position>? _locationStream;
 
@@ -434,7 +435,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             }
           },
           initialCameraPosition: CameraPosition(
-              target: _currentLocation, zoom: _hasLiveLocation ? 15.0 : 5.0),
+              target: _currentLocation, zoom: _hasLiveLocation ? 15.0 : 14.5),
           zoomControlsEnabled: false,
           myLocationButtonEnabled: false,
           markers: _hasLiveLocation

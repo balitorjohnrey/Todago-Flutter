@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
+import 'panabo_config.dart';
 
 const String _key = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
 const String _placesBase = 'https://maps.googleapis.com/maps/api/place';
@@ -93,7 +94,7 @@ class MapService {
     final trimmed = query.trim();
     if (trimmed.length < 2) return [];
 
-    final bias = locationBias;
+    final bias = locationBias ?? PanaboConfig.cityCenter;
 
     // ── 1st: Google Places Autocomplete ──────────────────────────────────
     _log('Places', 'Searching for "$trimmed"');
@@ -104,7 +105,8 @@ class MapService {
         '&key=$_key'
         '&language=en'
         '&components=country:ph'
-        '${bias != null ? '&location=${bias.latitude},${bias.longitude}&radius=50000' : ''}',
+        '&location=${bias.latitude},${bias.longitude}'
+        '&radius=${PanaboConfig.searchRadiusMeters.round()}',
       );
       final res = await http.get(uri).timeout(const Duration(seconds: 8));
       _log('Places', 'HTTP ${res.statusCode}');
@@ -155,7 +157,7 @@ class MapService {
 
     // ── 2nd: Photon geocoder (OSM-based, free, no key required) ──────────
     _log('Photon', 'Falling back to Photon for "$trimmed"');
-    return _searchPhoton(trimmed, bias ?? const LatLng(12.8797, 121.7740));
+    return _searchPhoton(trimmed, bias);
   }
 
   // ── Photon search ─────────────────────────────────────────────────────────
@@ -341,65 +343,24 @@ class MapService {
     return 'Your Location';
   }
 
-  // ── Road-following route (OSRM → Google Directions fallback) ─────────────
+  // ── Road-following route (Google traffic → OSRM fallback) ────────────────
   static Future<MapRoute?> fetchRoute(LatLng from, LatLng to) async {
     _log(
         'Route',
         'Fetching route from ${from.latitude},${from.longitude} '
             'to ${to.latitude},${to.longitude}');
 
-    // ── 1st: OSRM — free, no API key, real road routing ──────────────────
-    try {
-      final uri = Uri.parse(
-        'https://router.project-osrm.org/route/v1/driving'
-        '/${from.longitude},${from.latitude}'
-        ';${to.longitude},${to.latitude}'
-        '?overview=full&geometries=geojson&steps=false',
-      );
-      final res = await http.get(uri, headers: {
-        'User-Agent': 'TodaGoApp/1.0'
-      }).timeout(const Duration(seconds: 15));
-      _log('OSRM', 'HTTP ${res.statusCode}');
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final routes = data['routes'] as List?;
-        if (routes != null && routes.isNotEmpty) {
-          final route = routes.first as Map<String, dynamic>;
-          final distM = (route['distance'] as num).toDouble();
-          final durS = (route['duration'] as num).toDouble();
-          final coords = (route['geometry']['coordinates'] as List)
-              .map((c) => LatLng(
-                    (c[1] as num).toDouble(),
-                    (c[0] as num).toDouble(),
-                  ))
-              .toList();
-          _log(
-              'OSRM',
-              'Route OK — ${(distM / 1000).toStringAsFixed(1)} km, '
-                  '${(durS / 60).ceil()} min, ${coords.length} points');
-          return MapRoute(
-            points: coords,
-            distanceKm: distM / 1000,
-            etaMinutes: (durS / 60).ceil(),
-            distanceText: '${(distM / 1000).toStringAsFixed(1)} km',
-            durationText: '${(durS / 60).ceil()} min',
-          );
-        }
-      }
-    } catch (e) {
-      _log('OSRM', 'Exception: $e');
-    }
-
-    // ── 2nd: Google Directions API ────────────────────────────────────────
-    _log('Directions', 'Falling back to Google Directions');
     try {
       final uri = Uri.parse(
         '$_directionsBase'
         '?origin=${from.latitude},${from.longitude}'
         '&destination=${to.latitude},${to.longitude}'
-        '&mode=driving&key=$_key&language=en',
+        '&mode=driving'
+        '&departure_time=now'
+        '&traffic_model=best_guess'
+        '&key=$_key&language=en',
       );
-      final res = await http.get(uri).timeout(const Duration(seconds: 15));
+      final res = await http.get(uri).timeout(const Duration(seconds: 7));
       _log('Directions', 'HTTP ${res.statusCode}');
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -414,18 +375,33 @@ class MapService {
             final route = routes.first as Map<String, dynamic>;
             final leg = (route['legs'] as List).first as Map<String, dynamic>;
             final distM = (leg['distance']['value'] as num).toDouble();
-            final durS = (leg['duration']['value'] as num).toDouble();
+            final normalS = (leg['duration']['value'] as num).toDouble();
+            final trafficS =
+                (leg['duration_in_traffic']?['value'] as num?)?.toDouble();
+            final trafficFactor = trafficS == null
+                ? 1.0
+                : PanaboFarePolicy.trafficMultiplier(
+                    normalDurationSeconds: normalS,
+                    trafficDurationSeconds: trafficS,
+                  );
+            final distanceKm = distM / 1000;
+            final etaMinutes = PanaboFarePolicy.etaMinutesForDistanceKm(
+              distanceKm,
+              trafficMultiplier: trafficFactor,
+            );
             final encoded = route['overview_polyline']['points'] as String;
             _log(
                 'Directions',
-                'Route OK — ${(distM / 1000).toStringAsFixed(1)} km, '
-                    '${(durS / 60).ceil()} min');
+                'Route OK - ${distanceKm.toStringAsFixed(1)} km, '
+                    '$etaMinutes min tricycle ETA');
             return MapRoute(
               points: _decodePolyline(encoded),
-              distanceKm: distM / 1000,
-              etaMinutes: (durS / 60).ceil(),
+              distanceKm: distanceKm,
+              etaMinutes: etaMinutes,
               distanceText: leg['distance']['text'] as String? ?? '',
-              durationText: leg['duration']['text'] as String? ?? '',
+              durationText: trafficS == null
+                  ? '$etaMinutes min'
+                  : '$etaMinutes min traffic-adjusted',
             );
           }
         }
@@ -434,13 +410,60 @@ class MapService {
       _log('Directions', 'Exception: $e');
     }
 
+    // ── 2nd: OSRM — free, no API key, real road routing ──────────────────
+    try {
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving'
+        '/${from.longitude},${from.latitude}'
+        ';${to.longitude},${to.latitude}'
+        '?overview=full&geometries=geojson&steps=false',
+      );
+      final res = await http.get(uri, headers: {
+        'User-Agent': 'TodaGoApp/1.0'
+      }).timeout(const Duration(seconds: 6));
+      _log('OSRM', 'HTTP ${res.statusCode}');
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final routes = data['routes'] as List?;
+        if (routes != null && routes.isNotEmpty) {
+          final route = routes.first as Map<String, dynamic>;
+          final distM = (route['distance'] as num).toDouble();
+          final distanceKm = distM / 1000;
+          final etaMinutes =
+              PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm);
+          final coords = (route['geometry']['coordinates'] as List)
+              .map((c) => LatLng(
+                    (c[1] as num).toDouble(),
+                    (c[0] as num).toDouble(),
+                  ))
+              .toList();
+          _log(
+              'OSRM',
+              'Route OK — ${(distM / 1000).toStringAsFixed(1)} km, '
+                  '$etaMinutes min, ${coords.length} points');
+          return MapRoute(
+            points: coords,
+            distanceKm: distanceKm,
+            etaMinutes: etaMinutes,
+            distanceText: '${distanceKm.toStringAsFixed(1)} km',
+            durationText: '$etaMinutes min',
+          );
+        }
+      }
+    } catch (e) {
+      _log('OSRM', 'Exception: $e');
+    }
+
     // ── Last resort: straight-line estimate ───────────────────────────────
     _log('Route', 'All routing failed — using straight-line fallback');
     final dist = _haversineKm(from, to);
+    final eta = PanaboFarePolicy.etaMinutesForDistanceKm(dist);
     return MapRoute(
       points: [from, to],
       distanceKm: dist,
-      etaMinutes: (dist / 0.4).ceil(),
+      etaMinutes: eta,
+      distanceText: '${dist.toStringAsFixed(1)} km',
+      durationText: '$eta min',
     );
   }
 

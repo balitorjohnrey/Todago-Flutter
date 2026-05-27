@@ -5,6 +5,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
 import 'finding_driver_screen.dart';
+import 'panabo_config.dart';
 
 class ServiceSelectionScreen extends StatefulWidget {
   final String pickupName;
@@ -75,11 +76,26 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   @override
   void initState() {
     super.initState();
+    _applyOfficialFares();
     _loadOnlineDrivers();
   }
 
+  void _applyOfficialFares() {
+    final distanceKm = widget.distanceKm ?? 0;
+    final fare = PanaboFarePolicy.fareForDistanceKm(distanceKm);
+    final eta = widget.etaMinutes ??
+        PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm);
+    for (final service in _services) {
+      service['price'] = fare;
+      service['priceLabel'] = PanaboFarePolicy.formatPeso(fare);
+      service['eta'] = '$eta min';
+    }
+  }
+
   Future<void> _loadOnlineDrivers() async {
-    final drivers = await TripService.fetchOnlineDrivers();
+    final drivers = await TripService.fetchOnlineDrivers(
+      pickupLatLng: widget.pickupLatLng,
+    );
     if (mounted) {
       setState(() {
         _onlineDrivers = drivers;
