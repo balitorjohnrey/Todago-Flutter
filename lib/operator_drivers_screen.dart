@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'operator_auth_service.dart';
@@ -122,7 +121,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
-      body: Column(children: [
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _buildHeader(),
         _buildFilters(),
         Expanded(child: _buildBody()),
@@ -132,6 +131,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
   }
 
   Widget _buildHeader() => Container(
+        width: double.infinity,
         color: AppColors.backgroundDark,
         child: SafeArea(
           bottom: false,
@@ -195,6 +195,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
       );
 
   Widget _buildFilters() => Container(
+        width: double.infinity,
         color: AppColors.backgroundDark,
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -248,14 +249,15 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
     return RefreshIndicator(
       onRefresh: _loadDrivers,
       child: ListView.builder(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 24),
+        physics: const AlwaysScrollableScrollPhysics(),
         itemCount: _filtered.length,
-        itemBuilder: (_, i) => _driverRow(_filtered[i], i),
+        itemBuilder: (_, i) => _driverRow(_filtered[i]),
       ),
     );
   }
 
-  Widget _driverRow(Map<String, dynamic> driver, int index) {
+  Widget _driverRow(Map<String, dynamic> driver) {
     final verified = _isVerified(driver);
     final active = _isActive(driver);
     final statusText = verified
@@ -343,9 +345,7 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
                   ),
           ),
         ]),
-      ])
-          .animate()
-          .fadeIn(delay: Duration(milliseconds: 25 * index), duration: 250.ms),
+      ]),
     );
   }
 

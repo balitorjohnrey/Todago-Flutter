@@ -142,13 +142,15 @@ class DriverAuthService {
     String? todaAssociation,
   }) async {
     try {
+      final normalizedLicenseNo = licenseNo.trim();
       final response = await http
           .post(
             Uri.parse('$_baseUrl/login'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'driverType': driverType,
-              'licenseNo': licenseNo.trim(),
+              'licenseNo': normalizedLicenseNo,
+              'license_no': normalizedLicenseNo,
               if (todaAssociation != null && todaAssociation.isNotEmpty)
                 'todaAssociation': todaAssociation.trim(),
               'password': password,

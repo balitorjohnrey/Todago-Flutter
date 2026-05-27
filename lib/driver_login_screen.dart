@@ -32,6 +32,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
+    final association = _associationCtrl.text.trim();
+    final licenseNo = _licenseCtrl.text.trim();
+    final password = _passwordCtrl.text;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -40,9 +43,9 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
     // ✅ Real API call — not a fake delay
     final result = await DriverAuthService.login(
       driverType: _withAssociation ? 'associated' : 'independent',
-      licenseNo: _licenseCtrl.text,
-      todaAssociation: _withAssociation ? _associationCtrl.text.trim() : null,
-      password: _passwordCtrl.text,
+      licenseNo: licenseNo,
+      todaAssociation: _withAssociation ? association : null,
+      password: password,
     );
 
     if (!mounted) return;
@@ -81,9 +84,10 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
-      body: Column(children: [
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         // Header
         Container(
+          width: double.infinity,
           color: AppColors.backgroundDark,
           child: SafeArea(
             bottom: false,
@@ -138,22 +142,37 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
-                    color: AppColors.error.withOpacity(0.1),
+                    color: _isApprovalMessage(_errorMessage!)
+                        ? AppColors.primary.withOpacity(0.12)
+                        : AppColors.error.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                    border: Border.all(
+                      color: _isApprovalMessage(_errorMessage!)
+                          ? AppColors.primary.withOpacity(0.35)
+                          : AppColors.error.withOpacity(0.3),
+                    ),
                   ),
                   child: Row(children: [
-                    const Icon(Icons.error_outline,
-                        color: AppColors.error, size: 18),
+                    Icon(
+                      _isApprovalMessage(_errorMessage!)
+                          ? Icons.pending_actions_rounded
+                          : Icons.error_outline,
+                      color: _isApprovalMessage(_errorMessage!)
+                          ? AppColors.primary
+                          : AppColors.error,
+                      size: 18,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                         child: Text(_errorMessage!,
                             style: GoogleFonts.poppins(
                               fontSize: 13,
-                              color: AppColors.error,
+                              color: _isApprovalMessage(_errorMessage!)
+                                  ? AppColors.backgroundDark
+                                  : AppColors.error,
                             ))),
                   ]),
-                ).animate().fadeIn(duration: 300.ms).shakeX(duration: 400.ms),
+                ).animate().fadeIn(duration: 300.ms),
 
               Row(children: [
                 Expanded(
@@ -206,7 +225,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                 controller: _licenseCtrl,
                 hint: 'N01-23-456789',
                 icon: Icons.document_scanner_outlined,
-                validator: (v) => v == null || v.isEmpty
+                validator: (v) => v == null || v.trim().isEmpty
                     ? 'License number is required'
                     : null,
               ),
@@ -350,7 +369,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
                               ),
                             ),
                           ),
-                          child: Text('Register as Driver →',
+                          child: Text('Register as Driver',
                               style: GoogleFonts.poppins(
                                 fontSize: 13,
                                 color: AppColors.primary,
@@ -440,6 +459,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       TextFormField(
         controller: controller,
         obscureText: obscure,
+        textInputAction: obscure ? TextInputAction.done : TextInputAction.next,
         style: GoogleFonts.poppins(color: Colors.grey[800], fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
@@ -466,4 +486,12 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
         ),
         validator: validator,
       );
+
+  bool _isApprovalMessage(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('pending') ||
+        lower.contains('approval') ||
+        lower.contains('approve') ||
+        lower.contains('verified');
+  }
 }
