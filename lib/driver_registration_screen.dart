@@ -20,17 +20,17 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
 
   // Step 1 — Personal Info (read-only, auto-filled from main account)
   final _fullNameCtrl = TextEditingController();
-  final _mobileCtrl   = TextEditingController();
-  final _emailCtrl    = TextEditingController();
+  final _mobileCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
 
   // Step 2 — TODA Association
   final _todaBranchCtrl = TextEditingController();
 
   // Step 3 — Vehicle Details
   final _bodyNumberCtrl = TextEditingController();
-  final _plateCtrl      = TextEditingController();
-  final _colorCtrl      = TextEditingController();
-  final _licenseCtrl    = TextEditingController();
+  final _plateCtrl = TextEditingController();
+  final _colorCtrl = TextEditingController();
+  final _licenseCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -58,9 +58,9 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     setState(() {
       _isFetchingAccount = false;
       _fullNameCtrl.text = user['full_name'] ?? '';
-      _mobileCtrl.text   = user['phone']     ?? '';
-      _emailCtrl.text    = user['email']      ?? '';
-      _errorMessage      = null;
+      _mobileCtrl.text = user['phone'] ?? '';
+      _emailCtrl.text = user['email'] ?? '';
+      _errorMessage = null;
     });
   }
 
@@ -124,11 +124,11 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     // ── FIX: driverName / phone / email are NOT passed here anymore. ──────────
     // The backend reads them from the main account via the Authorization token.
     final result = await DriverAuthService.register(
-      licenseNo:      _licenseCtrl.text,
+      licenseNo: _licenseCtrl.text,
       todaBodyNumber: _bodyNumberCtrl.text,
-      plateNo:        _plateCtrl.text,
-      vehicleColor:   _colorCtrl.text.isNotEmpty ? _colorCtrl.text : null,
-      todaId:         _todaBranchCtrl.text.isNotEmpty ? _todaBranchCtrl.text : null,
+      plateNo: _plateCtrl.text,
+      vehicleColor: _colorCtrl.text.isNotEmpty ? _colorCtrl.text : null,
+      todaId: _todaBranchCtrl.text.isNotEmpty ? _todaBranchCtrl.text : null,
     );
 
     if (!mounted) return;
@@ -194,17 +194,19 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                       ),
                     ),
                     const SizedBox(width: 14),
-                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Driver Registration',
-                          style: GoogleFonts.poppins(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          )),
-                      Text('Step ${_currentStep + 1} of 3',
-                          style: GoogleFonts.poppins(
-                              fontSize: 12, color: Colors.white54)),
-                    ]),
+                    Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Driver Registration',
+                              style: GoogleFonts.poppins(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              )),
+                          Text('Step ${_currentStep + 1} of 3',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.white54)),
+                        ]),
                   ]),
                   const SizedBox(height: 16),
                   // Progress bar
@@ -238,8 +240,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           decoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.08),
             border: Border(
-                bottom:
-                    BorderSide(color: AppColors.primary.withOpacity(0.2))),
+                bottom: BorderSide(color: AppColors.primary.withOpacity(0.2))),
           ),
           child: Row(children: [
             const Icon(Icons.info_rounded, color: AppColors.primary, size: 16),
@@ -261,12 +262,10 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         if (_errorMessage != null)
           Container(
             width: double.infinity,
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             color: AppColors.error.withOpacity(0.08),
             child: Row(children: [
-              const Icon(Icons.error_outline,
-                  color: AppColors.error, size: 16),
+              const Icon(Icons.error_outline, color: AppColors.error, size: 16),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(_errorMessage!,
@@ -306,7 +305,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                 color: AppColors.backgroundDark,
               )),
           Text('Fetched from your main TodaGo account',
-              style: GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
+              style:
+                  GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 24),
 
           _lbl('Full Name', required: true),
@@ -332,8 +332,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           const SizedBox(height: 4),
           Text(
             'Linked to your main TodaGo account',
-            style:
-                GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
+            style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
           ),
           const SizedBox(height: 18),
 
@@ -363,17 +362,22 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                 fontWeight: FontWeight.w800,
                 color: AppColors.backgroundDark,
               )),
-          Text('Your official TODA registration details',
+          Text('Link to a registered TODA, or leave blank if independent',
               style:
                   GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 24),
 
-          _lbl('TODA Branch', required: true),
+          _lbl('TODA Association Name or Code'),
           const SizedBox(height: 6),
           _fld(
             controller: _todaBranchCtrl,
-            hint: 'Panabo City TODA',
+            hint: 'Panabo City TODA or association code',
             icon: Icons.location_on_outlined,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Associated drivers need operator approval before going online.',
+            style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
           ),
           const SizedBox(height: 18),
 
@@ -383,29 +387,27 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
               borderRadius: BorderRadius.circular(14),
-              border:
-                  Border.all(color: AppColors.primary.withOpacity(0.3)),
+              border: Border.all(color: AppColors.primary.withOpacity(0.3)),
             ),
-            child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    const Icon(Icons.verified_rounded,
-                        color: AppColors.primary, size: 18),
-                    const SizedBox(width: 8),
-                    Text('TODA Certification Benefits',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.backgroundDark,
-                        )),
-                  ]),
-                  const SizedBox(height: 10),
-                  _benefit('Priority ride requests from verified passengers'),
-                  _benefit('Access to exclusive TODA-only service areas'),
-                  _benefit(
-                      'Lower commission rates (10% vs 15% for non-TODA)'),
-                ]),
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.verified_rounded,
+                    color: AppColors.primary, size: 18),
+                const SizedBox(width: 8),
+                Text('Registration Options',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.backgroundDark,
+                    )),
+              ]),
+              const SizedBox(height: 10),
+              _benefit(
+                  'Registered TODA membership is reviewed by its operator'),
+              _benefit('Independent drivers can register with a valid license'),
+              _benefit('Your vehicle details stay tied to your main account'),
+            ]),
           ),
           const SizedBox(height: 28),
           _continueBtn(_nextStep),
@@ -438,18 +440,17 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           ),
           const SizedBox(height: 18),
 
-          _lbl('TODA Body Number', required: true),
+          _lbl('TODA / Vehicle Body Number', required: true),
           const SizedBox(height: 6),
           _fld(
             controller: _bodyNumberCtrl,
-            hint: 'Panabo TODA #123',
+            hint: 'Body #123',
             icon: Icons.tag_rounded,
           ),
           const SizedBox(height: 4),
           Text(
-            'e.g., "Davao City #402" or "Panabo TODA #115"',
-            style: GoogleFonts.poppins(
-                fontSize: 11, color: Colors.grey[500]),
+            'Use your TODA body number if associated, or your vehicle body number if independent.',
+            style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
           ),
           const SizedBox(height: 18),
 
@@ -543,8 +544,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(text,
-                style: GoogleFonts.poppins(
-                    fontSize: 12, color: Colors.grey[700])),
+                style:
+                    GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700])),
           ),
         ]),
       );
@@ -584,8 +585,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
         ),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle:
-              GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
+          hintStyle: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
           prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
           suffixIcon: readOnly
               ? const Icon(Icons.lock_outline_rounded,
@@ -605,9 +605,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-              color: readOnly
-                  ? Colors.grey[300]!
-                  : AppColors.backgroundDark,
+              color: readOnly ? Colors.grey[300]! : AppColors.backgroundDark,
               width: 2,
             ),
           ),
@@ -623,8 +621,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.backgroundDark,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
             elevation: 0,
           ),
           child: Text('Continue',

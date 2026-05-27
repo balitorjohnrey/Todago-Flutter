@@ -23,7 +23,7 @@ class OperatorAuthService {
   static const _storage = FlutterSecureStorage();
 
   // Keys — main account token lives under 'auth_token' (set by AuthService)
-  static const _mainTokenKey = 'auth_token';      // ← written by AuthService
+  static const _mainTokenKey = 'auth_token'; // ← written by AuthService
   static const _operatorTokenKey = 'operator_auth_token';
   static const _operatorDataKey = 'operator_data';
 
@@ -37,16 +37,14 @@ class OperatorAuthService {
       final token = await _storage.read(key: _mainTokenKey);
       if (token == null || token.isEmpty) return null;
 
-      final response = await http
-          .get(
-            Uri.parse(
-                'https://todago-backend-production.up.railway.app/api/auth/me'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse(
+            'https://todago-backend-production.up.railway.app/api/auth/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -196,6 +194,67 @@ class OperatorAuthService {
     final raw = await _storage.read(key: _operatorDataKey);
     if (raw == null) return null;
     return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchDrivers() async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return [];
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/drivers'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final drivers = data['drivers'] as List<dynamic>? ?? [];
+        return drivers.whereType<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<OperatorAuthResponse> updateDriverVerification({
+    required String driverId,
+    required bool isVerified,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) {
+        return OperatorAuthResponse(
+          success: false,
+          message: 'Operator login is required.',
+        );
+      }
+
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/drivers/$driverId/verification'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'isVerified': isVerified}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return OperatorAuthResponse(
+        success: response.statusCode == 200 && data['success'] == true,
+        message: data['message'] ?? 'Unable to update driver approval',
+      );
+    } catch (_) {
+      return OperatorAuthResponse(
+        success: false,
+        message: 'Connection failed. Check your internet.',
+      );
+    }
   }
 
   static Future<bool> isLoggedIn() async {

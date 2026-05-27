@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'operator_auth_service.dart';
-import 'operator_subscription_screen.dart'; // ← FIX: was OperatorDashboardScreen
+import 'operator_dashboard_screen.dart';
 import 'operator_registration_screen.dart';
 
 class OperatorLoginScreen extends StatefulWidget {
@@ -31,7 +31,10 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
 
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
 
     final result = await OperatorAuthService.login(
       todaAssociationId: _todaIdCtrl.text,
@@ -48,7 +51,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
           const SizedBox(width: 10),
           Text(result.message ?? 'Login successful!',
-              style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500)),
+              style: GoogleFonts.poppins(
+                  fontSize: 13, fontWeight: FontWeight.w500)),
         ]),
         backgroundColor: AppColors.success,
         behavior: SnackBarBehavior.floating,
@@ -57,10 +61,10 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
         duration: const Duration(seconds: 3),
       ));
 
-      // ── FIX: Login → Subscription → Dashboard ─────────────────────────────
+      // Operators go directly to the dashboard; subscription plans are no longer required.
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const OperatorSubscriptionScreen(),
+          pageBuilder: (_, __, ___) => const OperatorDashboardScreen(),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -84,67 +88,86 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
             bottom: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                GestureDetector(
-                  onTap: () => Navigator.of(context).pop(),
-                  child: Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.arrow_back_ios_rounded,
-                        color: Colors.white, size: 16),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(14),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.arrow_back_ios_rounded,
+                            color: Colors.white, size: 16),
+                      ),
                     ),
-                    child: const Icon(Icons.shield_rounded,
-                        color: AppColors.backgroundDark, size: 26),
-                  ),
-                  const SizedBox(width: 14),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Operator Login', style: GoogleFonts.poppins(
-                      fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white,
-                    )),
-                    Text('Fleet Management Access', style: GoogleFonts.poppins(
-                      fontSize: 12, color: Colors.white54,
-                    )),
+                    const SizedBox(height: 20),
+                    Row(children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(Icons.shield_rounded,
+                            color: AppColors.backgroundDark, size: 26),
+                      ),
+                      const SizedBox(width: 14),
+                      Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Operator Login',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                )),
+                            Text('Fleet Management Access',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: Colors.white54,
+                                )),
+                          ]),
+                    ]),
                   ]),
-                ]),
-              ]),
             ),
           ),
         ).animate().fadeIn(duration: 400.ms),
 
         // Form
-        Expanded(child: SingleChildScrollView(
+        Expanded(
+            child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Form(
             key: _formKey,
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               const SizedBox(height: 8),
 
               // Error banner
               if (_errorMessage != null)
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   decoration: BoxDecoration(
                     color: AppColors.error.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: AppColors.error.withOpacity(0.3)),
                   ),
                   child: Row(children: [
-                    const Icon(Icons.error_outline, color: AppColors.error, size: 18),
+                    const Icon(Icons.error_outline,
+                        color: AppColors.error, size: 18),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(_errorMessage!, style: GoogleFonts.poppins(
-                      fontSize: 13, color: AppColors.error,
-                    ))),
+                    Expanded(
+                        child: Text(_errorMessage!,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              color: AppColors.error,
+                            ))),
                   ]),
                 ).animate().fadeIn(duration: 300.ms).shakeX(duration: 400.ms),
 
@@ -163,7 +186,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
               const SizedBox(height: 4),
               Text(
                 'Enter your full association name (e.g., "Panabo City TODA") or short code',
-                style: GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400]),
+                style:
+                    GoogleFonts.poppins(fontSize: 11, color: Colors.grey[400]),
               ),
 
               const SizedBox(height: 18),
@@ -196,7 +220,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                     _obscurePassword
                         ? Icons.visibility_outlined
                         : Icons.visibility_off_outlined,
-                    color: Colors.grey[400], size: 20,
+                    color: Colors.grey[400],
+                    size: 20,
                   ),
                   onPressed: () =>
                       setState(() => _obscurePassword = !_obscurePassword),
@@ -213,10 +238,12 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                   style: TextButton.styleFrom(
                       padding: EdgeInsets.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                  child: Text('Forgot Password?', style: GoogleFonts.poppins(
-                    fontSize: 13, color: AppColors.primary,
-                    fontWeight: FontWeight.w500,
-                  )),
+                  child: Text('Forgot Password?',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
+                      )),
                 ),
               ),
 
@@ -238,23 +265,26 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                    Text('Secure Access', style: GoogleFonts.poppins(
-                      fontSize: 13, fontWeight: FontWeight.w600,
-                      color: AppColors.backgroundDark,
-                    )),
-                    Text(
-                      'Operator accounts have elevated privileges. Only authorized TODA personnel may access this portal.',
-                      style: GoogleFonts.poppins(
-                          fontSize: 11, color: Colors.grey[600]),
-                    ),
-                  ])),
+                        Text('Secure Access',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.backgroundDark,
+                            )),
+                        Text(
+                          'Operator accounts have elevated privileges. Only authorized TODA personnel may access this portal.',
+                          style: GoogleFonts.poppins(
+                              fontSize: 11, color: Colors.grey[600]),
+                        ),
+                      ])),
                 ]),
               ),
 
               const SizedBox(height: 28),
 
               SizedBox(
-                width: double.infinity, height: 54,
+                width: double.infinity,
+                height: 54,
                 child: ElevatedButton(
                   onPressed: _isLoading ? null : _login,
                   style: ElevatedButton.styleFrom(
@@ -267,12 +297,15 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          width: 22, height: 22,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5, color: Colors.white))
-                      : Text('Login to Dashboard', style: GoogleFonts.poppins(
-                          fontSize: 15, fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                      : Text('Login to Dashboard',
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white)),
                 ),
               ),
 
@@ -280,8 +313,10 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
 
               // Register link
               GestureDetector(
-                onTap: () => Navigator.of(context).pushReplacement(PageRouteBuilder(
-                  pageBuilder: (_, __, ___) => const OperatorRegistrationScreen(),
+                onTap: () =>
+                    Navigator.of(context).pushReplacement(PageRouteBuilder(
+                  pageBuilder: (_, __, ___) =>
+                      const OperatorRegistrationScreen(),
                   transitionDuration: const Duration(milliseconds: 400),
                   transitionsBuilder: (_, anim, __, child) => SlideTransition(
                     position: Tween<Offset>(
@@ -303,7 +338,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
                     const SizedBox(width: 10),
                     Text('Register New Operator Account',
                         style: GoogleFonts.poppins(
-                          fontSize: 13, fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
                           color: AppColors.primary,
                         )),
                     const Spacer(),
@@ -314,9 +350,10 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
               ),
 
               const SizedBox(height: 20),
-              Center(child: Text('Secure operator portal • LTFRB Compliant',
-                  style: GoogleFonts.poppins(
-                      fontSize: 11, color: Colors.grey[400]))),
+              Center(
+                  child: Text('Secure operator portal • LTFRB Compliant',
+                      style: GoogleFonts.poppins(
+                          fontSize: 11, color: Colors.grey[400]))),
               const SizedBox(height: 24),
             ]),
           ),
@@ -326,13 +363,19 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
   }
 
   Widget _label(String text, {bool required = false}) => Row(children: [
-        Text(text, style: GoogleFonts.poppins(
-          fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey[700],
-        )),
+        Text(text,
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey[700],
+            )),
         if (required)
-          Text(' *', style: GoogleFonts.poppins(
-            fontSize: 13, color: AppColors.error, fontWeight: FontWeight.w600,
-          )),
+          Text(' *',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: AppColors.error,
+                fontWeight: FontWeight.w600,
+              )),
       ]);
 
   Widget _field({
@@ -351,8 +394,7 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
         style: GoogleFonts.poppins(color: Colors.grey[800], fontSize: 15),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle:
-              GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
+          hintStyle: GoogleFonts.poppins(color: Colors.grey[400], fontSize: 14),
           prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
           suffixIcon: suffixIcon,
           filled: true,
@@ -365,8 +407,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
               borderSide: BorderSide(color: Colors.grey[200]!)),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                  color: AppColors.backgroundDark, width: 2)),
+              borderSide:
+                  const BorderSide(color: AppColors.backgroundDark, width: 2)),
           errorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: AppColors.error)),
