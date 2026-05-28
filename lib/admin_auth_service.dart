@@ -25,6 +25,8 @@ class AdminAuthService {
 
   static Future<AdminAuthResponse> login({required String secret}) async {
     try {
+      await logout();
+
       final response = await http
           .post(
             Uri.parse('$_baseUrl/login'),
@@ -34,8 +36,12 @@ class AdminAuthService {
           .timeout(const Duration(seconds: 15));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (response.statusCode == 200 && data['success'] == true) {
-        await _storage.write(key: _adminTokenKey, value: data['token']);
+      final token = data['token'];
+      if (response.statusCode == 200 &&
+          data['success'] == true &&
+          token is String &&
+          token.isNotEmpty) {
+        await _storage.write(key: _adminTokenKey, value: token);
         if (data['admin'] != null) {
           await _storage.write(
             key: _adminDataKey,
@@ -45,15 +51,17 @@ class AdminAuthService {
         return AdminAuthResponse(
           success: true,
           message: data['message'] ?? 'Admin login successful',
-          token: data['token'],
+          token: token,
           admin: data['admin'],
         );
       }
+      await logout();
       return AdminAuthResponse(
         success: false,
         message: data['message'] ?? 'Invalid admin secret',
       );
     } catch (_) {
+      await logout();
       return AdminAuthResponse(
         success: false,
         message: 'Connection failed. Check your internet.',

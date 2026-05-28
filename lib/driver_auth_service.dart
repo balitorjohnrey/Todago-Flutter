@@ -142,6 +142,8 @@ class DriverAuthService {
     String? todaAssociation,
   }) async {
     try {
+      await _clearSession();
+
       final normalizedLicenseNo = licenseNo.trim();
       final response = await http
           .post(
@@ -159,24 +161,28 @@ class DriverAuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'];
 
-      if (response.statusCode == 200) {
-        if (data['token'] != null) {
-          await _saveSession(data['token'], data['driver']);
-        }
+      if (response.statusCode == 200 &&
+          data['success'] == true &&
+          token is String &&
+          token.isNotEmpty) {
+        await _saveSession(token, data['driver']);
         return DriverAuthResponse(
           success: true,
           message: data['message'] ?? 'Login successful!',
-          token: data['token'],
+          token: token,
           driver: data['driver'],
         );
       }
 
+      await _clearSession();
       return DriverAuthResponse(
         success: false,
         message: data['message'] ?? 'Invalid credentials',
       );
     } catch (e) {
+      await _clearSession();
       return DriverAuthResponse(
         success: false,
         message: 'Connection failed. Check your internet.',
@@ -193,6 +199,11 @@ class DriverAuthService {
     }
   }
 
+  static Future<void> _clearSession() async {
+    await _storage.delete(key: _driverTokenKey);
+    await _storage.delete(key: _driverDataKey);
+  }
+
   static Future<String?> getToken() async =>
       await _storage.read(key: _driverTokenKey);
 
@@ -205,7 +216,7 @@ class DriverAuthService {
   static Future<Map<String, dynamic>?> fetchProfile() async {
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return await getDriver();
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
         Uri.parse('$_baseUrl/me'),
@@ -222,6 +233,10 @@ class DriverAuthService {
           await _storage.write(key: _driverDataKey, value: jsonEncode(driver));
           return driver;
         }
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _clearSession();
+        return null;
       }
       return await getDriver();
     } catch (_) {

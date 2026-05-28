@@ -44,14 +44,17 @@ class AuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'];
 
-      if (response.statusCode == 201) {
-        if (data['token'] != null)
-          await _saveSession(data['token'], data['user']);
+      if (response.statusCode == 201 &&
+          data['success'] == true &&
+          token is String &&
+          token.isNotEmpty) {
+        await _saveSession(token, data['user']);
         return AuthResponse(
           success: true,
           message: 'Account created successfully! Welcome to TodaGo 🎉',
-          token: data['token'],
+          token: token,
           user: data['user'],
         );
       }
@@ -71,6 +74,8 @@ class AuthService {
     required String password,
   }) async {
     try {
+      await _clearSession();
+
       final response = await http
           .post(
             Uri.parse('$_baseUrl/login'),
@@ -83,20 +88,25 @@ class AuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'];
 
-      if (response.statusCode == 200) {
-        if (data['token'] != null)
-          await _saveSession(data['token'], data['user']);
+      if (response.statusCode == 200 &&
+          data['success'] == true &&
+          token is String &&
+          token.isNotEmpty) {
+        await _saveSession(token, data['user']);
         return AuthResponse(
           success: true,
           message: 'Login successful! Welcome back 👋',
-          token: data['token'],
+          token: token,
           user: data['user'],
         );
       }
+      await _clearSession();
       return AuthResponse(
           success: false, message: data['message'] ?? 'Invalid credentials');
     } catch (e) {
+      await _clearSession();
       return AuthResponse(
         success: false,
         message: 'Connection failed. Please check your internet and try again.',
@@ -126,8 +136,15 @@ class AuthService {
   static Future<void> _saveSession(
       String token, Map<String, dynamic>? user) async {
     await _storage.write(key: _tokenKey, value: token);
-    if (user != null)
+    if (user != null) {
       await _storage.write(key: _userKey, value: jsonEncode(user));
+    }
+  }
+
+  static Future<void> _clearSession() async {
+    await _storage.delete(key: _tokenKey);
+    await _storage.delete(key: _userKey);
+    await _storage.delete(key: _roleKey);
   }
 
   static Future<void> saveRole(String role) async {
@@ -148,17 +165,15 @@ class AuthService {
   static Future<Map<String, dynamic>?> fetchProfile() async {
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return await getUser();
+      if (token == null || token.isEmpty) return null;
 
-      final response = await http
-          .get(
-            Uri.parse('$_baseUrl/me'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-          )
-          .timeout(const Duration(seconds: 10));
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
@@ -168,6 +183,10 @@ class AuthService {
           return user;
         }
       }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _clearSession();
+        return null;
+      }
       return await getUser();
     } catch (_) {
       return await getUser();
@@ -176,7 +195,28 @@ class AuthService {
 
   static Future<bool> isLoggedIn() async {
     final token = await getToken();
-    return token != null && token.isNotEmpty;
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['success'] == true;
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _clearSession();
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> logout() async => await _storage.deleteAll();

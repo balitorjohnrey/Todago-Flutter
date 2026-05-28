@@ -140,6 +140,8 @@ class OperatorAuthService {
     required String password,
   }) async {
     try {
+      await _clearSession();
+
       final response = await http
           .post(
             Uri.parse('$_baseUrl/login'),
@@ -153,24 +155,28 @@ class OperatorAuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final token = data['token'];
 
-      if (response.statusCode == 200) {
-        if (data['token'] != null) {
-          await _saveSession(data['token'], data['operator']);
-        }
+      if (response.statusCode == 200 &&
+          data['success'] == true &&
+          token is String &&
+          token.isNotEmpty) {
+        await _saveSession(token, data['operator']);
         return OperatorAuthResponse(
           success: true,
           message: data['message'] ?? 'Login successful!',
-          token: data['token'],
+          token: token,
           operator: data['operator'],
         );
       }
 
+      await _clearSession();
       return OperatorAuthResponse(
         success: false,
         message: data['message'] ?? 'Invalid credentials',
       );
     } catch (e) {
+      await _clearSession();
       return OperatorAuthResponse(
         success: false,
         message: 'Connection failed. Check your internet.',
@@ -187,6 +193,11 @@ class OperatorAuthService {
     }
   }
 
+  static Future<void> _clearSession() async {
+    await _storage.delete(key: _operatorTokenKey);
+    await _storage.delete(key: _operatorDataKey);
+  }
+
   static Future<String?> getToken() async =>
       await _storage.read(key: _operatorTokenKey);
 
@@ -199,7 +210,7 @@ class OperatorAuthService {
   static Future<Map<String, dynamic>?> fetchProfile() async {
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return await getOperator();
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
         Uri.parse('$_baseUrl/me'),
@@ -219,6 +230,10 @@ class OperatorAuthService {
           );
           return operator;
         }
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _clearSession();
+        return null;
       }
       return await getOperator();
     } catch (_) {
