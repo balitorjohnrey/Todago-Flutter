@@ -145,6 +145,12 @@ class AuthService {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _userKey);
     await _storage.delete(key: _roleKey);
+    await _storage.delete(key: 'driver_auth_token');
+    await _storage.delete(key: 'driver_data');
+    await _storage.delete(key: 'operator_auth_token');
+    await _storage.delete(key: 'operator_data');
+    await _storage.delete(key: 'admin_auth_token');
+    await _storage.delete(key: 'admin_data');
   }
 
   static Future<void> saveRole(String role) async {

@@ -268,8 +268,29 @@ class DriverAuthService {
   }
 
   static Future<bool> isLoggedIn() async {
-    final t = await getToken();
-    return t != null && t.isNotEmpty;
+    final token = await getToken();
+    if (token == null || token.isEmpty) return false;
+
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl/me'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['success'] == true;
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        await _clearSession();
+      }
+      return false;
+    } catch (_) {
+      return false;
+    }
   }
 
   // FIX: Clear ALL tokens on logout (main + driver) so no stale sessions remain
