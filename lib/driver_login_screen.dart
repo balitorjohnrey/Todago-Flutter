@@ -23,6 +23,12 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    DriverAuthService.clearSession();
+  }
+
+  @override
   void dispose() {
     _associationCtrl.dispose();
     _licenseCtrl.dispose();
@@ -51,7 +57,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (result.success) {
+    final hasFreshToken = result.token != null && result.token!.isNotEmpty;
+    if (result.success && hasFreshToken) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
@@ -76,6 +83,8 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
         (_) => false,
       );
     } else {
+      await DriverAuthService.clearSession();
+      if (!mounted) return;
       setState(() => _errorMessage = result.message);
     }
   }

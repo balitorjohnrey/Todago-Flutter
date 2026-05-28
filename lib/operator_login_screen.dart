@@ -22,6 +22,12 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    OperatorAuthService.clearSession();
+  }
+
+  @override
   void dispose() {
     _todaIdCtrl.dispose();
     _emailCtrl.dispose();
@@ -45,7 +51,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (result.success) {
+    final hasFreshToken = result.token != null && result.token!.isNotEmpty;
+    if (result.success && hasFreshToken) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
@@ -72,6 +79,8 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
         (_) => false,
       );
     } else {
+      await OperatorAuthService.clearSession();
+      if (!mounted) return;
       setState(() => _errorMessage = result.message);
     }
   }

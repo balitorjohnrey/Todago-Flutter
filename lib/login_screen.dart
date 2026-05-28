@@ -24,6 +24,12 @@ class _LoginScreenState extends State<LoginScreen> {
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    AuthService.logout();
+  }
+
+  @override
   void dispose() {
     _emailCtrl.dispose();
     _passwordCtrl.dispose();
@@ -45,7 +51,8 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (result.success) {
+    final hasFreshToken = result.token != null && result.token!.isNotEmpty;
+    if (result.success && hasFreshToken) {
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => RoleSelectionScreen(
@@ -59,6 +66,8 @@ class _LoginScreenState extends State<LoginScreen> {
         (_) => false,
       );
     } else {
+      await AuthService.logout();
+      if (!mounted) return;
       setState(() => _errorMessage = result.message);
     }
   }
@@ -119,8 +128,9 @@ class _LoginScreenState extends State<LoginScreen> {
                       keyboardType: TextInputType.emailAddress,
                       validator: (v) {
                         if (v == null || v.isEmpty) return 'Email is required';
-                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v))
+                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(v)) {
                           return 'Enter a valid email';
+                        }
                         return null;
                       },
                     ).animate().fadeIn(delay: 300.ms, duration: 400.ms),
@@ -143,8 +153,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             () => _obscurePassword = !_obscurePassword),
                       ),
                       validator: (v) {
-                        if (v == null || v.isEmpty)
+                        if (v == null || v.isEmpty) {
                           return 'Password is required';
+                        }
                         return null;
                       },
                     ).animate().fadeIn(delay: 400.ms, duration: 400.ms),
@@ -260,7 +271,8 @@ class _LoginScreenState extends State<LoginScreen> {
                       child: child,
                     ),
                   )),
-                  icon: const Icon(Icons.admin_panel_settings_rounded, size: 17),
+                  icon:
+                      const Icon(Icons.admin_panel_settings_rounded, size: 17),
                   label: Text('Admin Secret Access',
                       style: GoogleFonts.poppins(
                         fontSize: 13,
@@ -296,7 +308,8 @@ class _LoginScreenState extends State<LoginScreen> {
         borderRadius: BorderRadius.circular(10),
         child: Image.asset(
           'assets/logo.png',
-          width: 40, height: 40,
+          width: 40,
+          height: 40,
           fit: BoxFit.cover,
         ),
       );

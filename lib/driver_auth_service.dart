@@ -204,6 +204,8 @@ class DriverAuthService {
     await _storage.delete(key: _driverDataKey);
   }
 
+  static Future<void> clearSession() async => _clearSession();
+
   static Future<String?> getToken() async =>
       await _storage.read(key: _driverTokenKey);
 

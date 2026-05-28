@@ -198,6 +198,8 @@ class OperatorAuthService {
     await _storage.delete(key: _operatorDataKey);
   }
 
+  static Future<void> clearSession() async => _clearSession();
+
   static Future<String?> getToken() async =>
       await _storage.read(key: _operatorTokenKey);
 
