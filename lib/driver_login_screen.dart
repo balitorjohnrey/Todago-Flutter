@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'driver_auth_service.dart';
 import 'driver_dashboard_screen.dart';
 import 'driver_registration_screen.dart';
+import 'password_reset_dialog.dart';
 
 class DriverLoginScreen extends StatefulWidget {
   const DriverLoginScreen({super.key});
@@ -266,10 +267,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {},
+                  onPressed: _isLoading
+                      ? null
+                      : () => showPasswordResetDialog(context),
                   style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  ),
                   child: Text('Forgot Password?',
                       style: GoogleFonts.poppins(
                         fontSize: 13,

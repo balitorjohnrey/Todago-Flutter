@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'operator_auth_service.dart';
 import 'operator_dashboard_screen.dart';
 import 'operator_registration_screen.dart';
+import 'password_reset_dialog.dart';
 
 class OperatorLoginScreen extends StatefulWidget {
   const OperatorLoginScreen({super.key});
@@ -243,10 +244,16 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(
-                  onPressed: () {},
+                  onPressed: _isLoading
+                      ? null
+                      : () => showPasswordResetDialog(
+                            context,
+                            initialEmail: _emailCtrl.text,
+                          ),
                   style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                  ),
                   child: Text('Forgot Password?',
                       style: GoogleFonts.poppins(
                         fontSize: 13,

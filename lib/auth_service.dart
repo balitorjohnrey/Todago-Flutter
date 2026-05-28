@@ -114,6 +114,36 @@ class AuthService {
     }
   }
 
+  // Legacy password reset
+  static Future<AuthResponse> fixLegacyPassword({
+    required String email,
+    required String newPassword,
+  }) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/fix-legacy-password'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'email': email.toLowerCase().trim(),
+              'newPassword': newPassword,
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return AuthResponse(
+        success: response.statusCode == 200 && data['success'] == true,
+        message: data['message'] ?? 'Unable to update password',
+      );
+    } catch (e) {
+      return AuthResponse(
+        success: false,
+        message: 'Connection failed. Please check your internet and try again.',
+      );
+    }
+  }
+
   // ─── Save Role to server ────────────────────────────────────────────────────
   static Future<void> saveRoleToServer(String role) async {
     try {

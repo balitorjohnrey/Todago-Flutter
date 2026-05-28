@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'admin_login_screen.dart';
 import 'auth_service.dart';
+import 'password_reset_dialog.dart';
 import 'register_screen.dart';
 import 'role_selection_screen.dart';
 
@@ -163,10 +164,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {},
+                        onPressed: _isLoading
+                            ? null
+                            : () => showPasswordResetDialog(
+                                  context,
+                                  initialEmail: _emailCtrl.text,
+                                ),
                         style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 10,
+                          ),
+                        ),
                         child: Text('Forgot Password?',
                             style: GoogleFonts.poppins(
                                 fontSize: 13,
