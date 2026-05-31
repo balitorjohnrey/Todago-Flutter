@@ -14,6 +14,7 @@ class ServiceSelectionScreen extends StatefulWidget {
   final LatLng? destinationLatLng;
   final int? etaMinutes;
   final double? distanceKm;
+  final String? initialServiceType;
 
   const ServiceSelectionScreen({
     super.key,
@@ -23,6 +24,7 @@ class ServiceSelectionScreen extends StatefulWidget {
     this.destinationLatLng,
     this.etaMinutes,
     this.distanceKm,
+    this.initialServiceType,
   });
 
   @override
@@ -76,8 +78,22 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   @override
   void initState() {
     super.initState();
+    _applyInitialServiceType();
     _applyOfficialFares();
     _loadOnlineDrivers();
+  }
+
+  void _applyInitialServiceType() {
+    final requested = widget.initialServiceType?.toLowerCase();
+    if (requested == null || requested.isEmpty) return;
+
+    final index = _services.indexWhere((service) {
+      final id = service['id']?.toString().toLowerCase();
+      final name = service['name']?.toString().toLowerCase() ?? '';
+      return id == requested || name.contains(requested);
+    });
+
+    if (index != -1) _selected = index;
   }
 
   void _applyOfficialFares() {
