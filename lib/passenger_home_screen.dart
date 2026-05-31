@@ -360,183 +360,16 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // ════════════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════════════
-  void _openSmartRideSheet() {
-    final controller = TextEditingController();
-    showModalBottomSheet<void>(
+  Future<void> _openSmartRideSheetSafe() async {
+    final intent = await showModalBottomSheet<RideIntent>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        var parsing = false;
-        Future<void> submit(StateSetter setSheetState) async {
-          final command = controller.text.trim();
-          if (command.isEmpty || parsing) return;
+      builder: (_) => const _SmartRideSheet(),
+    );
 
-          setSheetState(() => parsing = true);
-          final intent = await SmartRideService.parseRideIntent(command);
-          if (!mounted || !sheetContext.mounted) return;
-          setSheetState(() => parsing = false);
-
-          if (intent == null || !intent.canContinueBooking) {
-            _showSnack(
-              intent?.reply.isNotEmpty == true
-                  ? intent!.reply
-                  : 'Tell me where you want to go, like "Book me a ride to Gaisano".',
-              AppColors.error,
-            );
-            return;
-          }
-
-          Navigator.of(sheetContext).pop();
-          await _confirmSmartRideIntent(intent);
-        }
-
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).viewInsets.bottom,
-              ),
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-                ),
-                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
-                child: SafeArea(
-                  top: false,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 38,
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.grey[300],
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(
-                            Icons.auto_awesome_rounded,
-                            color: AppColors.backgroundDark,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Smart Ride',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 19,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppColors.backgroundDark,
-                                ),
-                              ),
-                              Text(
-                                'Tell TodaGo where you want to go',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  color: AppColors.textHint,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ]),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: controller,
-                        minLines: 1,
-                        maxLines: 3,
-                        textInputAction: TextInputAction.done,
-                        onSubmitted: (_) => submit(setSheetState),
-                        style: GoogleFonts.poppins(
-                          fontSize: 14,
-                          color: AppColors.backgroundDark,
-                        ),
-                        decoration: InputDecoration(
-                          hintText:
-                              'Example: Book me a ride to Gaisano from my current location',
-                          hintStyle: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: AppColors.textHint,
-                          ),
-                          filled: true,
-                          fillColor: const Color(0xFFF5F6FA),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(16),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          onPressed:
-                              parsing ? null : () => submit(setSheetState),
-                          icon: parsing
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.4,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.directions_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                          label: Text(
-                            parsing ? 'Understanding...' : 'Plan Smart Ride',
-                            style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.backgroundDark,
-                            disabledBackgroundColor:
-                                AppColors.backgroundDark.withOpacity(0.5),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                            elevation: 0,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(controller.dispose);
+    if (!mounted || intent == null) return;
+    await _confirmSmartRideIntent(intent);
   }
 
   Future<void> _confirmSmartRideIntent(RideIntent intent) async {
@@ -882,7 +715,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: _smartRideLoading ? null : _openSmartRideSheet,
+                    onPressed:
+                        _smartRideLoading ? null : _openSmartRideSheetSafe,
                     icon: _smartRideLoading
                         ? const SizedBox(
                             width: 18,
@@ -2134,6 +1968,214 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           ));
         })),
       )),
+    );
+  }
+}
+
+class _SmartRideSheet extends StatefulWidget {
+  const _SmartRideSheet();
+
+  @override
+  State<_SmartRideSheet> createState() => _SmartRideSheetState();
+}
+
+class _SmartRideSheetState extends State<_SmartRideSheet> {
+  final TextEditingController _controller = TextEditingController();
+  bool _parsing = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final command = _controller.text.trim();
+    if (command.isEmpty || _parsing) return;
+
+    setState(() {
+      _parsing = true;
+      _error = null;
+    });
+
+    final intent = await SmartRideService.parseRideIntent(command);
+    if (!mounted) return;
+
+    if (intent == null || !intent.canContinueBooking) {
+      setState(() {
+        _parsing = false;
+        _error = intent?.reply.isNotEmpty == true
+            ? intent!.reply
+            : 'Tell me where you want to go, like "Book me a ride to Gaisano".';
+      });
+      return;
+    }
+
+    Navigator.of(context).pop(intent);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final maxHeight = media.size.height * 0.82;
+
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxHeight),
+          child: Material(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            clipBehavior: Clip.antiAlias,
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 38,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    Row(children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: AppColors.backgroundDark,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Smart Ride',
+                              style: GoogleFonts.poppins(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.backgroundDark,
+                              ),
+                            ),
+                            Text(
+                              'Tell TodaGo where you want to go',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: AppColors.textHint,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ]),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _controller,
+                      minLines: 1,
+                      maxLines: 3,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => _submit(),
+                      style: GoogleFonts.poppins(
+                        fontSize: 14,
+                        color: AppColors.backgroundDark,
+                      ),
+                      decoration: InputDecoration(
+                        hintText:
+                            'Example: Book me a ride to Gaisano from my current location',
+                        hintStyle: GoogleFonts.poppins(
+                          fontSize: 13,
+                          color: AppColors.textHint,
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFF5F6FA),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
+                        ),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        _error!,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          color: AppColors.error,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: _parsing ? null : _submit,
+                        icon: _parsing
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.directions_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                        label: Text(
+                          _parsing ? 'Understanding...' : 'Plan Smart Ride',
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.backgroundDark,
+                          disabledBackgroundColor:
+                              AppColors.backgroundDark.withOpacity(0.5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
