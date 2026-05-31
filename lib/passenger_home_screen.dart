@@ -9,14 +9,17 @@ import 'app_theme.dart';
 import 'auth_service.dart';
 import 'location_service.dart';
 import 'destination_picker_screen.dart';
+import 'map_service.dart';
 import 'live_trip_tracking_screen.dart';
 import 'rate_driver_screen.dart';
+import 'service_selection_screen.dart';
 import 'trip_service.dart';
 import 'splash_screen.dart';
 import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
+import 'smart_ride_service.dart';
 import 'panabo_config.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
@@ -32,6 +35,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   GoogleMapController? _mapController;
   LatLng _currentLocation = PanaboConfig.cityCenter;
   bool _hasLiveLocation = false;
+  bool _smartRideLoading = false;
   StreamSubscription<Position>? _locationStream;
 
   // ── Bookings state ────────────────────────────────────────────────────────
@@ -356,6 +360,337 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // ════════════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════════════
+  void _openSmartRideSheet() {
+    final controller = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        var parsing = false;
+        Future<void> submit(StateSetter setSheetState) async {
+          final command = controller.text.trim();
+          if (command.isEmpty || parsing) return;
+
+          setSheetState(() => parsing = true);
+          final intent = await SmartRideService.parseRideIntent(command);
+          if (!mounted || !sheetContext.mounted) return;
+          setSheetState(() => parsing = false);
+
+          if (intent == null || !intent.canContinueBooking) {
+            _showSnack(
+              intent?.reply.isNotEmpty == true
+                  ? intent!.reply
+                  : 'Tell me where you want to go, like "Book me a ride to Gaisano".',
+              AppColors.error,
+            );
+            return;
+          }
+
+          Navigator.of(sheetContext).pop();
+          await _confirmSmartRideIntent(intent);
+        }
+
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                ),
+                padding: const EdgeInsets.fromLTRB(22, 18, 22, 22),
+                child: SafeArea(
+                  top: false,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 38,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: Colors.grey[300],
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: AppColors.backgroundDark,
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Smart Ride',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.backgroundDark,
+                                ),
+                              ),
+                              Text(
+                                'Tell TodaGo where you want to go',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: controller,
+                        minLines: 1,
+                        maxLines: 3,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => submit(setSheetState),
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          color: AppColors.backgroundDark,
+                        ),
+                        decoration: InputDecoration(
+                          hintText:
+                              'Example: Book me a ride to Gaisano from my current location',
+                          hintStyle: GoogleFonts.poppins(
+                            fontSize: 13,
+                            color: AppColors.textHint,
+                          ),
+                          filled: true,
+                          fillColor: const Color(0xFFF5F6FA),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              parsing ? null : () => submit(setSheetState),
+                          icon: parsing
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.4,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(
+                                  Icons.directions_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                          label: Text(
+                            parsing ? 'Understanding...' : 'Plan Smart Ride',
+                            style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.backgroundDark,
+                            disabledBackgroundColor:
+                                AppColors.backgroundDark.withOpacity(0.5),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(controller.dispose);
+  }
+
+  Future<void> _confirmSmartRideIntent(RideIntent intent) async {
+    final destination = intent.destinationQuery.trim();
+    final service = intent.selectedServiceType;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          'Continue Smart Ride?',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.w800),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Pickup: Current location',
+              style: GoogleFonts.poppins(fontSize: 13, height: 1.5),
+            ),
+            Text(
+              'Destination: $destination',
+              style: GoogleFonts.poppins(fontSize: 13, height: 1.5),
+            ),
+            Text(
+              service == null
+                  ? 'Service: Choose next'
+                  : 'Service: ${service[0].toUpperCase()}${service.substring(1)}',
+              style: GoogleFonts.poppins(fontSize: 13, height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(color: AppColors.textHint),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(
+              'Continue',
+              style: GoogleFonts.poppins(
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      await _startSmartRide(intent);
+    }
+  }
+
+  Future<void> _startSmartRide(RideIntent intent) async {
+    if (_smartRideLoading) return;
+    final destinationQuery = intent.destinationQuery.trim();
+    if (destinationQuery.isEmpty) {
+      _showSnack('Please tell me your destination first.', AppColors.error);
+      return;
+    }
+
+    setState(() => _smartRideLoading = true);
+    try {
+      LatLng? pickup = _hasLiveLocation ? _currentLocation : null;
+      if (pickup == null) {
+        final pos = await LocationService.getCurrentPosition();
+        if (pos != null) {
+          pickup = LatLng(pos.latitude, pos.longitude);
+          if (mounted) {
+            setState(() {
+              _currentLocation = pickup!;
+              _hasLiveLocation = true;
+            });
+          }
+        }
+      }
+
+      pickup ??= await MapService.getCurrentLocation()
+          .timeout(const Duration(seconds: 10), onTimeout: () => null);
+      if (!mounted) return;
+
+      if (pickup == null) {
+        _showSnack(
+            'I could not get your current location yet.', AppColors.error);
+        return;
+      }
+
+      final suggestions = await MapService.searchPlaces(
+        destinationQuery,
+        locationBias: pickup,
+      );
+      if (!mounted) return;
+
+      if (suggestions.isEmpty) {
+        _showSnack(
+          'I could not find "$destinationQuery". Try a more specific place.',
+          AppColors.error,
+        );
+        return;
+      }
+
+      final place = suggestions.first;
+      final destination = await MapService.getPlaceLatLng(place.placeId);
+      if (!mounted) return;
+
+      if (destination == null) {
+        _showSnack(
+          'I found the place, but could not get its map location.',
+          AppColors.error,
+        );
+        return;
+      }
+
+      var pickupName = 'Your Location';
+      try {
+        pickupName = await MapService.reverseGeocode(pickup)
+            .timeout(const Duration(seconds: 6));
+      } catch (_) {
+        pickupName = 'Your Location';
+      }
+
+      final route = await MapService.fetchRoute(pickup, destination);
+      if (!mounted) return;
+
+      Navigator.of(context).push(PageRouteBuilder(
+        pageBuilder: (_, __, ___) => ServiceSelectionScreen(
+          pickupName: pickupName,
+          destinationName:
+              place.mainText.isNotEmpty ? place.mainText : destinationQuery,
+          pickupLatLng: pickup,
+          destinationLatLng: destination,
+          etaMinutes: route?.etaMinutes,
+          distanceKm: route?.distanceKm,
+          initialServiceType: intent.selectedServiceType,
+        ),
+        transitionDuration: const Duration(milliseconds: 400),
+        transitionsBuilder: (_, anim, __, child) => SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+          child: child,
+        ),
+      ));
+    } finally {
+      if (mounted) setState(() => _smartRideLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -543,6 +878,38 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     style: GoogleFonts.poppins(
                         fontSize: 13, color: AppColors.textHint)),
                 const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: ElevatedButton.icon(
+                    onPressed: _smartRideLoading ? null : _openSmartRideSheet,
+                    icon: _smartRideLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.4,
+                              color: AppColors.backgroundDark,
+                            ),
+                          )
+                        : const Icon(Icons.auto_awesome_rounded,
+                            color: AppColors.backgroundDark, size: 20),
+                    label: Text('Smart Ride',
+                        style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.backgroundDark)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      disabledBackgroundColor:
+                          AppColors.primary.withOpacity(0.55),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   height: 52,

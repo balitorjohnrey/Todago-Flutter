@@ -6,9 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'app_theme.dart';
-import 'map_service.dart';
-import 'service_selection_screen.dart';
-import 'smart_ride_service.dart';
 
 class _Msg {
   final String id;
@@ -16,14 +13,12 @@ class _Msg {
   final bool isUser;
   final bool isTyping;
   final DateTime time;
-  final RideIntent? rideIntent;
 
   _Msg({
     required this.id,
     required this.text,
     required this.isUser,
     this.isTyping = false,
-    this.rideIntent,
     DateTime? time,
   }) : time = time ?? DateTime.now();
 }
@@ -67,7 +62,6 @@ class _AIChatScreenState extends State<AIChatScreen>
   bool _speechReady = false;
   bool _isListening = false;
   bool _sending = false;
-  bool _preparingRide = false;
   bool _showChips = true;
   late AnimationController _pulse;
 
@@ -236,16 +230,7 @@ class _AIChatScreenState extends State<AIChatScreen>
     await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
 
-    final rideIntent = widget.userType.toLowerCase() == 'passenger'
-        ? await SmartRideService.parseRideIntent(text)
-        : null;
-    final isRideIntent = rideIntent?.isRideIntent == true;
-    final response = isRideIntent
-        ? (rideIntent!.reply.isNotEmpty
-            ? rideIntent.reply
-            : 'I can help start that ride. Please confirm before I continue.')
-        : _answerFaq(text);
-
+    final response = _answerFaq(text);
     setState(() {
       final idx = _messages.lastIndexWhere((msg) => msg.isTyping);
       if (idx != -1) {
@@ -253,8 +238,6 @@ class _AIChatScreenState extends State<AIChatScreen>
           id: UniqueKey().toString(),
           text: response,
           isUser: false,
-          rideIntent:
-              rideIntent?.canContinueBooking == true ? rideIntent : null,
         );
       }
       _sending = false;
@@ -288,98 +271,6 @@ class _AIChatScreenState extends State<AIChatScreen>
 
     if (best != null && bestScore >= 2) return best.answer;
     return _fallbackAnswer();
-  }
-
-  Future<void> _startSmartRide(RideIntent intent) async {
-    if (_preparingRide) return;
-    final destinationQuery = intent.destinationQuery.trim();
-    if (destinationQuery.isEmpty) {
-      _showSnack('Please tell me your destination first.', AppColors.error);
-      return;
-    }
-
-    setState(() => _preparingRide = true);
-    try {
-      final pickup = await MapService.getCurrentLocation()
-          .timeout(const Duration(seconds: 10), onTimeout: () => null);
-      if (!mounted) return;
-
-      if (pickup == null) {
-        _showSnack(
-          'I could not get your current location yet.',
-          AppColors.error,
-        );
-        return;
-      }
-
-      final suggestions = await MapService.searchPlaces(
-        destinationQuery,
-        locationBias: pickup,
-      );
-      if (!mounted) return;
-
-      if (suggestions.isEmpty) {
-        _showSnack(
-          'I could not find "$destinationQuery". Try a more specific place.',
-          AppColors.error,
-        );
-        return;
-      }
-
-      final place = suggestions.first;
-      final destination = await MapService.getPlaceLatLng(place.placeId);
-      if (!mounted) return;
-
-      if (destination == null) {
-        _showSnack(
-          'I found the place, but could not get its map location.',
-          AppColors.error,
-        );
-        return;
-      }
-
-      var pickupName = 'Your Location';
-      try {
-        pickupName = await MapService.reverseGeocode(pickup)
-            .timeout(const Duration(seconds: 6));
-      } catch (_) {
-        pickupName = 'Your Location';
-      }
-
-      final route = await MapService.fetchRoute(pickup, destination);
-      if (!mounted) return;
-
-      Navigator.of(context).push(PageRouteBuilder(
-        pageBuilder: (_, __, ___) => ServiceSelectionScreen(
-          pickupName: pickupName,
-          destinationName:
-              place.mainText.isNotEmpty ? place.mainText : destinationQuery,
-          pickupLatLng: pickup,
-          destinationLatLng: destination,
-          etaMinutes: route?.etaMinutes,
-          distanceKm: route?.distanceKm,
-          initialServiceType: intent.selectedServiceType,
-        ),
-        transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: child,
-        ),
-      ));
-    } finally {
-      if (mounted) setState(() => _preparingRide = false);
-    }
-  }
-
-  void _showSnack(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message, style: GoogleFonts.poppins(fontSize: 13)),
-      backgroundColor: color,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.all(16),
-    ));
   }
 
   String _fallbackAnswer() {
@@ -612,70 +503,13 @@ class _AIChatScreenState extends State<AIChatScreen>
                       ),
                     ],
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: isUser
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        msg.text,
-                        style: GoogleFonts.poppins(
-                          fontSize: 13.5,
-                          color:
-                              isUser ? Colors.white : const Color(0xFF1A1A2E),
-                          height: 1.45,
-                        ),
-                      ),
-                      if (msg.rideIntent != null) ...[
-                        const SizedBox(height: 10),
-                        ElevatedButton(
-                          onPressed: _preparingRide
-                              ? null
-                              : () => _startSmartRide(msg.rideIntent!),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            disabledBackgroundColor:
-                                AppColors.primary.withOpacity(0.55),
-                            foregroundColor: AppColors.backgroundDark,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 10,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_preparingRide)
-                                const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.backgroundDark,
-                                  ),
-                                )
-                              else
-                                const Icon(Icons.directions_rounded, size: 18),
-                              const SizedBox(width: 8),
-                              Text(
-                                _preparingRide
-                                    ? 'Preparing...'
-                                    : 'Continue booking',
-                                style: GoogleFonts.poppins(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
+                  child: Text(
+                    msg.text,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13.5,
+                      color: isUser ? Colors.white : const Color(0xFF1A1A2E),
+                      height: 1.45,
+                    ),
                   ),
                 ),
               ),
