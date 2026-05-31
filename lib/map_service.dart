@@ -355,64 +355,68 @@ class MapService {
         'Fetching route from ${from.latitude},${from.longitude} '
             'to ${to.latitude},${to.longitude}');
 
-    try {
-      final uri = Uri.parse(
-        '$_directionsBase'
-        '?origin=${from.latitude},${from.longitude}'
-        '&destination=${to.latitude},${to.longitude}'
-        '&mode=driving'
-        '&departure_time=now'
-        '&traffic_model=best_guess'
-        '&key=$_key&language=en',
-      );
-      final res = await http.get(uri).timeout(const Duration(seconds: 7));
-      _log('Directions', 'HTTP ${res.statusCode}');
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body) as Map<String, dynamic>;
-        final status = data['status'] as String? ?? '';
-        _log('Directions', 'API status: $status');
-        if (data['error_message'] != null) {
-          _log('Directions', 'Error: ${data['error_message']}');
-        }
-        if (status == 'OK') {
-          final routes = data['routes'] as List?;
-          if (routes != null && routes.isNotEmpty) {
-            final route = routes.first as Map<String, dynamic>;
-            final leg = (route['legs'] as List).first as Map<String, dynamic>;
-            final distM = (leg['distance']['value'] as num).toDouble();
-            final normalS = (leg['duration']['value'] as num).toDouble();
-            final trafficS =
-                (leg['duration_in_traffic']?['value'] as num?)?.toDouble();
-            final trafficFactor = trafficS == null
-                ? 1.0
-                : PanaboFarePolicy.trafficMultiplier(
-                    normalDurationSeconds: normalS,
-                    trafficDurationSeconds: trafficS,
-                  );
-            final distanceKm = distM / 1000;
-            final etaMinutes = PanaboFarePolicy.etaMinutesForDistanceKm(
-              distanceKm,
-              trafficMultiplier: trafficFactor,
-            );
-            final encoded = route['overview_polyline']['points'] as String;
-            _log(
-                'Directions',
-                'Route OK - ${distanceKm.toStringAsFixed(1)} km, '
-                    '$etaMinutes min tricycle ETA');
-            return MapRoute(
-              points: _decodePolyline(encoded),
-              distanceKm: distanceKm,
-              etaMinutes: etaMinutes,
-              distanceText: leg['distance']['text'] as String? ?? '',
-              durationText: trafficS == null
-                  ? '$etaMinutes min'
-                  : '$etaMinutes min traffic-adjusted',
-            );
+    if (!kIsWeb) {
+      try {
+        final uri = Uri.parse(
+          '$_directionsBase'
+          '?origin=${from.latitude},${from.longitude}'
+          '&destination=${to.latitude},${to.longitude}'
+          '&mode=driving'
+          '&departure_time=now'
+          '&traffic_model=best_guess'
+          '&key=$_key&language=en',
+        );
+        final res = await http.get(uri).timeout(const Duration(seconds: 7));
+        _log('Directions', 'HTTP ${res.statusCode}');
+        if (res.statusCode == 200) {
+          final data = jsonDecode(res.body) as Map<String, dynamic>;
+          final status = data['status'] as String? ?? '';
+          _log('Directions', 'API status: $status');
+          if (data['error_message'] != null) {
+            _log('Directions', 'Error: ${data['error_message']}');
+          }
+          if (status == 'OK') {
+            final routes = data['routes'] as List?;
+            if (routes != null && routes.isNotEmpty) {
+              final route = routes.first as Map<String, dynamic>;
+              final leg = (route['legs'] as List).first as Map<String, dynamic>;
+              final distM = (leg['distance']['value'] as num).toDouble();
+              final normalS = (leg['duration']['value'] as num).toDouble();
+              final trafficS =
+                  (leg['duration_in_traffic']?['value'] as num?)?.toDouble();
+              final trafficFactor = trafficS == null
+                  ? 1.0
+                  : PanaboFarePolicy.trafficMultiplier(
+                      normalDurationSeconds: normalS,
+                      trafficDurationSeconds: trafficS,
+                    );
+              final distanceKm = distM / 1000;
+              final etaMinutes = PanaboFarePolicy.etaMinutesForDistanceKm(
+                distanceKm,
+                trafficMultiplier: trafficFactor,
+              );
+              final encoded = route['overview_polyline']['points'] as String;
+              _log(
+                  'Directions',
+                  'Route OK - ${distanceKm.toStringAsFixed(1)} km, '
+                      '$etaMinutes min tricycle ETA');
+              return MapRoute(
+                points: _decodePolyline(encoded),
+                distanceKm: distanceKm,
+                etaMinutes: etaMinutes,
+                distanceText: leg['distance']['text'] as String? ?? '',
+                durationText: trafficS == null
+                    ? '$etaMinutes min'
+                    : '$etaMinutes min traffic-adjusted',
+              );
+            }
           }
         }
+      } catch (e) {
+        _log('Directions', 'Exception: $e');
       }
-    } catch (e) {
-      _log('Directions', 'Exception: $e');
+    } else {
+      _log('Directions', 'Skipped on web; using OSRM fallback directly');
     }
 
     // ── 2nd: OSRM — free, no API key, real road routing ──────────────────

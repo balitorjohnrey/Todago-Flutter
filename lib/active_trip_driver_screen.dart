@@ -32,6 +32,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   Timer? _routeRefreshTimer;
   Timer? _tripPollTimer;
   DateTime? _lastLocationSync;
+  DateTime? _lastRouteFetch;
+  LatLng? _lastRouteFrom;
+  LatLng? _lastRouteTo;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -76,7 +79,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       }
       _startLocationStream();
       _routeRefreshTimer =
-          Timer.periodic(const Duration(seconds: 10), (_) async {
+          Timer.periodic(const Duration(seconds: 30), (_) async {
         if (!mounted || _myLocation == null || _destPoint == null) return;
         await _fetchAndDrawRoute(_myLocation!, _destPoint!);
       });
@@ -108,7 +111,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     _syncDriverLocation(myPos, force: true);
     if (destPos != null) {
       _updateMarkers(myPos, destPos);
-      await _fetchAndDrawRoute(myPos, destPos);
+      await _fetchAndDrawRoute(myPos, destPos, force: true);
       _fitBounds(myPos, destPos);
     } else {
       _updateDriverMarker(myPos);
@@ -117,8 +120,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     // ── Live driver position stream ───────────────────────────────────────
     _startLocationStream();
 
-    // ── Periodic route refresh every 10 s as backup ──────────────────────
-    _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+    // ── Periodic route refresh as backup ─────────────────────────────────
+    _routeRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!mounted || _myLocation == null || _destPoint == null) return;
       await _fetchAndDrawRoute(_myLocation!, _destPoint!);
     });
@@ -159,18 +162,50 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     TripService.updateDriverLocation(tripId, pos);
   }
 
-  Future<void> _fetchAndDrawRoute(LatLng from, LatLng to) async {
+  Future<void> _fetchAndDrawRoute(
+    LatLng from,
+    LatLng to, {
+    bool force = false,
+  }) async {
     if (_isFetchingRoute) return;
+    if (!force && !_shouldRefreshRoute(from, to)) return;
+
     _isFetchingRoute = true;
     try {
       final route = await MapService.fetchRoute(from, to);
       if (mounted && route != null) {
+        _lastRouteFetch = DateTime.now();
+        _lastRouteFrom = from;
+        _lastRouteTo = to;
         setState(() => _route = route);
         _updatePolyline(route.points);
       }
     } finally {
       _isFetchingRoute = false;
     }
+  }
+
+  bool _shouldRefreshRoute(LatLng from, LatLng to) {
+    final lastFetch = _lastRouteFetch;
+    final lastFrom = _lastRouteFrom;
+    final lastTo = _lastRouteTo;
+    if (lastFetch == null || lastFrom == null || lastTo == null) return true;
+
+    final elapsed = DateTime.now().difference(lastFetch);
+    final movedMeters = _approxDistanceMeters(lastFrom, from);
+    final destChangedMeters = _approxDistanceMeters(lastTo, to);
+
+    if (destChangedMeters > 25) return true;
+    if (movedMeters >= 60) return true;
+    return elapsed >= const Duration(seconds: 30);
+  }
+
+  double _approxDistanceMeters(LatLng a, LatLng b) {
+    const metersPerDegreeLat = 111320.0;
+    final latMeters = (a.latitude - b.latitude).abs() * metersPerDegreeLat;
+    final lngMeters =
+        (a.longitude - b.longitude).abs() * metersPerDegreeLat * 0.99;
+    return latMeters + lngMeters;
   }
 
   void _updateMarkers(LatLng driver, LatLng dest) {
