@@ -16,6 +16,11 @@ void _log(String tag, String msg) {
   if (kDebugMode) debugPrint('[$tag] $msg');
 }
 
+Map<String, String> _jsonHeaders() => {
+      'Accept': 'application/json',
+      if (!kIsWeb) 'User-Agent': 'TodaGoApp/1.0',
+    };
+
 class MapRoute {
   final List<LatLng> points;
   final double distanceKm;
@@ -171,9 +176,9 @@ class MapService {
         '&zoom=14&limit=10&lang=en',
       );
       _log('Photon', 'GET $uri');
-      final res = await http.get(uri, headers: {
-        'Accept': 'application/json'
-      }).timeout(const Duration(seconds: 10));
+      final res = await http
+          .get(uri, headers: _jsonHeaders())
+          .timeout(const Duration(seconds: 10));
 
       _log('Photon', 'HTTP ${res.statusCode}');
       if (res.statusCode != 200) {
@@ -418,9 +423,9 @@ class MapService {
         ';${to.longitude},${to.latitude}'
         '?overview=full&geometries=geojson&steps=false',
       );
-      final res = await http.get(uri, headers: {
-        'User-Agent': 'TodaGoApp/1.0'
-      }).timeout(const Duration(seconds: 6));
+      final res = await http
+          .get(uri, headers: _jsonHeaders())
+          .timeout(const Duration(seconds: 6));
       _log('OSRM', 'HTTP ${res.statusCode}');
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body) as Map<String, dynamic>;
