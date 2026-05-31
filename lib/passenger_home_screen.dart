@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'location_service.dart';
@@ -1981,13 +1982,82 @@ class _SmartRideSheet extends StatefulWidget {
 
 class _SmartRideSheetState extends State<_SmartRideSheet> {
   final TextEditingController _controller = TextEditingController();
+  final SpeechToText _speech = SpeechToText();
   bool _parsing = false;
+  bool _speechReady = false;
+  bool _isListening = false;
   String? _error;
+  String _lastSpeechText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _initSpeech();
+  }
 
   @override
   void dispose() {
+    _speech.stop();
     _controller.dispose();
     super.dispose();
+  }
+
+  Future<void> _initSpeech() async {
+    final ready = await _speech.initialize(
+      onError: (_) {
+        if (mounted) setState(() => _isListening = false);
+      },
+      onStatus: (status) {
+        if (status == 'done' || status == 'notListening') {
+          _finishListening();
+        }
+      },
+    );
+    if (mounted) setState(() => _speechReady = ready);
+  }
+
+  Future<void> _toggleListening() async {
+    if (_parsing) return;
+    if (!_speechReady) {
+      setState(() => _error = 'Microphone is not available on this device.');
+      return;
+    }
+
+    if (_isListening) {
+      await _speech.stop();
+      _finishListening();
+      return;
+    }
+
+    setState(() {
+      _isListening = true;
+      _error = null;
+      _lastSpeechText = '';
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        _lastSpeechText = result.recognizedWords.trim();
+        _controller.text = _lastSpeechText;
+        _controller.selection = TextSelection.fromPosition(
+          TextPosition(offset: _controller.text.length),
+        );
+        if (result.finalResult) _finishListening();
+      },
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en_US',
+      cancelOnError: true,
+    );
+  }
+
+  void _finishListening() {
+    if (!mounted || !_isListening) return;
+    setState(() => _isListening = false);
+    if (_lastSpeechText.isEmpty && _controller.text.trim().isEmpty) {
+      setState(() => _error = 'Nothing heard. Please try again.');
+    }
   }
 
   Future<void> _submit() async {
@@ -2090,35 +2160,105 @@ class _SmartRideSheetState extends State<_SmartRideSheet> {
                       ),
                     ]),
                     const SizedBox(height: 16),
-                    TextField(
-                      controller: _controller,
-                      minLines: 1,
-                      maxLines: 3,
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _submit(),
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: AppColors.backgroundDark,
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF5F6FA),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      decoration: InputDecoration(
-                        hintText:
-                            'Example: Book me a ride to Gaisano from my current location',
-                        hintStyle: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: AppColors.textHint,
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF5F6FA),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 14,
-                        ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _controller,
+                              minLines: 1,
+                              maxLines: 3,
+                              textInputAction: TextInputAction.done,
+                              onSubmitted: (_) => _submit(),
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                color: AppColors.backgroundDark,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: _isListening
+                                    ? 'Listening...'
+                                    : 'Example: Book me a ride to Gaisano from my current location',
+                                hintStyle: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  color: _isListening
+                                      ? AppColors.error.withOpacity(0.7)
+                                      : AppColors.textHint,
+                                ),
+                                border: InputBorder.none,
+                                contentPadding: const EdgeInsets.fromLTRB(
+                                  16,
+                                  14,
+                                  8,
+                                  14,
+                                ),
+                              ),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(0, 6, 8, 8),
+                            child: GestureDetector(
+                              onTap: _toggleListening,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 160),
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: _isListening
+                                      ? AppColors.error
+                                      : Colors.white,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: _isListening
+                                        ? AppColors.error
+                                        : const Color(0xFFE0E0E0),
+                                  ),
+                                ),
+                                child: Icon(
+                                  _isListening
+                                      ? Icons.mic_rounded
+                                      : Icons.mic_none_rounded,
+                                  color: _isListening
+                                      ? Colors.white
+                                      : AppColors.backgroundDark,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    Row(children: [
+                      Icon(
+                        _isListening
+                            ? Icons.graphic_eq_rounded
+                            : Icons.keyboard_voice_rounded,
+                        size: 14,
+                        color:
+                            _isListening ? AppColors.error : AppColors.textHint,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          _isListening
+                              ? 'Listening for your ride request'
+                              : 'Tap the microphone to speak your request',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: _isListening
+                                ? AppColors.error
+                                : AppColors.textHint,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ]),
                     if (_error != null) ...[
                       const SizedBox(height: 10),
                       Text(
