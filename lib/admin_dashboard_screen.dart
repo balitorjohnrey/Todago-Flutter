@@ -22,6 +22,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   String? _errorMessage;
   Map<String, dynamic> _stats = {};
   List<Map<String, dynamic>> _drivers = [];
+  List<Map<String, dynamic>> _routePerformance = [];
   FareSettings _fareSettings = const FareSettings();
 
   late final TextEditingController _fuelPriceController;
@@ -61,6 +62,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAuthService.fetchStats(),
         AdminAuthService.fetchIndependentDrivers(),
         AdminAuthService.fetchFareSettings(),
+        AdminAuthService.fetchRoutePerformance(),
       ]);
       if (!mounted) return;
       final fareSettings =
@@ -70,6 +72,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _drivers = (results[1] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
         _fareSettings = fareSettings;
+        _routePerformance = (results[3] as List<Map<String, dynamic>>?) ??
+            <Map<String, dynamic>>[];
         _syncFareControllers(fareSettings);
       });
     } catch (_) {
@@ -209,6 +213,41 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  double _asDouble(dynamic value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0.0;
+  }
+
+  String _money(dynamic value) {
+    final amount = _asDouble(value);
+    return 'PHP ${amount.toStringAsFixed(0)}';
+  }
+
+  String _durationLabel(dynamic value) {
+    final minutes = _asDouble(value);
+    if (minutes <= 0) return '-';
+    if (minutes < 60) {
+      final decimals = minutes < 10 && minutes % 1 != 0 ? 1 : 0;
+      return '${minutes.toStringAsFixed(decimals)} min';
+    }
+    final hours = minutes ~/ 60;
+    final mins = (minutes % 60).round();
+    return mins == 0 ? '${hours}h' : '${hours}h ${mins}m';
+  }
+
+  String _distanceLabel(dynamic value) {
+    final distance = _asDouble(value);
+    if (distance <= 0) return '-';
+    return '${distance.toStringAsFixed(1)} km';
+  }
+
+  String _speedLabel(dynamic value) {
+    final speed = _asDouble(value);
+    if (speed <= 0) return '-';
+    return '${speed.toStringAsFixed(1)} km/h';
+  }
+
   String _numberText(double value) {
     if ((value - value.round()).abs() < 0.001) return value.toStringAsFixed(0);
     return value.toStringAsFixed(2);
@@ -317,6 +356,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         children: [
           _fareCard(),
           const SizedBox(height: 16),
+          _routePerformanceCard(),
+          const SizedBox(height: 16),
           Text('Independent Driver Applications',
               style: GoogleFonts.poppins(
                 fontSize: 14,
@@ -337,6 +378,146 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Widget _routePerformanceCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.alt_route_rounded,
+                color: Colors.blue, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Route Performance Analysis',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+              Text('System-wide completed and cancelled trips',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: AppColors.textHint,
+                  )),
+            ]),
+          ),
+          _pill('30 DAYS', Colors.blue),
+        ]),
+        const SizedBox(height: 12),
+        if (_routePerformance.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('No route performance data yet',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: AppColors.textHint,
+                )),
+          )
+        else
+          ...List.generate(
+            _routePerformance.length,
+            (index) => _routePerformanceRow(_routePerformance[index], index),
+          ),
+      ]),
+    );
+  }
+
+  Widget _routePerformanceRow(Map<String, dynamic> route, int index) {
+    final from = route['route_from']?.toString() ?? 'Pickup';
+    final to = route['route_to']?.toString() ?? 'Destination';
+    final completion = _asDouble(route['completion_rate']);
+    final healthColor = completion >= 85
+        ? AppColors.success
+        : completion >= 65
+            ? Colors.orange
+            : AppColors.error;
+    final healthLabel = completion >= 85
+        ? 'Strong'
+        : completion >= 65
+            ? 'Watch'
+            : 'Low';
+
+    return Container(
+      padding: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 12),
+      decoration: BoxDecoration(
+        border: index == 0
+            ? null
+            : const Border(top: BorderSide(color: Color(0xFFF0F2F5))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Text('$from to $to',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ),
+          const SizedBox(width: 8),
+          _pill(healthLabel, healthColor),
+        ]),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 14,
+          runSpacing: 8,
+          children: [
+            _routeMetric(Icons.route_rounded, 'Trips',
+                '${_asInt(route['completed_trips'])}/${_asInt(route['total_trips'])}'),
+            _routeMetric(Icons.verified_rounded, 'Completion',
+                '${completion.toStringAsFixed(0)}%'),
+            _routeMetric(Icons.cancel_rounded, 'Cancelled',
+                '${_asInt(route['cancelled_trips'])}'),
+            _routeMetric(Icons.timer_rounded, 'Avg Time',
+                _durationLabel(route['avg_trip_minutes'])),
+            _routeMetric(Icons.speed_rounded, 'Avg Speed',
+                _speedLabel(route['avg_speed_kmh'])),
+            _routeMetric(Icons.straighten_rounded, 'Distance',
+                _distanceLabel(route['avg_distance_km'])),
+            _routeMetric(Icons.payments_rounded, 'Revenue',
+                _money(route['gross_revenue'])),
+          ],
+        ),
+      ]),
+    );
+  }
+
+  Widget _routeMetric(IconData icon, String label, String value) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 15, color: AppColors.textHint),
+      const SizedBox(width: 5),
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(label,
+            style:
+                GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
+        Text(value,
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: AppColors.backgroundDark,
+            )),
+      ]),
+    ]);
   }
 
   Widget _fareCard() {
@@ -367,7 +548,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             width: 36,
             height: 36,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.18),
+              color: AppColors.primary.withValues(alpha: 0.18),
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Icon(Icons.local_gas_station_rounded,
@@ -634,9 +815,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withValues(alpha: 0.08),
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.white.withOpacity(0.1)),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
           child:
               Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -656,7 +837,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _pill(String label, Color color) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
+          color: color.withValues(alpha: 0.12),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Text(label.toUpperCase(),
