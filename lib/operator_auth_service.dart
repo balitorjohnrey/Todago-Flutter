@@ -346,6 +346,38 @@ class OperatorAuthService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> fetchPeakHours({
+    int days = 30,
+    int limit = 6,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return [];
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/analytics/peak-hours').replace(
+          queryParameters: {
+            'days': days.toString(),
+            'limit': limit.toString(),
+          },
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 12));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final hours = data['hours'] as List<dynamic>? ?? [];
+        return hours.whereType<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
   static Future<OperatorAuthResponse> updateDriverVerification({
     required String driverId,
     required bool isVerified,

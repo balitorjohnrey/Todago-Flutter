@@ -38,10 +38,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   int _tripsToday = 0;
   int _onlineSecondsToday = 0;
   double _earningsToday = 0.0;
+  List<Map<String, dynamic>> _peakHours = [];
 
   Timer? _pollTimer;
   Timer? _scheduledSyncTimer;
   Timer? _statsTimer;
+  Timer? _peakHoursTimer;
   Timer? _onlineTickTimer;
   Timer? _locationRefreshTimer;
   StreamSubscription<LatLng>? _locationSyncSub;
@@ -57,6 +59,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     )..repeat(reverse: true);
     _loadDriver();
     _loadTodayStats();
+    _loadPeakHours();
     _startStatsRealtime();
     _syncScheduledReservations();
     _scheduledSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) {
@@ -259,6 +262,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _statsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted) _loadTodayStats();
     });
+    _peakHoursTimer?.cancel();
+    _peakHoursTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) _loadPeakHours();
+    });
     _onlineTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _isOnline) {
         setState(() => _onlineSecondsToday++);
@@ -282,6 +289,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _isOnline = status == 'online' || status == 'on_trip';
       }
     });
+  }
+
+  Future<void> _loadPeakHours() async {
+    final hours = await DriverAuthService.fetchPeakHours();
+    if (!mounted) return;
+    setState(() => _peakHours = hours);
   }
 
   String _formatDuration(int seconds) {
@@ -321,6 +334,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   void dispose() {
     _scheduledSyncTimer?.cancel();
     _statsTimer?.cancel();
+    _peakHoursTimer?.cancel();
     _onlineTickTimer?.cancel();
     _stopPolling();
     _stopOnlineLocationSync();
@@ -378,6 +392,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  String _money(dynamic value) {
+    final amount = _asDouble(value);
+    return 'PHP ${amount.toStringAsFixed(0)}';
+  }
+
   // ════════════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════════════
@@ -399,7 +418,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withOpacity(0.45),
+                  color: AppColors.primary.withValues(alpha: 0.45),
                   blurRadius: 16,
                   offset: const Offset(0, 4),
                 )
@@ -444,7 +463,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                 decoration: BoxDecoration(
                   color: (_isOnline ? Colors.green : Colors.grey)
-                      .withOpacity(0.15),
+                      .withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: _isOnline ? Colors.green : Colors.grey,
@@ -523,7 +542,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: Colors.green
-                                .withOpacity(0.07 * (1 - _pulse.value)),
+                                .withValues(alpha: 0.07 * (1 - _pulse.value)),
                           ),
                         ),
                       // Main circle
@@ -538,7 +557,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                             BoxShadow(
                               color:
                                   (_isOnline ? Colors.green : AppColors.primary)
-                                      .withOpacity(0.4),
+                                      .withValues(alpha: 0.4),
                               blurRadius: 40,
                               spreadRadius: 8,
                             )
@@ -565,7 +584,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                                       height: 46,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 3,
-                                        color: Colors.white.withOpacity(0.7),
+                                        color:
+                                            Colors.white.withValues(alpha: 0.7),
                                         strokeCap: StrokeCap.round,
                                       ),
                                     ),
@@ -591,7 +611,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                                       color: _isOnline
                                           ? Colors.white70
                                           : AppColors.backgroundDark
-                                              .withOpacity(0.7),
+                                              .withValues(alpha: 0.7),
                                     ),
                                   ),
                                 ],
@@ -622,7 +642,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                   initials: _initials,
                   imagePath: _driverPhotoPath,
                   size: 46,
-                  backgroundColor: AppColors.primary.withOpacity(0.15),
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
                   foregroundColor: AppColors.primary,
                   onTap: _openProfile,
                 ),
@@ -660,10 +680,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.15),
+                      color: AppColors.primary.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(10),
-                      border:
-                          Border.all(color: AppColors.primary.withOpacity(0.3)),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3)),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       const Icon(Icons.question_answer_rounded,
@@ -688,6 +708,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                     'PHP ${_earningsToday.toStringAsFixed(0)}',
                     Icons.attach_money_rounded),
               ]),
+              const SizedBox(height: 14),
+              Container(height: 1, color: Colors.white10),
+              const SizedBox(height: 12),
+              _peakHoursSummary(),
             ]),
           ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
         ]),
@@ -696,6 +720,75 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   // ── Reusable widgets ──────────────────────────────────────────────────────
+  Widget _peakHoursSummary() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        const Icon(Icons.access_time_filled_rounded,
+            color: AppColors.primary, size: 16),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text('Peak Hour Analysis',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              )),
+        ),
+        Text('30 days',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: Colors.white38,
+            )),
+      ]),
+      const SizedBox(height: 10),
+      if (_peakHours.isEmpty)
+        Text('No peak hour data yet',
+            style: GoogleFonts.poppins(fontSize: 11, color: Colors.white38))
+      else
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: List.generate(
+            _peakHours.length,
+            (index) => _peakHourChip(_peakHours[index], index),
+          ),
+        ),
+    ]);
+  }
+
+  Widget _peakHourChip(Map<String, dynamic> hour, int index) {
+    final requests = _asInt(hour['total_requests']);
+    final completed = _asInt(hour['completed_trips']);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('#${index + 1} ${hour['hour_label'] ?? 'Hour'}',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+            )),
+        const SizedBox(height: 2),
+        Text('$completed/$requests trips',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+            )),
+        Text(_money(hour['gross_revenue']),
+            style: GoogleFonts.poppins(fontSize: 10, color: Colors.white38)),
+      ]),
+    );
+  }
+
   Widget _iconBox(IconData icon, VoidCallback? onTap) => GestureDetector(
         onTap: onTap,
         child: Container(

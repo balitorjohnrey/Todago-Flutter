@@ -21,6 +21,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
   Map<String, dynamic>? _operator;
   Map<String, dynamic> _stats = {};
   List<Map<String, dynamic>> _routePerformance = [];
+  List<Map<String, dynamic>> _peakHours = [];
   Timer? _refreshTimer;
   bool _isLoading = true;
 
@@ -45,12 +46,15 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
       OperatorAuthService.fetchProfile(),
       OperatorAuthService.fetchStats(),
       OperatorAuthService.fetchRoutePerformance(),
+      OperatorAuthService.fetchPeakHours(),
     ]);
     if (!mounted) return;
     setState(() {
       _operator = results[0] as Map<String, dynamic>?;
       _stats = (results[1] as Map<String, dynamic>?) ?? {};
       _routePerformance = (results[2] as List<Map<String, dynamic>>?) ??
+          <Map<String, dynamic>>[];
+      _peakHours = (results[3] as List<Map<String, dynamic>>?) ??
           <Map<String, dynamic>>[];
       _isLoading = false;
     });
@@ -458,6 +462,12 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
 
                   const SizedBox(height: 20),
 
+                  _peakHoursCard()
+                      .animate()
+                      .fadeIn(delay: 220.ms, duration: 400.ms),
+
+                  const SizedBox(height: 20),
+
                   _routePerformanceCard()
                       .animate()
                       .fadeIn(delay: 230.ms, duration: 400.ms),
@@ -514,6 +524,117 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _peakHoursCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.access_time_filled_rounded,
+                color: Colors.orange, size: 21),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Peak Hour Analysis',
+                  style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+              Text('Busiest request hours for your TODA',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: Colors.grey[500],
+                  )),
+            ]),
+          ),
+          _routePill('30 DAYS', Colors.orange),
+        ]),
+        const SizedBox(height: 14),
+        if (_peakHours.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('No peak hour data yet',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: Colors.grey[500],
+                )),
+          )
+        else
+          ...List.generate(
+            _peakHours.length,
+            (index) => _peakHourRow(_peakHours[index], index),
+          ),
+      ]),
+    );
+  }
+
+  Widget _peakHourRow(Map<String, dynamic> hour, int index) {
+    final label = hour['hour_label']?.toString() ?? 'Hour';
+    final completion = _asDouble(hour['completion_rate']);
+    return Container(
+      padding: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 12),
+      decoration: BoxDecoration(
+        border: index == 0
+            ? null
+            : const Border(top: BorderSide(color: Color(0xFFF0F2F5))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ),
+          _routePill('#${index + 1}', Colors.orange),
+        ]),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 14,
+          runSpacing: 8,
+          children: [
+            _routeMetric(Icons.local_taxi_rounded, 'Requests',
+                '${_asInt(hour['total_requests'])}'),
+            _routeMetric(Icons.verified_rounded, 'Completed',
+                '${_asInt(hour['completed_trips'])}'),
+            _routeMetric(Icons.cancel_rounded, 'Cancelled',
+                '${_asInt(hour['cancelled_trips'])}'),
+            _routeMetric(Icons.percent_rounded, 'Completion',
+                '${completion.toStringAsFixed(0)}%'),
+            _routeMetric(Icons.payments_rounded, 'Revenue',
+                _money(hour['gross_revenue'])),
+          ],
+        ),
+      ]),
     );
   }
 
