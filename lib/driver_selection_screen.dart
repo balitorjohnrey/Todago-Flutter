@@ -6,6 +6,7 @@ import 'app_theme.dart';
 import 'reservation_notification_service.dart';
 import 'trip_service.dart';
 import 'live_trip_tracking_screen.dart';
+import 'profile_avatar.dart';
 
 class DriverSelectionScreen extends StatefulWidget {
   final String serviceType;
@@ -295,6 +296,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                   final assoc = d['association_code']?.toString() ??
                       d['toda_body_number']?.toString() ??
                       '';
+                  final photoSource = d['profile_photo_url']?.toString();
 
                   return GestureDetector(
                     onTap: () => setState(() => _selected = i),
@@ -322,20 +324,12 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Row(children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: AppColors.backgroundDark,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Center(
-                                    child: Text(initials,
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: AppColors.primary,
-                                        ))),
+                              ProfileAvatar(
+                                initials: initials,
+                                imagePath: photoSource,
+                                size: 44,
+                                backgroundColor: AppColors.backgroundDark,
+                                foregroundColor: AppColors.primary,
                               ),
                               const SizedBox(width: 10),
                               Expanded(

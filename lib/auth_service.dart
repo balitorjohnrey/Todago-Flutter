@@ -255,5 +255,36 @@ class AuthService {
     }
   }
 
+  static Future<Map<String, dynamic>?> updateProfilePhoto(
+      String? profilePhotoUrl) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return null;
+
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/profile-photo'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'profilePhotoUrl': profilePhotoUrl}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final user = data['user'] as Map<String, dynamic>?;
+        if (user != null) {
+          await _storage.write(key: _userKey, value: jsonEncode(user));
+          return user;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<void> logout() async => await _storage.deleteAll();
 }

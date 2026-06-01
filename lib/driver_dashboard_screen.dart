@@ -70,11 +70,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       ProfilePhotoService.driverPhotoKey,
     );
     if (d != null && mounted) {
+      final serverPhoto = _profilePhotoSource(d);
       setState(() {
         _driverProfile = d;
         _driverName = d['driver_name']?.toString() ?? 'Driver';
         _todaBody = d['toda_body_number']?.toString() ?? '';
-        _driverPhotoPath = photoPath;
+        _driverPhotoPath = serverPhoto ?? photoPath;
         _avgRating = _asDouble(d['avg_rating']);
         _totalTrips = _asInt(d['total_trips']);
         _isOnline = ['online', 'on_trip'].contains(d['status']?.toString());
@@ -87,6 +88,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _stopOnlineLocationSync();
       }
     }
+  }
+
+  String? _profilePhotoSource(Map<String, dynamic>? data) {
+    final value = data?['profile_photo_url']?.toString();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   // ── Online / Offline toggle ───────────────────────────────────────────────

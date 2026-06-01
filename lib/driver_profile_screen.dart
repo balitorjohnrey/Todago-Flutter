@@ -33,9 +33,11 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
       ProfilePhotoService.getPhotoPath(ProfilePhotoService.driverPhotoKey),
     ]);
     if (!mounted) return;
+    final driver = (results[0] as Map<String, dynamic>?) ?? _driver;
+    final serverPhoto = _profilePhotoSource(driver);
     setState(() {
-      _driver = (results[0] as Map<String, dynamic>?) ?? _driver;
-      _photoPath = results[1] as String?;
+      _driver = driver;
+      _photoPath = serverPhoto ?? (results[1] as String?);
       _loading = false;
     });
   }
@@ -46,14 +48,35 @@ class _DriverProfileScreenState extends State<DriverProfileScreen> {
     );
     if (path == null || !mounted) return;
     setState(() => _photoPath = path);
+    final dataUri = await ProfilePhotoService.fileToDataUri(path);
+    final driver = dataUri == null
+        ? null
+        : await DriverAuthService.updateProfilePhoto(dataUri);
+    if (!mounted) return;
+    final serverPhoto = _profilePhotoSource(driver);
+    if (driver != null) {
+      setState(() {
+        _driver = driver;
+        if (serverPhoto != null) _photoPath = serverPhoto;
+      });
+    }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Profile photo updated',
+      content: Text(
+          driver != null
+              ? 'Profile photo updated'
+              : 'Photo saved on this device. Online sync failed.',
           style: GoogleFonts.poppins(fontSize: 13)),
-      backgroundColor: AppColors.success,
+      backgroundColor: driver != null ? AppColors.success : AppColors.error,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       margin: const EdgeInsets.all(16),
     ));
+  }
+
+  String? _profilePhotoSource(Map<String, dynamic>? data) {
+    final value = data?['profile_photo_url']?.toString();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   String get _name => _driver?['driver_name']?.toString() ?? 'Driver';

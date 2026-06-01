@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,8 @@ class ProfileAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final path = imagePath;
-    final hasPhoto = path != null && path.isNotEmpty && File(path).existsSync();
+    final photoProvider = _imageProviderFor(path);
+    final hasPhoto = photoProvider != null;
 
     final avatar = Container(
       width: size,
@@ -32,8 +34,8 @@ class ProfileAvatar extends StatelessWidget {
       decoration: BoxDecoration(
         color: backgroundColor,
         shape: BoxShape.circle,
-        image: hasPhoto
-            ? DecorationImage(image: FileImage(File(path)), fit: BoxFit.cover)
+        image: photoProvider != null
+            ? DecorationImage(image: photoProvider, fit: BoxFit.cover)
             : null,
       ),
       child: hasPhoto
@@ -78,5 +80,23 @@ class ProfileAvatar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  ImageProvider? _imageProviderFor(String? source) {
+    if (source == null || source.isEmpty) return null;
+    if (source.startsWith('data:image/')) {
+      final comma = source.indexOf(',');
+      if (comma == -1) return null;
+      try {
+        return MemoryImage(base64Decode(source.substring(comma + 1)));
+      } catch (_) {
+        return null;
+      }
+    }
+    if (source.startsWith('http://') || source.startsWith('https://')) {
+      return NetworkImage(source);
+    }
+    final file = File(source);
+    return file.existsSync() ? FileImage(file) : null;
   }
 }

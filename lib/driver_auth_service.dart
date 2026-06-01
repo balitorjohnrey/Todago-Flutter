@@ -269,6 +269,37 @@ class DriverAuthService {
     }
   }
 
+  static Future<Map<String, dynamic>?> updateProfilePhoto(
+      String? profilePhotoUrl) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return null;
+
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/profile-photo'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'profilePhotoUrl': profilePhotoUrl}),
+          )
+          .timeout(const Duration(seconds: 20));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final driver = data['driver'] as Map<String, dynamic>?;
+        if (driver != null) {
+          await _storage.write(key: _driverDataKey, value: jsonEncode(driver));
+          return driver;
+        }
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<bool> isLoggedIn() async {
     final token = await getToken();
     if (token == null || token.isEmpty) return false;
@@ -295,6 +326,5 @@ class DriverAuthService {
     }
   }
 
-  // FIX: Clear ALL tokens on logout (main + driver) so no stale sessions remain
   static Future<void> logout() async => await _storage.deleteAll();
 }

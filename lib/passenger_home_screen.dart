@@ -135,14 +135,22 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
 
   Future<void> _loadUser() async {
     final user = await AuthService.fetchProfile();
-    if (mounted) setState(() => _user = user);
+    final serverPhoto = _profilePhotoSource(user);
+    if (mounted) {
+      setState(() {
+        _user = user;
+        if (serverPhoto != null) _passengerPhotoPath = serverPhoto;
+      });
+    }
   }
 
   Future<void> _loadProfilePhoto() async {
     final path = await ProfilePhotoService.getPhotoPath(
       ProfilePhotoService.passengerPhotoKey,
     );
-    if (mounted) setState(() => _passengerPhotoPath = path);
+    if (mounted && _profilePhotoSource(_user) == null) {
+      setState(() => _passengerPhotoPath = path);
+    }
   }
 
   Future<void> _initLocation() async {
@@ -324,8 +332,29 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     );
     if (path != null && mounted) {
       setState(() => _passengerPhotoPath = path);
-      _showSnack('Profile photo updated', AppColors.success);
+      final dataUri = await ProfilePhotoService.fileToDataUri(path);
+      final user = dataUri == null
+          ? null
+          : await AuthService.updateProfilePhoto(dataUri);
+      if (!mounted) return;
+      final serverPhoto = _profilePhotoSource(user);
+      if (user != null) {
+        setState(() {
+          _user = user;
+          if (serverPhoto != null) _passengerPhotoPath = serverPhoto;
+        });
+        _showSnack('Profile photo updated', AppColors.success);
+      } else {
+        _showSnack(
+            'Photo saved on this device. Online sync failed.', AppColors.error);
+      }
     }
+  }
+
+  String? _profilePhotoSource(Map<String, dynamic>? data) {
+    final value = data?['profile_photo_url']?.toString();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 
   void _showSnack(String message, Color color) {
