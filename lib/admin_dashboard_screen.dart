@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import 'admin_auth_service.dart';
 import 'app_theme.dart';
+import 'fare_settings_service.dart';
+import 'panabo_config.dart';
 import 'splash_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -14,14 +18,26 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isLoading = true;
+  bool _isSavingFare = false;
   String? _errorMessage;
   Map<String, dynamic> _stats = {};
   List<Map<String, dynamic>> _drivers = [];
+  FareSettings _fareSettings = const FareSettings();
+  late final TextEditingController _fuelPriceController;
 
   @override
   void initState() {
     super.initState();
+    _fuelPriceController = TextEditingController(
+      text: _fareSettings.fuelPricePerLiter.toStringAsFixed(2),
+    );
     _load();
+  }
+
+  @override
+  void dispose() {
+    _fuelPriceController.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -33,12 +49,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final results = await Future.wait([
         AdminAuthService.fetchStats(),
         AdminAuthService.fetchIndependentDrivers(),
+        AdminAuthService.fetchFareSettings(),
       ]);
       if (!mounted) return;
+      final fareSettings =
+          (results[2] as FareSettings?) ?? const FareSettings();
       setState(() {
         _stats = (results[0] as Map<String, dynamic>?) ?? {};
         _drivers = (results[1] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
+        _fareSettings = fareSettings;
+        _fuelPriceController.text =
+            fareSettings.fuelPricePerLiter.toStringAsFixed(2);
       });
     } catch (_) {
       if (!mounted) return;
@@ -46,6 +68,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _saveFareSettings() async {
+    final fuelPrice = double.tryParse(_fuelPriceController.text.trim());
+    if (fuelPrice == null || fuelPrice < 20) {
+      _showSnack('Enter a valid gasoline price.', AppColors.error);
+      return;
+    }
+
+    setState(() => _isSavingFare = true);
+    final result = await AdminAuthService.updateFareSettings(
+      fuelPricePerLiter: fuelPrice,
+      premiumMultiplier: _fareSettings.premiumMultiplier,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isSavingFare = false;
+      if (result.success && result.fareSettings != null) {
+        _fareSettings = result.fareSettings!;
+        _fuelPriceController.text =
+            _fareSettings.fuelPricePerLiter.toStringAsFixed(2);
+      }
+    });
+    _showSnack(
+      result.message ??
+          (result.success
+              ? 'Fare settings updated.'
+              : 'Unable to update fare.'),
+      result.success ? AppColors.success : AppColors.error,
+    );
   }
 
   Future<void> _setApproval(Map<String, dynamic> driver, bool approve) async {
@@ -56,16 +108,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       isVerified: approve,
     );
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(
-        result.message ?? (approve ? 'Driver approved.' : 'Approval revoked.'),
-        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
-      ),
-      backgroundColor: result.success ? AppColors.success : AppColors.error,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.all(16),
-    ));
+    _showSnack(
+      result.message ?? (approve ? 'Driver approved.' : 'Approval revoked.'),
+      result.success ? AppColors.success : AppColors.error,
+    );
     if (result.success) await _load();
   }
 
@@ -78,6 +124,19 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
   }
 
+  void _showSnack(String message, Color color) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        message,
+        style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
+      ),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.all(16),
+    ));
+  }
+
   bool _isVerified(Map<String, dynamic> driver) =>
       driver['is_verified'] == true ||
       driver['is_verified']?.toString() == 'true';
@@ -86,6 +145,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (value is int) return value;
     if (value is double) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _fuelRangeLabel(PanaboFareBand band) {
+    if (band.maxFuelPrice == null) {
+      return 'PHP ${band.minFuelPrice.toStringAsFixed(2)} and up';
+    }
+    return 'PHP ${band.minFuelPrice.toStringAsFixed(2)} - ${band.maxFuelPrice!.toStringAsFixed(2)}';
   }
 
   @override
@@ -175,23 +241,173 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
       );
     }
-    if (_drivers.isEmpty) {
-      return Center(
-        child: Text('No independent driver applications',
-            style:
-                GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
-      );
-    }
+
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView.separated(
+      child: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: _drivers.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (_, i) => _driverCard(_drivers[i], i),
+        children: [
+          _fareCard(),
+          const SizedBox(height: 16),
+          Text('Independent Driver Applications',
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+          const SizedBox(height: 10),
+          if (_drivers.isEmpty)
+            _emptyDriversCard()
+          else
+            ...List.generate(
+              _drivers.length,
+              (index) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _driverCard(_drivers[index], index),
+              ),
+            ),
+        ],
       ),
     );
   }
+
+  Widget _fareCard() {
+    final band = _fareSettings.band;
+    final regular = PanaboFarePolicy.formatPeso(
+      PanaboFarePolicy.fareForDistanceKm(
+        0,
+        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      ),
+    );
+    final discounted = PanaboFarePolicy.formatPeso(
+      PanaboFarePolicy.fareForDistanceKm(
+        0,
+        discounted: true,
+        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      ),
+    );
+    final premium = PanaboFarePolicy.formatPeso(
+      PanaboFarePolicy.fareForDistanceKm(
+        0,
+        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+        premiumMultiplier: _fareSettings.premiumMultiplier,
+      ),
+    );
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.local_gas_station_rounded,
+                color: AppColors.backgroundDark, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text('Fare Regulation',
+                style: GoogleFonts.poppins(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ),
+          _pill('ADMIN', AppColors.primary),
+        ]),
+        const SizedBox(height: 14),
+        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Expanded(
+            child: TextField(
+              controller: _fuelPriceController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [
+                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+              ],
+              decoration: InputDecoration(
+                labelText: 'Gasoline Price / Liter',
+                prefixText: 'PHP ',
+                filled: true,
+                fillColor: const Color(0xFFF8F9FA),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: AppColors.primary, width: 2),
+                ),
+              ),
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: AppColors.backgroundDark,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _isSavingFare ? null : _saveFareSettings,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.backgroundDark,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: _isSavingFare
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
+                    )
+                  : Text('Save',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        _meta('Fuel Band', _fuelRangeLabel(band)),
+        _meta('Regular', regular),
+        _meta('Student/Senior/PWD', discounted),
+        _meta('Toda-Express', '$premium (+30%)'),
+      ]),
+    );
+  }
+
+  Widget _emptyDriversCard() => Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE8EDF2)),
+        ),
+        child: Text('No independent driver applications',
+            textAlign: TextAlign.center,
+            style:
+                GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
+      );
 
   Widget _driverCard(Map<String, dynamic> driver, int index) {
     final verified = _isVerified(driver);
@@ -300,7 +516,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         padding: const EdgeInsets.only(bottom: 4),
         child: Row(children: [
           SizedBox(
-            width: 68,
+            width: 132,
             child: Text(label,
                 style: GoogleFonts.poppins(
                     fontSize: 11, color: AppColors.textHint)),

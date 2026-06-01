@@ -2,23 +2,29 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
+import 'fare_settings_service.dart';
+
 class AdminAuthResponse {
   final bool success;
   final String? message;
   final String? token;
   final Map<String, dynamic>? admin;
+  final FareSettings? fareSettings;
 
   AdminAuthResponse({
     required this.success,
     this.message,
     this.token,
     this.admin,
+    this.fareSettings,
   });
 }
 
 class AdminAuthService {
   static const String _baseUrl =
       'https://todago-backend-production.up.railway.app/api/admin';
+  static const String _fareBaseUrl =
+      'https://todago-backend-production.up.railway.app/api/fares';
   static const _storage = FlutterSecureStorage();
   static const _adminTokenKey = 'admin_auth_token';
   static const _adminDataKey = 'admin_data';
@@ -129,6 +135,56 @@ class AdminAuthService {
       return AdminAuthResponse(
         success: response.statusCode == 200 && data['success'] == true,
         message: data['message'] ?? 'Unable to update driver approval',
+      );
+    } catch (_) {
+      return AdminAuthResponse(
+        success: false,
+        message: 'Connection failed. Check your internet.',
+      );
+    }
+  }
+
+  static Future<FareSettings?> fetchFareSettings() async {
+    try {
+      final response = await http
+          .get(Uri.parse('$_fareBaseUrl/settings'))
+          .timeout(const Duration(seconds: 10));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final settings = data['settings'];
+      if (response.statusCode == 200 &&
+          data['success'] == true &&
+          settings is Map<String, dynamic>) {
+        return FareSettings.fromJson(settings);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<AdminAuthResponse> updateFareSettings({
+    required double fuelPricePerLiter,
+    double premiumMultiplier = 1.30,
+  }) async {
+    try {
+      final response = await http
+          .patch(
+            Uri.parse('$_fareBaseUrl/settings'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'fuelPricePerLiter': fuelPricePerLiter,
+              'premiumMultiplier': premiumMultiplier,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final settings = data['settings'];
+      return AdminAuthResponse(
+        success: response.statusCode == 200 && data['success'] == true,
+        message: data['message'] ?? 'Unable to update fare settings',
+        fareSettings: settings is Map<String, dynamic>
+            ? FareSettings.fromJson(settings)
+            : null,
       );
     } catch (_) {
       return AdminAuthResponse(

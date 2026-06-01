@@ -32,7 +32,8 @@ class PanaboFareBand {
 class PanaboFarePolicy {
   static const double firstSegmentKm = 3.0;
   static const double regularMinimumFare = 15.0;
-  static const double defaultFuelPricePerLiter = 60.0;
+  static const double defaultFuelPricePerLiter = 80.0;
+  static const double defaultPremiumMultiplier = 1.30;
   static const double extraKmFare = 5.0;
   static const double tricycleAverageSpeedKmh = 19.94;
 
@@ -106,6 +107,8 @@ class PanaboFarePolicy {
     double distanceKm, {
     bool discounted = false,
     double fuelPricePerLiter = defaultFuelPricePerLiter,
+    double premiumMultiplier = 1.0,
+    int passengerCount = 1,
   }) {
     final band = bandForFuelPrice(fuelPricePerLiter);
     final postedFare = discounted ? band.discountedFare : band.regularFare;
@@ -115,22 +118,34 @@ class PanaboFarePolicy {
     final extraDistance = math.max(0.0, distanceKm - firstSegmentKm);
     final extraFare =
         extraDistance == 0 ? 0.0 : extraKmFare * extraDistance.ceil();
-    return baseFare + extraFare;
+    final individualFare = (baseFare + extraFare) * premiumMultiplier;
+    final count = passengerCount.clamp(1, 6).toInt();
+    return individualFare * count;
   }
 
   static String fareLabel(
     double distanceKm, {
     bool discounted = false,
     double fuelPricePerLiter = defaultFuelPricePerLiter,
+    double premiumMultiplier = 1.0,
+    int passengerCount = 1,
   }) {
     return formatPeso(fareForDistanceKm(
       distanceKm,
       discounted: discounted,
       fuelPricePerLiter: fuelPricePerLiter,
+      premiumMultiplier: premiumMultiplier,
+      passengerCount: passengerCount,
     ));
   }
 
-  static String formatPeso(double amount) => 'PHP ${amount.toStringAsFixed(0)}';
+  static String formatPeso(double amount) {
+    final rounded = (amount * 100).round() / 100;
+    if ((rounded - rounded.round()).abs() < 0.001) {
+      return 'PHP ${rounded.toStringAsFixed(0)}';
+    }
+    return 'PHP ${rounded.toStringAsFixed(2)}';
+  }
 
   static int etaMinutesForDistanceKm(
     double distanceKm, {

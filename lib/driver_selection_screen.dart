@@ -12,6 +12,8 @@ class DriverSelectionScreen extends StatefulWidget {
   final String serviceType;
   final String price;
   final double fareAmount;
+  final int passengerCount;
+  final String passengerFareType;
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
@@ -24,6 +26,8 @@ class DriverSelectionScreen extends StatefulWidget {
     required this.serviceType,
     required this.price,
     required this.fareAmount,
+    this.passengerCount = 1,
+    this.passengerFareType = 'regular',
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Davao del Norte State College',
@@ -98,6 +102,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             destination: widget.destinationName,
             serviceType: _normalizeServiceType(widget.serviceType),
             fare: widget.fareAmount,
+            passengerCount: widget.passengerCount,
+            passengerFareType: widget.passengerFareType,
             paymentMethod: 'cash',
             scheduledAt: widget.scheduledAt!,
             pickupLatLng: widget.pickupLatLng,
@@ -109,6 +115,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             destination: widget.destinationName,
             serviceType: _normalizeServiceType(widget.serviceType),
             fare: widget.fareAmount,
+            passengerCount: widget.passengerCount,
+            passengerFareType: widget.passengerFareType,
             paymentMethod: 'cash',
             pickupLatLng: widget.pickupLatLng,
             destinationLatLng: widget.destinationLatLng,
@@ -438,6 +446,11 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                     _selectedDriver['driver_name']?.toString() ?? 'Driver'),
                 const SizedBox(height: 6),
                 _summaryRow('Service Type', widget.serviceType),
+                const SizedBox(height: 6),
+                _summaryRow('Passengers', widget.passengerCount.toString()),
+                const SizedBox(height: 6),
+                _summaryRow(
+                    'Fare Type', _formatFareType(widget.passengerFareType)),
                 if (_isScheduled) ...[
                   const SizedBox(height: 6),
                   _summaryRow(
@@ -534,5 +547,18 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
     final minute = value.minute.toString().padLeft(2, '0');
     final ampm = value.hour >= 12 ? 'PM' : 'AM';
     return '${value.month}/${value.day}/${value.year} $hour:$minute $ampm';
+  }
+
+  String _formatFareType(String value) {
+    switch (value.toLowerCase()) {
+      case 'student':
+        return 'Student';
+      case 'senior':
+        return 'Senior Citizen';
+      case 'pwd':
+        return 'PWD';
+      default:
+        return 'Regular';
+    }
   }
 }

@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+
 import 'app_theme.dart';
-import 'trip_service.dart';
+import 'fare_settings_service.dart';
 import 'finding_driver_screen.dart';
 import 'panabo_config.dart';
+import 'trip_service.dart';
 
 class ServiceSelectionScreen extends StatefulWidget {
   final String pickupName;
@@ -38,6 +41,11 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   bool _driversLoaded = false;
   bool _isScheduled = false;
   DateTime? _scheduledAt;
+  FareSettings _fareSettings = const FareSettings();
+  bool _fareSettingsLoaded = false;
+  String _passengerFareType = 'regular';
+  int _sharedPassengerCount = 2;
+  late final TextEditingController _sharedPassengerController;
 
   final List<Map<String, dynamic>> _services = [
     {
@@ -46,9 +54,10 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       'subtitle': 'Ride alone, enjoy privacy',
       'icon': Icons.person_rounded,
       'passengers': '1 passenger',
-      'price': 25.0,
-      'priceLabel': '₱25–40',
-      'eta': '3–4 min',
+      'price': 0.0,
+      'priceLabel': 'PHP 0',
+      'priceSubLabel': 'Regular rate',
+      'eta': '3 min',
       'premium': false,
     },
     {
@@ -56,10 +65,11 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       'name': 'Shared',
       'subtitle': 'Share the ride, save money',
       'icon': Icons.people_rounded,
-      'passengers': 'Up to 3 passengers',
-      'price': 15.0,
-      'priceLabel': '₱15–25',
-      'eta': '8–12 min',
+      'passengers': '2-6 passengers',
+      'price': 0.0,
+      'priceLabel': 'PHP 0',
+      'priceSubLabel': 'PHP 0 each',
+      'eta': '3 min',
       'premium': false,
     },
     {
@@ -67,20 +77,45 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       'name': 'Toda-Express',
       'subtitle': 'Priority pickup, fastest route',
       'icon': Icons.bolt_rounded,
-      'passengers': '1–2 passengers',
-      'price': 90.0,
-      'priceLabel': '₱90–100',
-      'eta': '1–3 min',
+      'passengers': '1 passenger',
+      'price': 0.0,
+      'priceLabel': 'PHP 0',
+      'priceSubLabel': '+30% premium',
+      'eta': '3 min',
       'premium': true,
     },
   ];
 
+  bool get _discountedPassenger => _passengerFareType != 'regular';
+
+  String get _passengerFareLabel {
+    switch (_passengerFareType) {
+      case 'student':
+        return 'Student';
+      case 'senior':
+        return 'Senior';
+      case 'pwd':
+        return 'PWD';
+      default:
+        return 'Regular';
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _sharedPassengerController =
+        TextEditingController(text: _sharedPassengerCount.toString());
     _applyInitialServiceType();
     _applyOfficialFares();
+    _loadFareSettings();
     _loadOnlineDrivers();
+  }
+
+  @override
+  void dispose() {
+    _sharedPassengerController.dispose();
+    super.dispose();
   }
 
   void _applyInitialServiceType() {
@@ -96,15 +131,59 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     if (index != -1) _selected = index;
   }
 
+  Future<void> _loadFareSettings() async {
+    final settings = await FareSettingsService.fetchSettings();
+    if (!mounted) return;
+    setState(() {
+      _fareSettings = settings;
+      _fareSettingsLoaded = true;
+      _applyOfficialFares();
+    });
+  }
+
   void _applyOfficialFares() {
     final distanceKm = widget.distanceKm ?? 0;
-    final fare = PanaboFarePolicy.fareForDistanceKm(distanceKm);
     final eta = widget.etaMinutes ??
         PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm);
+    final individualFare = PanaboFarePolicy.fareForDistanceKm(
+      distanceKm,
+      discounted: _discountedPassenger,
+      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+    );
+    final premiumFare = PanaboFarePolicy.fareForDistanceKm(
+      distanceKm,
+      discounted: _discountedPassenger,
+      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      premiumMultiplier: _fareSettings.premiumMultiplier,
+    );
+    final sharedFare = PanaboFarePolicy.fareForDistanceKm(
+      distanceKm,
+      discounted: _discountedPassenger,
+      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      passengerCount: _sharedPassengerCount,
+    );
+
     for (final service in _services) {
-      service['price'] = fare;
-      service['priceLabel'] = PanaboFarePolicy.formatPeso(fare);
+      final id = service['id'] as String;
       service['eta'] = '$eta min';
+      if (id == 'shared') {
+        service['price'] = sharedFare;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(sharedFare);
+        service['priceSubLabel'] =
+            '${PanaboFarePolicy.formatPeso(individualFare)} each';
+        service['passengers'] = '$_sharedPassengerCount passengers';
+      } else if (id == 'express') {
+        service['price'] = premiumFare;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(premiumFare);
+        service['priceSubLabel'] =
+            '${(_fareSettings.premiumMultiplier * 100 - 100).toStringAsFixed(0)}% premium';
+        service['passengers'] = '1 passenger';
+      } else {
+        service['price'] = individualFare;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(individualFare);
+        service['priceSubLabel'] = '$_passengerFareLabel rate';
+        service['passengers'] = '1 passenger';
+      }
     }
   }
 
@@ -150,11 +229,15 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
 
     setState(() => _isLoading = true);
 
+    final selectedService = _services[_selected];
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => FindingDriverScreen(
-        serviceType: _services[_selected]['name'] as String,
-        price: _services[_selected]['priceLabel'] as String,
-        fareAmount: _services[_selected]['price'] as double,
+        serviceType: selectedService['name'] as String,
+        price: selectedService['priceLabel'] as String,
+        fareAmount: selectedService['price'] as double,
+        passengerCount:
+            selectedService['id'] == 'shared' ? _sharedPassengerCount : 1,
+        passengerFareType: _passengerFareType,
         onlineDrivers: _onlineDrivers,
         pickupName: widget.pickupName,
         destinationName: widget.destinationName,
@@ -172,11 +255,10 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
 
   Future<void> _pickSchedule() async {
     final now = DateTime.now();
-    final firstDate = now;
     final selectedDate = await showDatePicker(
       context: context,
       initialDate: _scheduledAt ?? now.add(const Duration(hours: 1)),
-      firstDate: firstDate,
+      firstDate: now,
       lastDate: now.add(const Duration(days: 30)),
     );
     if (selectedDate == null || !mounted) return;
@@ -214,6 +296,42 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     ));
   }
 
+  void _setPassengerFareType(String value) {
+    setState(() {
+      _passengerFareType = value;
+      _applyOfficialFares();
+    });
+  }
+
+  void _setSharedPassengerCount(int value) {
+    final next = value.clamp(2, 6).toInt();
+    if (_sharedPassengerCount == next &&
+        _sharedPassengerController.text == next.toString()) {
+      return;
+    }
+    setState(() {
+      _sharedPassengerCount = next;
+      _sharedPassengerController.text = next.toString();
+      _sharedPassengerController.selection = TextSelection.collapsed(
+        offset: _sharedPassengerController.text.length,
+      );
+      _applyOfficialFares();
+    });
+  }
+
+  void _handleSharedPassengerInput(String value) {
+    final parsed = int.tryParse(value);
+    if (parsed == null) return;
+    if (parsed < 2 || parsed > 6) {
+      _setSharedPassengerCount(parsed);
+      return;
+    }
+    setState(() {
+      _sharedPassengerCount = parsed;
+      _applyOfficialFares();
+    });
+  }
+
   String _formatSchedule(DateTime? value) {
     if (value == null) return 'Select pickup time';
     final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
@@ -228,364 +346,525 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(children: [
-          // ── Header ────────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Row(children: [
-              GestureDetector(
-                onTap: () => Navigator.of(context).pop(),
-                child: Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF5F5F5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.arrow_back_ios_rounded,
-                      color: AppColors.backgroundDark, size: 18),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Select Service',
-                    style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.backgroundDark,
-                    )),
-                Text('Choose your ride type',
-                    style: GoogleFonts.poppins(
-                      fontSize: 12,
-                      color: AppColors.textHint,
-                    )),
-              ]),
-              const Spacer(),
-              // Online drivers count badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: _onlineDrivers.isNotEmpty
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _onlineDrivers.isNotEmpty
-                        ? Colors.green.withOpacity(0.4)
-                        : Colors.orange.withOpacity(0.4),
-                  ),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: 7,
-                    height: 7,
-                    decoration: BoxDecoration(
-                      color: _onlineDrivers.isNotEmpty
-                          ? Colors.green
-                          : Colors.orange,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _driversLoaded
-                        ? '${_onlineDrivers.length} online'
-                        : 'Loading...',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: _onlineDrivers.isNotEmpty
-                          ? Colors.green
-                          : Colors.orange,
-                    ),
-                  ),
-                ]),
-              ),
-            ]).animate().fadeIn(duration: 400.ms),
-          ),
-
-          const SizedBox(height: 20),
-
-          // ── Service cards ─────────────────────────────────────────────────
+          _buildHeader(),
+          const SizedBox(height: 14),
           Expanded(
-            child: ListView.builder(
+            child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: _services.length,
-              itemBuilder: (_, i) {
-                final s = _services[i];
-                final isSelected = _selected == i;
-                return GestureDetector(
-                  onTap: () => setState(() => _selected = i),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    margin: const EdgeInsets.only(bottom: 14),
-                    padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.backgroundDark
-                          : const Color(0xFFF8F9FA),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color:
-                            isSelected ? AppColors.primary : Colors.transparent,
-                        width: 2,
-                      ),
-                    ),
-                    child: Row(children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppColors.primary
-                              : const Color(0xFFE8EDF2),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Icon(s['icon'] as IconData,
-                            color: AppColors.backgroundDark, size: 26),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                          child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            Text(s['name'] as String,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: isSelected
-                                      ? Colors.white
-                                      : AppColors.backgroundDark,
-                                )),
-                            if (s['premium'] == true) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text('PREMIUM',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.w800,
-                                      color: AppColors.backgroundDark,
-                                    )),
-                              ),
-                            ],
-                          ]),
-                          Text(s['subtitle'] as String,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: isSelected
-                                    ? Colors.white54
-                                    : AppColors.textHint,
-                              )),
-                          const SizedBox(height: 8),
-                          Row(children: [
-                            _badge(Icons.person_outline_rounded,
-                                s['passengers'] as String, isSelected),
-                            const SizedBox(width: 8),
-                            _badge(Icons.schedule_rounded,
-                                'Arrives ${s['eta']}', isSelected,
-                                green: true),
-                          ]),
-                        ],
-                      )),
-                      Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Text(s['priceLabel'] as String,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w800,
-                                  color: isSelected
-                                      ? AppColors.primary
-                                      : AppColors.backgroundDark,
-                                )),
-                            if (!_driversLoaded)
-                              const SizedBox(
-                                width: 12,
-                                height: 12,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2, color: AppColors.primary),
-                              )
-                            else
-                              Text('${_onlineDrivers.length} available',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 10,
-                                    color: _onlineDrivers.isNotEmpty
-                                        ? Colors.green
-                                        : Colors.orange,
-                                    fontWeight: FontWeight.w600,
-                                  )),
-                          ]),
-                    ]),
-                  ),
-                ).animate().fadeIn(
-                    delay: Duration(milliseconds: 100 + i * 80),
-                    duration: 400.ms);
-              },
+              children: [
+                _fareControls().animate().fadeIn(duration: 350.ms),
+                const SizedBox(height: 14),
+                ...List.generate(_services.length, (i) {
+                  return _serviceCard(i).animate().fadeIn(
+                        delay: Duration(milliseconds: 100 + i * 80),
+                        duration: 400.ms,
+                      );
+                }),
+              ],
             ),
           ),
+          _bottomConfirmSection(),
+        ]),
+      ),
+    );
+  }
 
-          // ── Bottom confirm section ────────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+  Widget _buildHeader() => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+        child: Row(children: [
+          GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F5F5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.arrow_back_ios_rounded,
+                  color: AppColors.backgroundDark, size: 18),
             ),
-            child: Column(children: [
-              // No drivers warning
-              if (_driversLoaded && _onlineDrivers.isEmpty)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.warning_rounded,
-                        color: Colors.orange, size: 18),
-                    const SizedBox(width: 8),
-                    Expanded(
-                        child: Text(
-                      'No drivers online right now. Try again in a few minutes.',
-                      style: GoogleFonts.poppins(
-                          fontSize: 12, color: Colors.orange[800]),
-                    )),
-                    GestureDetector(
-                      onTap: _loadOnlineDrivers,
-                      child: Text('Retry',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.orange,
-                          )),
-                    ),
-                  ]),
-                ),
-
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F2F5),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(children: [
-                  _scheduleModeButton('Ride Now', Icons.bolt_rounded, false),
-                  _scheduleModeButton(
-                      'Schedule', Icons.event_available_rounded, true),
-                ]),
+          ),
+          const SizedBox(width: 14),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Select Service',
+                style: GoogleFonts.poppins(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+            Text('Choose your ride type',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: AppColors.textHint,
+                )),
+          ]),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: _onlineDrivers.isNotEmpty
+                  ? Colors.green.withOpacity(0.1)
+                  : Colors.orange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _onlineDrivers.isNotEmpty
+                    ? Colors.green.withOpacity(0.4)
+                    : Colors.orange.withOpacity(0.4),
               ),
-              if (_isScheduled) ...[
-                const SizedBox(height: 10),
-                GestureDetector(
-                  onTap: _pickSchedule,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFBF0),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.primary.withOpacity(0.35)),
-                    ),
-                    child: Row(children: [
-                      const Icon(Icons.notifications_active_rounded,
-                          color: AppColors.primary, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _formatSchedule(_scheduledAt),
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            color: AppColors.backgroundDark,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      Text('Change',
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w700,
-                          )),
-                    ]),
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 12),
-
-              // Destination row
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                width: 7,
+                height: 7,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF8F9FA),
-                  borderRadius: BorderRadius.circular(12),
+                  color:
+                      _onlineDrivers.isNotEmpty ? Colors.green : Colors.orange,
+                  shape: BoxShape.circle,
                 ),
-                child: Row(children: [
-                  const Icon(Icons.location_on_rounded,
-                      color: AppColors.primary, size: 18),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: Text(
-                    'To: ${widget.destinationName}',
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      color: AppColors.backgroundDark,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  )),
-                  Text('Change',
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600,
-                      )),
-                ]),
               ),
-
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: _isLoading ? null : _confirmRide,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.backgroundDark,
-                    disabledBackgroundColor:
-                        AppColors.backgroundDark.withOpacity(0.5),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    elevation: 0,
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.5, color: Colors.white))
-                      : Text(_isScheduled ? 'Reserve Ride' : 'Find a Driver',
-                          style: GoogleFonts.poppins(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white)),
+              const SizedBox(width: 5),
+              Text(
+                _driversLoaded
+                    ? '${_onlineDrivers.length} online'
+                    : 'Loading...',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color:
+                      _onlineDrivers.isNotEmpty ? Colors.green : Colors.orange,
                 ),
               ),
             ]),
           ),
         ]),
+      ).animate().fadeIn(duration: 400.ms);
+
+  Widget _fareControls() {
+    final fuel = _fareSettings.fuelPricePerLiter.toStringAsFixed(2);
+    final regular = PanaboFarePolicy.formatPeso(
+      PanaboFarePolicy.fareForDistanceKm(
+        0,
+        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      ),
+    );
+    final discounted = PanaboFarePolicy.formatPeso(
+      PanaboFarePolicy.fareForDistanceKm(
+        0,
+        discounted: true,
+        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(
+            child: Text('Fare Type',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ),
+          Text(
+            _fareSettingsLoaded ? 'Fuel PHP $fuel/L' : 'Loading fare rate',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textHint,
+            ),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            _fareTypeChip('regular', 'Regular'),
+            _fareTypeChip('student', 'Student'),
+            _fareTypeChip('senior', 'Senior'),
+            _fareTypeChip('pwd', 'PWD'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(children: [
+          _smallRateBadge('Regular', regular),
+          const SizedBox(width: 8),
+          _smallRateBadge('Discount', discounted),
+        ]),
+        if (_services[_selected]['id'] == 'shared') ...[
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: Text('Shared Passengers',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+            ),
+            SizedBox(
+              width: 116,
+              height: 42,
+              child: TextField(
+                controller: _sharedPassengerController,
+                keyboardType: TextInputType.number,
+                textAlign: TextAlign.center,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: _handleSharedPassengerInput,
+                decoration: InputDecoration(
+                  suffixText: 'pax',
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide:
+                        const BorderSide(color: AppColors.primary, width: 2),
+                  ),
+                ),
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ]),
+    );
+  }
+
+  Widget _fareTypeChip(String value, String label) {
+    final selected = _passengerFareType == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => _setPassengerFareType(value),
+      showCheckmark: false,
+      selectedColor: AppColors.backgroundDark,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? AppColors.backgroundDark : const Color(0xFFE8EDF2),
+      ),
+      labelStyle: GoogleFonts.poppins(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: selected ? Colors.white : AppColors.backgroundDark,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+  }
+
+  Widget _smallRateBadge(String label, String value) => Expanded(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE8EDF2)),
+          ),
+          child: Row(children: [
+            Text(label,
+                style: GoogleFonts.poppins(
+                  fontSize: 10,
+                  color: AppColors.textHint,
+                )),
+            const Spacer(),
+            Text(value,
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ]),
+        ),
+      );
+
+  Widget _serviceCard(int index) {
+    final service = _services[index];
+    final isSelected = _selected == index;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _selected = index;
+        _applyOfficialFares();
+      }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color:
+              isSelected ? AppColors.backgroundDark : const Color(0xFFF8F9FA),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : Colors.transparent,
+            width: 2,
+          ),
+        ),
+        child: Row(children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primary : const Color(0xFFE8EDF2),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(service['icon'] as IconData,
+                color: AppColors.backgroundDark, size: 26),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+              child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Flexible(
+                  child: Text(service['name'] as String,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: isSelected
+                            ? Colors.white
+                            : AppColors.backgroundDark,
+                      )),
+                ),
+                if (service['premium'] == true) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text('PREMIUM',
+                        style: GoogleFonts.poppins(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.backgroundDark,
+                        )),
+                  ),
+                ],
+              ]),
+              Text(service['subtitle'] as String,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: isSelected ? Colors.white54 : AppColors.textHint,
+                  )),
+              const SizedBox(height: 8),
+              Wrap(spacing: 8, runSpacing: 6, children: [
+                _badge(Icons.person_outline_rounded,
+                    service['passengers'] as String, isSelected),
+                _badge(Icons.schedule_rounded, 'Arrives ${service['eta']}',
+                    isSelected,
+                    green: true),
+              ]),
+            ],
+          )),
+          const SizedBox(width: 10),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(service['priceLabel'] as String,
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color:
+                      isSelected ? AppColors.primary : AppColors.backgroundDark,
+                )),
+            Text(service['priceSubLabel'] as String,
+                style: GoogleFonts.poppins(
+                  fontSize: 9,
+                  color: isSelected ? Colors.white54 : AppColors.textHint,
+                  fontWeight: FontWeight.w600,
+                )),
+            const SizedBox(height: 2),
+            if (!_driversLoaded)
+              const SizedBox(
+                width: 12,
+                height: 12,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: AppColors.primary),
+              )
+            else
+              Text('${_onlineDrivers.length} available',
+                  style: GoogleFonts.poppins(
+                    fontSize: 10,
+                    color: _onlineDrivers.isNotEmpty
+                        ? Colors.green
+                        : Colors.orange,
+                    fontWeight: FontWeight.w600,
+                  )),
+          ]),
+        ]),
       ),
     );
   }
+
+  Widget _bottomConfirmSection() => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xFFEEEEEE))),
+        ),
+        child: Column(children: [
+          if (_driversLoaded && _onlineDrivers.isEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.orange.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+              ),
+              child: Row(children: [
+                const Icon(Icons.warning_rounded,
+                    color: Colors.orange, size: 18),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(
+                  'No drivers online right now. Try again in a few minutes.',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: Colors.orange[800]),
+                )),
+                GestureDetector(
+                  onTap: _loadOnlineDrivers,
+                  child: Text('Retry',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.orange,
+                      )),
+                ),
+              ]),
+            ),
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F2F5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(children: [
+              _scheduleModeButton('Ride Now', Icons.bolt_rounded, false),
+              _scheduleModeButton(
+                  'Schedule', Icons.event_available_rounded, true),
+            ]),
+          ),
+          if (_isScheduled) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: _pickSchedule,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBF0),
+                  borderRadius: BorderRadius.circular(12),
+                  border:
+                      Border.all(color: AppColors.primary.withOpacity(0.35)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.notifications_active_rounded,
+                      color: AppColors.primary, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _formatSchedule(_scheduledAt),
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        color: AppColors.backgroundDark,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text('Change',
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700,
+                      )),
+                ]),
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FA),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(children: [
+              const Icon(Icons.location_on_rounded,
+                  color: AppColors.primary, size: 18),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(
+                'To: ${widget.destinationName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: AppColors.backgroundDark,
+                  fontWeight: FontWeight.w500,
+                ),
+              )),
+              Text('Change',
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  )),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _isLoading ? null : _confirmRide,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.backgroundDark,
+                disabledBackgroundColor:
+                    AppColors.backgroundDark.withOpacity(0.5),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+                elevation: 0,
+              ),
+              child: _isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Colors.white))
+                  : Text(_isScheduled ? 'Reserve Ride' : 'Find a Driver',
+                      style: GoogleFonts.poppins(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+            ),
+          ),
+        ]),
+      );
 
   Widget _badge(IconData icon, String label, bool dark, {bool green = false}) =>
       Row(mainAxisSize: MainAxisSize.min, children: [
