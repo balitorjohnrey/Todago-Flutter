@@ -8,6 +8,7 @@ import 'app_theme.dart';
 import 'service_selection_screen.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
+import 'fare_settings_service.dart';
 
 class DestinationPickerScreen extends StatefulWidget {
   const DestinationPickerScreen({super.key});
@@ -40,6 +41,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   StreamSubscription<LatLng>? _locSub;
   DateTime? _lastRouteRefresh;
   DateTime? _lastReverseGeocode;
+  FareSettings _fareSettings = const FareSettings();
 
   // ── Voice search ──────────────────────────────────────────────────────────
   final SpeechToText _speech = SpeechToText();
@@ -58,6 +60,13 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     )..repeat(reverse: true);
     _initLocation();
     _initSpeech();
+    _loadFareSettings();
+  }
+
+  Future<void> _loadFareSettings() async {
+    final settings = await FareSettingsService.fetchSettings();
+    if (!mounted) return;
+    setState(() => _fareSettings = settings);
   }
 
   @override
@@ -501,7 +510,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   }
 
   String _estimateFare(double km) =>
-      PanaboFarePolicy.fareForDistanceKm(km).toStringAsFixed(0);
+      _fareSettings.fareForDistanceKm(km).toStringAsFixed(0);
 
   @override
   Widget build(BuildContext context) {

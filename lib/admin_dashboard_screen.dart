@@ -23,20 +23,31 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Map<String, dynamic> _stats = {};
   List<Map<String, dynamic>> _drivers = [];
   FareSettings _fareSettings = const FareSettings();
+
   late final TextEditingController _fuelPriceController;
+  late final TextEditingController _premiumPercentController;
+  List<TextEditingController> _regularFareControllers = [];
+  List<TextEditingController> _discountFareControllers = [];
 
   @override
   void initState() {
     super.initState();
-    _fuelPriceController = TextEditingController(
-      text: _fareSettings.fuelPricePerLiter.toStringAsFixed(2),
-    );
+    _fuelPriceController = TextEditingController();
+    _premiumPercentController = TextEditingController();
+    _syncFareControllers(_fareSettings, disposeExisting: false);
     _load();
   }
 
   @override
   void dispose() {
     _fuelPriceController.dispose();
+    _premiumPercentController.dispose();
+    for (final controller in _regularFareControllers) {
+      controller.dispose();
+    }
+    for (final controller in _discountFareControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
@@ -59,8 +70,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _drivers = (results[1] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
         _fareSettings = fareSettings;
-        _fuelPriceController.text =
-            fareSettings.fuelPricePerLiter.toStringAsFixed(2);
+        _syncFareControllers(fareSettings);
       });
     } catch (_) {
       if (!mounted) return;
@@ -70,25 +80,77 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
+  void _syncFareControllers(
+    FareSettings settings, {
+    bool disposeExisting = true,
+  }) {
+    if (disposeExisting) {
+      for (final controller in _regularFareControllers) {
+        controller.dispose();
+      }
+      for (final controller in _discountFareControllers) {
+        controller.dispose();
+      }
+    }
+    _fuelPriceController.text = settings.fuelPricePerLiter.toStringAsFixed(2);
+    _premiumPercentController.text =
+        ((settings.premiumMultiplier - 1) * 100).toStringAsFixed(0);
+    _regularFareControllers = settings.fareBands
+        .map((band) => TextEditingController(
+              text: _numberText(band.regularFare),
+            ))
+        .toList();
+    _discountFareControllers = settings.fareBands
+        .map((band) => TextEditingController(
+              text: _numberText(band.discountedFare),
+            ))
+        .toList();
+  }
+
   Future<void> _saveFareSettings() async {
     final fuelPrice = double.tryParse(_fuelPriceController.text.trim());
-    if (fuelPrice == null || fuelPrice < 20) {
+    final premiumPercent =
+        double.tryParse(_premiumPercentController.text.trim());
+    if (fuelPrice == null || fuelPrice < 0) {
       _showSnack('Enter a valid gasoline price.', AppColors.error);
       return;
+    }
+    if (premiumPercent == null || premiumPercent < 0 || premiumPercent > 200) {
+      _showSnack('Enter a premium increase from 0 to 200%.', AppColors.error);
+      return;
+    }
+
+    final fareBands = <Map<String, dynamic>>[];
+    for (var i = 0; i < _fareSettings.fareBands.length; i++) {
+      final source = _fareSettings.fareBands[i];
+      final regularFare =
+          double.tryParse(_regularFareControllers[i].text.trim());
+      final discountFare =
+          double.tryParse(_discountFareControllers[i].text.trim());
+      if (regularFare == null || discountFare == null) {
+        _showSnack('Complete every fare band before saving.', AppColors.error);
+        return;
+      }
+      fareBands.add({
+        'minFuelPrice': source.minFuelPrice,
+        'maxFuelPrice': source.maxFuelPrice,
+        'regularFare': regularFare,
+        'discountedFare': discountFare,
+      });
     }
 
     setState(() => _isSavingFare = true);
     final result = await AdminAuthService.updateFareSettings(
       fuelPricePerLiter: fuelPrice,
-      premiumMultiplier: _fareSettings.premiumMultiplier,
+      premiumMultiplier: 1 + (premiumPercent / 100),
+      fareBands: fareBands,
     );
     if (!mounted) return;
     setState(() {
       _isSavingFare = false;
       if (result.success && result.fareSettings != null) {
         _fareSettings = result.fareSettings!;
-        _fuelPriceController.text =
-            _fareSettings.fuelPricePerLiter.toStringAsFixed(2);
+        _syncFareControllers(_fareSettings);
       }
     });
     _showSnack(
@@ -145,6 +207,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (value is int) return value;
     if (value is double) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _numberText(double value) {
+    if ((value - value.round()).abs() < 0.001) return value.toStringAsFixed(0);
+    return value.toStringAsFixed(2);
   }
 
   String _fuelRangeLabel(PanaboFareBand band) {
@@ -245,6 +312,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
           _fareCard(),
@@ -274,22 +342,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget _fareCard() {
     final band = _fareSettings.band;
     final regular = PanaboFarePolicy.formatPeso(
-      PanaboFarePolicy.fareForDistanceKm(
-        0,
-        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
-      ),
+      _fareSettings.fareForDistanceKm(0),
     );
     final discounted = PanaboFarePolicy.formatPeso(
-      PanaboFarePolicy.fareForDistanceKm(
-        0,
-        discounted: true,
-        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
-      ),
+      _fareSettings.fareForDistanceKm(0, discounted: true),
     );
     final premium = PanaboFarePolicy.formatPeso(
-      PanaboFarePolicy.fareForDistanceKm(
+      _fareSettings.fareForDistanceKm(
         0,
-        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
         premiumMultiplier: _fareSettings.premiumMultiplier,
       ),
     );
@@ -325,75 +385,170 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           _pill('ADMIN', AppColors.primary),
         ]),
         const SizedBox(height: 14),
-        Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Expanded(
-            child: TextField(
-              controller: _fuelPriceController,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
-              ],
-              decoration: InputDecoration(
-                labelText: 'Gasoline Price / Liter',
-                prefixText: 'PHP ',
-                filled: true,
-                fillColor: const Color(0xFFF8F9FA),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: AppColors.primary, width: 2),
-                ),
-              ),
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: AppColors.backgroundDark,
+        _fareSettingFields(),
+        const SizedBox(height: 12),
+        _meta('Active Fuel Band', _fuelRangeLabel(band)),
+        _meta('Regular Fare', regular),
+        _meta('Student/Senior/PWD', discounted),
+        _meta('Toda-Express', '$premium (+${_premiumPercentLabel()}%)'),
+        const Divider(height: 24, color: Color(0xFFE8EDF2)),
+        Text('Fuel Band Rates',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: AppColors.backgroundDark,
+            )),
+        const SizedBox(height: 8),
+        ...List.generate(
+          _fareSettings.fareBands.length,
+          (index) => _fareBandRow(index),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton.icon(
+            onPressed: _isSavingFare ? null : _saveFareSettings,
+            icon: _isSavingFare
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Icon(Icons.save_rounded, size: 18),
+            label: Text('Save Fare Table',
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w800)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.backgroundDark,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          SizedBox(
-            height: 52,
-            child: ElevatedButton(
-              onPressed: _isSavingFare ? null : _saveFareSettings,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.backgroundDark,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: _isSavingFare
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : Text('Save',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w800)),
+        ),
+      ]),
+    );
+  }
+
+  Widget _fareSettingFields() {
+    return LayoutBuilder(builder: (context, constraints) {
+      final compact = constraints.maxWidth < 420;
+      final fields = [
+        _numberField(
+          controller: _fuelPriceController,
+          label: 'Gasoline Price / Liter',
+          suffix: 'PHP',
+        ),
+        _numberField(
+          controller: _premiumPercentController,
+          label: 'Toda-Express Increase',
+          suffix: '%',
+        ),
+      ];
+      if (compact) {
+        return Column(children: [
+          fields[0],
+          const SizedBox(height: 10),
+          fields[1],
+        ]);
+      }
+      return Row(children: [
+        Expanded(child: fields[0]),
+        const SizedBox(width: 10),
+        Expanded(child: fields[1]),
+      ]);
+    });
+  }
+
+  Widget _fareBandRow(int index) {
+    final band = _fareSettings.fareBands[index];
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF0F2F5))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(_fuelRangeLabel(band),
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.backgroundDark,
+            )),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(
+            child: _numberField(
+              controller: _regularFareControllers[index],
+              label: 'Regular',
+              suffix: 'PHP',
+              compact: true,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: _numberField(
+              controller: _discountFareControllers[index],
+              label: 'Student/Senior/PWD',
+              suffix: 'PHP',
+              compact: true,
             ),
           ),
         ]),
-        const SizedBox(height: 12),
-        _meta('Fuel Band', _fuelRangeLabel(band)),
-        _meta('Regular', regular),
-        _meta('Student/Senior/PWD', discounted),
-        _meta('Toda-Express', '$premium (+30%)'),
       ]),
     );
+  }
+
+  Widget _numberField({
+    required TextEditingController controller,
+    required String label,
+    required String suffix,
+    bool compact = false,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      inputFormatters: [
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+      ],
+      decoration: InputDecoration(
+        labelText: label,
+        suffixText: suffix,
+        isDense: compact,
+        filled: true,
+        fillColor: const Color(0xFFF8F9FA),
+        contentPadding: EdgeInsets.symmetric(
+          horizontal: 12,
+          vertical: compact ? 10 : 14,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.primary, width: 2),
+        ),
+      ),
+      style: GoogleFonts.poppins(
+        fontSize: compact ? 13 : 14,
+        fontWeight: FontWeight.w700,
+        color: AppColors.backgroundDark,
+      ),
+    );
+  }
+
+  String _premiumPercentLabel() {
+    final percent = (_fareSettings.premiumMultiplier * 100) - 100;
+    return percent.toStringAsFixed(percent.roundToDouble() == percent ? 0 : 1);
   }
 
   Widget _emptyDriversCard() => Container(

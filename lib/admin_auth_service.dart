@@ -165,6 +165,7 @@ class AdminAuthService {
   static Future<AdminAuthResponse> updateFareSettings({
     required double fuelPricePerLiter,
     double premiumMultiplier = 1.30,
+    List<Map<String, dynamic>>? fareBands,
   }) async {
     try {
       final response = await http
@@ -174,6 +175,7 @@ class AdminAuthService {
             body: jsonEncode({
               'fuelPricePerLiter': fuelPricePerLiter,
               'premiumMultiplier': premiumMultiplier,
+              if (fareBands != null) 'fareBands': fareBands,
             }),
           )
           .timeout(const Duration(seconds: 15));

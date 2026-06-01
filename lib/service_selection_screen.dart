@@ -145,21 +145,18 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     final distanceKm = widget.distanceKm ?? 0;
     final eta = widget.etaMinutes ??
         PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm);
-    final individualFare = PanaboFarePolicy.fareForDistanceKm(
+    final individualFare = _fareSettings.fareForDistanceKm(
       distanceKm,
       discounted: _discountedPassenger,
-      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
     );
-    final premiumFare = PanaboFarePolicy.fareForDistanceKm(
+    final premiumFare = _fareSettings.fareForDistanceKm(
       distanceKm,
       discounted: _discountedPassenger,
-      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
       premiumMultiplier: _fareSettings.premiumMultiplier,
     );
-    final sharedFare = PanaboFarePolicy.fareForDistanceKm(
+    final sharedFare = _fareSettings.fareForDistanceKm(
       distanceKm,
       discounted: _discountedPassenger,
-      fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
       passengerCount: _sharedPassengerCount,
     );
 
@@ -443,16 +440,14 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   Widget _fareControls() {
     final fuel = _fareSettings.fuelPricePerLiter.toStringAsFixed(2);
     final regular = PanaboFarePolicy.formatPeso(
-      PanaboFarePolicy.fareForDistanceKm(
+      _fareSettings.fareForDistanceKm(
         0,
-        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
       ),
     );
     final discounted = PanaboFarePolicy.formatPeso(
-      PanaboFarePolicy.fareForDistanceKm(
+      _fareSettings.fareForDistanceKm(
         0,
         discounted: true,
-        fuelPricePerLiter: _fareSettings.fuelPricePerLiter,
       ),
     );
     return Container(

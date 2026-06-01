@@ -31,7 +31,6 @@ class PanaboFareBand {
 
 class PanaboFarePolicy {
   static const double firstSegmentKm = 3.0;
-  static const double regularMinimumFare = 15.0;
   static const double defaultFuelPricePerLiter = 80.0;
   static const double defaultPremiumMultiplier = 1.30;
   static const double extraKmFare = 5.0;
@@ -112,9 +111,7 @@ class PanaboFarePolicy {
   }) {
     final band = bandForFuelPrice(fuelPricePerLiter);
     final postedFare = discounted ? band.discountedFare : band.regularFare;
-    final baseFare = discounted
-        ? postedFare
-        : math.max(regularMinimumFare, postedFare).toDouble();
+    final baseFare = postedFare;
     final extraDistance = math.max(0.0, distanceKm - firstSegmentKm);
     final extraFare =
         extraDistance == 0 ? 0.0 : extraKmFare * extraDistance.ceil();
