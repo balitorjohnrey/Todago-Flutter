@@ -55,8 +55,27 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
     return int.tryParse(v.toString()) ?? fallback;
   }
 
+  static double? _tryDouble(dynamic v) {
+    if (v == null) return null;
+    if (v is double) return v;
+    if (v is int) return v.toDouble();
+    return double.tryParse(v.toString());
+  }
+
+  static int? _tryInt(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    return int.tryParse(v.toString());
+  }
+
   Map<String, dynamic> get _selectedDriver => widget.onlineDrivers[_selected];
   bool get _isScheduled => widget.scheduledAt != null;
+
+  String _etaText(Map<String, dynamic> driver) {
+    final eta = _tryInt(driver['eta_minutes']);
+    return eta == null ? 'Locating driver' : '$eta min away';
+  }
 
   String _normalizeServiceType(String raw) {
     final s = raw.toLowerCase().replaceAll(RegExp(r'[-\s]'), '');
@@ -139,8 +158,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
           driverRating: _safeDouble(_selectedDriver['avg_rating'], 0.0),
           todaBodyNumber: _selectedDriver['toda_body_number']?.toString() ?? '',
           plateNo: _selectedDriver['plate_no']?.toString() ?? '',
-          etaMinutes: _safeInt(_selectedDriver['eta_minutes'], 5),
-          distanceKm: _safeDouble(_selectedDriver['distance_km'], 1.0),
+          etaMinutes: _tryInt(_selectedDriver['eta_minutes']),
+          distanceKm: _tryDouble(_selectedDriver['distance_km']),
           destination: widget.destinationName,
           fare: widget.fareAmount,
           destinationLatLng: widget.destinationLatLng,
@@ -271,8 +290,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       .join();
                   final rating = _safeDouble(d['avg_rating'], 0.0);
                   final trips = _safeInt(d['total_trips'], 0);
-                  final eta = _safeInt(d['eta_minutes'], 5);
-                  final dist = _safeDouble(d['distance_km'], 1.0);
+                  final eta = _tryInt(d['eta_minutes']);
+                  final dist = _tryDouble(d['distance_km']);
                   final assoc = d['association_code']?.toString() ??
                       d['toda_body_number']?.toString() ??
                       '';
@@ -358,7 +377,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                             ]),
                             const SizedBox(height: 8),
                             Row(children: [
-                              Text('$eta min',
+                              Text(eta == null ? 'Locating' : '$eta min',
                                   style: GoogleFonts.poppins(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700,
@@ -369,7 +388,9 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                                       fontSize: 11, color: AppColors.textHint)),
                               Flexible(
                                   child: Text(
-                                '${dist.toStringAsFixed(1)} km',
+                                dist == null
+                                    ? 'GPS pending'
+                                    : '${dist.toStringAsFixed(1)} km',
                                 style: GoogleFonts.poppins(
                                   fontSize: 11,
                                   fontWeight: FontWeight.w700,
@@ -429,8 +450,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       'Pickup Time', _formatSchedule(widget.scheduledAt)),
                 ],
                 const SizedBox(height: 6),
-                _summaryRow('ETA',
-                    '${_safeInt(_selectedDriver['eta_minutes'], 5)} min away'),
+                _summaryRow('ETA', _etaText(_selectedDriver)),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 10),
                   child: Divider(color: Color(0xFFF0F0F0), height: 1),

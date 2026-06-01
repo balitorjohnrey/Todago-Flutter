@@ -265,7 +265,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     _locSub?.cancel();
     _routeRefreshTimer?.cancel();
     _tripPollTimer?.cancel();
-    await TripService.updateDriverStatus('online');
+    await TripService.updateDriverStatus('online', location: _myLocation);
     if (!mounted) return;
     await showDialog(
       context: context,

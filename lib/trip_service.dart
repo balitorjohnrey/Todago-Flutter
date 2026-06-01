@@ -273,7 +273,10 @@ class TripService {
     }
   }
 
-  static Future<bool> updateDriverStatus(String status) async {
+  static Future<bool> updateDriverStatus(
+    String status, {
+    LatLng? location,
+  }) async {
     try {
       final token = await _getDriverToken();
       final response = await http
@@ -281,7 +284,11 @@ class TripService {
             Uri.parse(
                 'https://todago-backend-production.up.railway.app/api/driver/status'),
             headers: _headers(token),
-            body: jsonEncode({'status': status}),
+            body: jsonEncode({
+              'status': status,
+              if (location != null) 'lat': location.latitude,
+              if (location != null) 'lng': location.longitude,
+            }),
           )
           .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
@@ -291,7 +298,32 @@ class TripService {
     }
   }
 
-  // ── Passenger: get active trip ────────────────────────────────────────────
+  // Driver: refresh online GPS point used for matching.
+  static Future<bool> updateOnlineDriverLocation(LatLng location) async {
+    try {
+      final token = await _getDriverToken();
+      final response = await http
+          .put(
+            Uri.parse(
+                'https://todago-backend-production.up.railway.app/api/driver/location'),
+            headers: _headers(token),
+            body: jsonEncode({
+              'lat': location.latitude,
+              'lng': location.longitude,
+            }),
+          )
+          .timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return data['success'] == true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Passenger: get active trip.
   static Future<Map<String, dynamic>?> getActiveTrip() async {
     try {
       final token = await _getPassengerToken();

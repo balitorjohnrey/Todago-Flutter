@@ -17,8 +17,8 @@ class LiveTripTrackingScreen extends StatefulWidget {
   final String todaBodyNumber;
   final String plateNo;
   final String? driverPhone;
-  final int etaMinutes;
-  final double distanceKm;
+  final int? etaMinutes;
+  final double? distanceKm;
   final String? destination;
   final double? fare;
 
@@ -73,8 +73,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   Timer? _routeRefreshTimer;
   StreamSubscription<LatLng>? _locSub;
 
-  int get _liveEta => _route?.etaMinutes ?? widget.etaMinutes;
-  double get _liveDist => _route?.distanceKm ?? widget.distanceKm;
+  int? get _liveEta => _route?.etaMinutes ?? widget.etaMinutes;
+  double? get _liveDist => _route?.distanceKm ?? widget.distanceKm;
+  String get _liveEtaText => _liveEta == null ? 'Locating' : '$_liveEta min';
+  String get _liveDistText =>
+      _liveDist == null ? 'GPS pending' : '${_liveDist!.toStringAsFixed(1)} km';
 
   @override
   void initState() {
@@ -641,13 +644,13 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   child: Row(children: [
                     _etaItem(
                       _phase == 'riding' ? 'To Destination' : 'ETA',
-                      '$_liveEta min',
+                      _liveEtaText,
                       Icons.schedule_rounded,
                     ),
                     const SizedBox(width: 24),
                     _etaItem(
                       'Distance',
-                      '${_liveDist.toStringAsFixed(1)} km',
+                      _liveDistText,
                       Icons.straighten_rounded,
                     ),
                     const Spacer(),

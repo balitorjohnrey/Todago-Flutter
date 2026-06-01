@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'driver_auth_service.dart';
+import 'map_service.dart';
 import 'trip_service.dart';
 import 'splash_screen.dart';
 import 'ride_request_screen.dart';
@@ -41,6 +43,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   Timer? _scheduledSyncTimer;
   Timer? _statsTimer;
   Timer? _onlineTickTimer;
+  Timer? _locationRefreshTimer;
+  StreamSubscription<LatLng>? _locationSyncSub;
+  DateTime? _lastLocationSync;
+  bool _isLocationSyncing = false;
 
   @override
   void initState() {
@@ -75,8 +81,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       });
       if (_isOnline) {
         _startPolling();
+        _startOnlineLocationSync();
       } else {
         _stopPolling();
+        _stopOnlineLocationSync();
       }
     }
   }
@@ -86,7 +94,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     if (_isUpdating) return;
     setState(() => _isUpdating = true);
     final newStatus = _isOnline ? 'offline' : 'online';
-    final ok = await TripService.updateDriverStatus(newStatus);
+    final onlineLocation =
+        newStatus == 'online' ? await MapService.getCurrentLocation() : null;
+    final ok = await TripService.updateDriverStatus(newStatus,
+        location: onlineLocation);
     if (!mounted) return;
     setState(() => _isUpdating = false);
     if (ok) {
@@ -94,9 +105,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       await _loadTodayStats();
       if (_isOnline) {
         _startPolling();
+        _startOnlineLocationSync(initialLocation: onlineLocation);
         _snack('You are now ONLINE 🟢 — waiting for passengers', Colors.green);
       } else {
         _stopPolling();
+        _stopOnlineLocationSync();
         _snack('You are now OFFLINE', Colors.grey[700]!);
       }
     } else {
@@ -116,6 +129,66 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   void _stopPolling() {
     _pollTimer?.cancel();
     _pollTimer = null;
+  }
+
+  void _startOnlineLocationSync({LatLng? initialLocation}) {
+    _locationSyncSub?.cancel();
+    _locationRefreshTimer?.cancel();
+    _lastLocationSync = null;
+
+    if (initialLocation != null) {
+      _syncOnlineLocation(initialLocation, force: true);
+    } else {
+      MapService.getCurrentLocation().then((pos) {
+        if (mounted && _isOnline && pos != null) {
+          _syncOnlineLocation(pos, force: true);
+        }
+      });
+    }
+
+    _locationSyncSub = MapService.positionStream().listen(
+      (pos) => _syncOnlineLocation(pos),
+      onError: (_) {},
+    );
+    _locationRefreshTimer = Timer.periodic(const Duration(seconds: 60), (_) {
+      if (!mounted || !_isOnline) return;
+      MapService.getCurrentLocation().then((pos) {
+        if (mounted && _isOnline && pos != null) {
+          _syncOnlineLocation(pos, force: true);
+        }
+      });
+    });
+  }
+
+  void _stopOnlineLocationSync() {
+    _locationRefreshTimer?.cancel();
+    _locationRefreshTimer = null;
+    _locationSyncSub?.cancel();
+    _locationSyncSub = null;
+    _lastLocationSync = null;
+    _isLocationSyncing = false;
+  }
+
+  Future<void> _syncOnlineLocation(
+    LatLng pos, {
+    bool force = false,
+  }) async {
+    if (!_isOnline || _isLocationSyncing) return;
+
+    final now = DateTime.now();
+    if (!force &&
+        _lastLocationSync != null &&
+        now.difference(_lastLocationSync!) < const Duration(seconds: 20)) {
+      return;
+    }
+
+    _lastLocationSync = now;
+    _isLocationSyncing = true;
+    try {
+      await TripService.updateOnlineDriverLocation(pos);
+    } finally {
+      _isLocationSyncing = false;
+    }
   }
 
   Future<void> _checkForRide() async {
@@ -213,6 +286,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
 
   Future<void> _logout() async {
     _stopPolling();
+    _stopOnlineLocationSync();
     if (_isOnline) await TripService.updateDriverStatus('offline');
     await DriverAuthService.logout();
     if (!mounted) return;
@@ -242,6 +316,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _statsTimer?.cancel();
     _onlineTickTimer?.cancel();
     _stopPolling();
+    _stopOnlineLocationSync();
     _pulse.dispose();
     super.dispose();
   }
