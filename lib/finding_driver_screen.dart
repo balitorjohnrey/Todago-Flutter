@@ -12,6 +12,12 @@ class FindingDriverScreen extends StatefulWidget {
   final double fareAmount;
   final int passengerCount;
   final String passengerFareType;
+  final double otherFeeAmount;
+  final String? otherFeeLabel;
+  final String? bookingNotes;
+  final String? pickupItemDescription;
+  final String? pickupItemWeight;
+  final List<Map<String, dynamic>>? sharedDropoffs;
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
@@ -26,6 +32,12 @@ class FindingDriverScreen extends StatefulWidget {
     required this.fareAmount,
     this.passengerCount = 1,
     this.passengerFareType = 'regular',
+    this.otherFeeAmount = 0,
+    this.otherFeeLabel,
+    this.bookingNotes,
+    this.pickupItemDescription,
+    this.pickupItemWeight,
+    this.sharedDropoffs,
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Destination',
@@ -81,6 +93,12 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
           fareAmount: widget.fareAmount,
           passengerCount: widget.passengerCount,
           passengerFareType: widget.passengerFareType,
+          otherFeeAmount: widget.otherFeeAmount,
+          otherFeeLabel: widget.otherFeeLabel,
+          bookingNotes: widget.bookingNotes,
+          pickupItemDescription: widget.pickupItemDescription,
+          pickupItemWeight: widget.pickupItemWeight,
+          sharedDropoffs: widget.sharedDropoffs,
           onlineDrivers: widget.onlineDrivers,
           pickupName: widget.pickupName,
           destinationName: widget.destinationName,

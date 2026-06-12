@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'fare_settings_service.dart';
 import 'finding_driver_screen.dart';
+import 'map_service.dart';
 import 'panabo_config.dart';
 import 'trip_service.dart';
 
@@ -46,6 +47,15 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   String _passengerFareType = 'regular';
   int _sharedPassengerCount = 2;
   late final TextEditingController _sharedPassengerController;
+  late final TextEditingController _otherFeeController;
+  late final TextEditingController _pickupItemController;
+  late final TextEditingController _pickupWeightController;
+  late final TextEditingController _driverNoteController;
+  double _otherFeeAmount = 0;
+  String? _otherFeeLabel;
+  bool _differentDropoffs = false;
+  List<String> _dropoffNames = [];
+  List<LatLng?> _dropoffPoints = [];
 
   final List<Map<String, dynamic>> _services = [
     {
@@ -84,7 +94,21 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       'eta': '3 min',
       'premium': true,
     },
+    {
+      'id': 'pickup',
+      'name': 'Pick-up',
+      'subtitle': 'Send the driver to pick up an item',
+      'icon': Icons.inventory_2_rounded,
+      'passengers': 'Items only',
+      'price': 0.0,
+      'priceLabel': 'PHP 0',
+      'priceSubLabel': 'Heavy items can add fees',
+      'eta': '3 min',
+      'premium': false,
+    },
   ];
+
+  String get _selectedServiceId => _services[_selected]['id'] as String;
 
   bool get _discountedPassenger => _passengerFareType != 'regular';
 
@@ -106,6 +130,11 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     super.initState();
     _sharedPassengerController =
         TextEditingController(text: _sharedPassengerCount.toString());
+    _otherFeeController = TextEditingController();
+    _pickupItemController = TextEditingController();
+    _pickupWeightController = TextEditingController();
+    _driverNoteController = TextEditingController();
+    _syncSharedDropoffs();
     _applyInitialServiceType();
     _applyOfficialFares();
     _loadFareSettings();
@@ -115,6 +144,10 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   @override
   void dispose() {
     _sharedPassengerController.dispose();
+    _otherFeeController.dispose();
+    _pickupItemController.dispose();
+    _pickupWeightController.dispose();
+    _driverNoteController.dispose();
     super.dispose();
   }
 
@@ -164,20 +197,31 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       final id = service['id'] as String;
       service['eta'] = '$eta min';
       if (id == 'shared') {
-        service['price'] = sharedFare;
-        service['priceLabel'] = PanaboFarePolicy.formatPeso(sharedFare);
+        final total = sharedFare + _otherFeeAmount;
+        service['price'] = total;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(total);
         service['priceSubLabel'] =
             '${PanaboFarePolicy.formatPeso(individualFare)} each';
         service['passengers'] = '$_sharedPassengerCount passengers';
       } else if (id == 'express') {
-        service['price'] = premiumFare;
-        service['priceLabel'] = PanaboFarePolicy.formatPeso(premiumFare);
+        final total = premiumFare + _otherFeeAmount;
+        service['price'] = total;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(total);
         service['priceSubLabel'] =
             '${(_fareSettings.premiumMultiplier * 100 - 100).toStringAsFixed(0)}% premium';
         service['passengers'] = '1 passenger';
+      } else if (id == 'pickup') {
+        final total = individualFare + _otherFeeAmount;
+        service['price'] = total;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(total);
+        service['priceSubLabel'] = _otherFeeAmount > 0
+            ? 'Includes ${PanaboFarePolicy.formatPeso(_otherFeeAmount)} item fee'
+            : 'Regular pickup rate';
+        service['passengers'] = 'Item pick-up';
       } else {
-        service['price'] = individualFare;
-        service['priceLabel'] = PanaboFarePolicy.formatPeso(individualFare);
+        final total = individualFare + _otherFeeAmount;
+        service['price'] = total;
+        service['priceLabel'] = PanaboFarePolicy.formatPeso(total);
         service['priceSubLabel'] = '$_passengerFareLabel rate';
         service['passengers'] = '1 passenger';
       }
@@ -224,6 +268,21 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       }
     }
 
+    if (_selectedServiceId == 'pickup' &&
+        _pickupItemController.text.trim().isEmpty) {
+      _showSnack('Tell the driver what to pick up.', AppColors.error);
+      return;
+    }
+
+    final sharedDropoffs = _buildSharedDropoffPayload();
+    if (_selectedServiceId == 'shared' &&
+        _differentDropoffs &&
+        sharedDropoffs == null) {
+      _showSnack(
+          'Pin every shared passenger drop-off location.', AppColors.error);
+      return;
+    }
+
     setState(() => _isLoading = true);
 
     final selectedService = _services[_selected];
@@ -235,6 +294,12 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         passengerCount:
             selectedService['id'] == 'shared' ? _sharedPassengerCount : 1,
         passengerFareType: _passengerFareType,
+        otherFeeAmount: _otherFeeAmount,
+        otherFeeLabel: _otherFeeLabel,
+        pickupItemDescription: _pickupItemController.text.trim(),
+        pickupItemWeight: _pickupWeightController.text.trim(),
+        bookingNotes: _driverNoteController.text.trim(),
+        sharedDropoffs: sharedDropoffs,
         onlineDrivers: _onlineDrivers,
         pickupName: widget.pickupName,
         destinationName: widget.destinationName,
@@ -312,6 +377,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       _sharedPassengerController.selection = TextSelection.collapsed(
         offset: _sharedPassengerController.text.length,
       );
+      _syncSharedDropoffs();
       _applyOfficialFares();
     });
   }
@@ -325,7 +391,82 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     }
     setState(() {
       _sharedPassengerCount = parsed;
+      _syncSharedDropoffs();
       _applyOfficialFares();
+    });
+  }
+
+  void _syncSharedDropoffs() {
+    final names = List<String>.from(_dropoffNames);
+    final points = List<LatLng?>.from(_dropoffPoints);
+    while (names.length < _sharedPassengerCount) {
+      names.add('');
+      points.add(null);
+    }
+    if (names.length > _sharedPassengerCount) {
+      names.removeRange(_sharedPassengerCount, names.length);
+      points.removeRange(_sharedPassengerCount, points.length);
+    }
+    if (names.isNotEmpty) {
+      names[0] = widget.destinationName;
+      points[0] = widget.destinationLatLng;
+    }
+    _dropoffNames = names;
+    _dropoffPoints = points;
+  }
+
+  void _setOtherFee(String? label, double amount) {
+    setState(() {
+      _otherFeeLabel = label;
+      _otherFeeAmount = amount < 0 ? 0 : amount;
+      _otherFeeController.text =
+          _otherFeeAmount == 0 ? '' : _otherFeeAmount.toStringAsFixed(0);
+      _applyOfficialFares();
+    });
+  }
+
+  void _setCustomOtherFee(String value) {
+    final amount = double.tryParse(value.trim()) ?? 0;
+    setState(() {
+      _otherFeeAmount = amount < 0 ? 0 : amount;
+      _otherFeeLabel = amount > 0 ? 'Custom fee' : null;
+      _applyOfficialFares();
+    });
+  }
+
+  List<Map<String, dynamic>>? _buildSharedDropoffPayload() {
+    if (_selectedServiceId != 'shared' || !_differentDropoffs) return null;
+    _syncSharedDropoffs();
+    final items = <Map<String, dynamic>>[];
+    for (var i = 0; i < _sharedPassengerCount; i++) {
+      final point = _dropoffPoints[i];
+      final name = _dropoffNames[i].trim();
+      if (point == null || name.isEmpty) return null;
+      items.add({
+        'label': 'Passenger ${i + 1}',
+        'location': name,
+        'lat': point.latitude,
+        'lng': point.longitude,
+      });
+    }
+    return items;
+  }
+
+  Future<void> _pickSharedDropoff(int index) async {
+    final selected = await showModalBottomSheet<_DropoffSelection>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DropoffPickerSheet(
+        title: 'Passenger ${index + 1} Drop-off',
+        locationBias: widget.destinationLatLng ?? widget.pickupLatLng,
+      ),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _syncSharedDropoffs();
+      _dropoffNames[index] = selected.name;
+      _dropoffPoints[index] = selected.point;
     });
   }
 
@@ -493,7 +634,13 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
           const SizedBox(width: 8),
           _smallRateBadge('Discount', discounted),
         ]),
-        if (_services[_selected]['id'] == 'shared') ...[
+        const SizedBox(height: 12),
+        _otherFeeControls(),
+        if (_selectedServiceId == 'pickup') ...[
+          const SizedBox(height: 12),
+          _pickupItemControls(),
+        ],
+        if (_selectedServiceId == 'shared') ...[
           const SizedBox(height: 12),
           Row(children: [
             Expanded(
@@ -541,9 +688,220 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               ),
             ),
           ]),
+          const SizedBox(height: 10),
+          _differentDropoffControls(),
         ],
       ]),
     );
+  }
+
+  Widget _otherFeeControls() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Other Fee',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppColors.backgroundDark,
+          )),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: [
+        _feeChip('None', null, 0),
+        _feeChip('Baggage', 'Baggage', 10),
+        _feeChip('Heavy item', 'Heavy item', 20),
+        SizedBox(
+          width: 128,
+          height: 38,
+          child: TextField(
+            controller: _otherFeeController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+            ],
+            onChanged: _setCustomOtherFee,
+            decoration: InputDecoration(
+              hintText: 'Custom',
+              suffixText: 'PHP',
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: const BorderSide(color: AppColors.primary),
+              ),
+            ),
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ]),
+    ]);
+  }
+
+  Widget _feeChip(String label, String? feeLabel, double amount) {
+    final selected = (_otherFeeLabel == feeLabel) &&
+        ((_otherFeeAmount - amount).abs() < 0.01);
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => _setOtherFee(feeLabel, amount),
+      showCheckmark: false,
+      selectedColor: AppColors.backgroundDark,
+      backgroundColor: Colors.white,
+      side: BorderSide(
+        color: selected ? AppColors.backgroundDark : const Color(0xFFE8EDF2),
+      ),
+      labelStyle: GoogleFonts.poppins(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: selected ? Colors.white : AppColors.backgroundDark,
+      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+  }
+
+  Widget _pickupItemControls() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('Pick-up Details',
+          style: GoogleFonts.poppins(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: AppColors.backgroundDark,
+          )),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _pickupItemController,
+        decoration: _fieldDecoration('What should the driver pick up?'),
+        style: GoogleFonts.poppins(fontSize: 13),
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _pickupWeightController,
+        decoration: _fieldDecoration('Heavy item / size note'),
+        style: GoogleFonts.poppins(fontSize: 13),
+      ),
+      const SizedBox(height: 8),
+      TextField(
+        controller: _driverNoteController,
+        minLines: 2,
+        maxLines: 3,
+        decoration: _fieldDecoration('Guide note for the driver'),
+        style: GoogleFonts.poppins(fontSize: 13),
+      ),
+    ]);
+  }
+
+  InputDecoration _fieldDecoration(String hint) => InputDecoration(
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.white,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.primary),
+        ),
+      );
+
+  Widget _differentDropoffControls() {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SwitchListTile(
+        value: _differentDropoffs,
+        onChanged: (value) {
+          setState(() {
+            _differentDropoffs = value;
+            _syncSharedDropoffs();
+          });
+        },
+        contentPadding: EdgeInsets.zero,
+        title: Text('Different drop-off locations',
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: AppColors.backgroundDark,
+            )),
+        subtitle: Text('Pin each passenger stop before booking.',
+            style: GoogleFonts.poppins(
+              fontSize: 10,
+              color: AppColors.textHint,
+            )),
+        activeColor: AppColors.primary,
+      ),
+      if (_differentDropoffs) ...[
+        const SizedBox(height: 4),
+        ...List.generate(_sharedPassengerCount, (index) {
+          final pinned = index < _dropoffNames.length &&
+              _dropoffNames[index].trim().isNotEmpty &&
+              index < _dropoffPoints.length &&
+              _dropoffPoints[index] != null;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFE8EDF2)),
+            ),
+            child: Row(children: [
+              Icon(
+                pinned
+                    ? Icons.location_on_rounded
+                    : Icons.add_location_alt_rounded,
+                size: 18,
+                color: pinned ? AppColors.primary : AppColors.textHint,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Passenger ${index + 1}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            color: AppColors.textHint,
+                          )),
+                      Text(
+                        pinned ? _dropoffNames[index] : 'Pin drop-off',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.backgroundDark,
+                        ),
+                      ),
+                    ]),
+              ),
+              TextButton(
+                onPressed: index == 0 ? null : () => _pickSharedDropoff(index),
+                child: Text(
+                  index == 0 ? 'Main' : 'Pin',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ]),
+          );
+        }),
+      ],
+    ]);
   }
 
   Widget _fareTypeChip(String value, String label) {
@@ -917,6 +1275,208 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                       selected ? AppColors.backgroundDark : AppColors.textHint,
                 )),
           ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _DropoffSelection {
+  final String name;
+  final LatLng point;
+
+  const _DropoffSelection({
+    required this.name,
+    required this.point,
+  });
+}
+
+class _DropoffPickerSheet extends StatefulWidget {
+  final String title;
+  final LatLng? locationBias;
+
+  const _DropoffPickerSheet({
+    required this.title,
+    this.locationBias,
+  });
+
+  @override
+  State<_DropoffPickerSheet> createState() => _DropoffPickerSheetState();
+}
+
+class _DropoffPickerSheetState extends State<_DropoffPickerSheet> {
+  final TextEditingController _controller = TextEditingController();
+  List<PlaceSuggestion> _suggestions = [];
+  bool _isSearching = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _search() async {
+    final query = _controller.text.trim();
+    if (query.length < 2 || _isSearching) return;
+    setState(() => _isSearching = true);
+    final suggestions = await MapService.searchPlaces(
+      query,
+      locationBias: widget.locationBias ?? PanaboConfig.cityCenter,
+    );
+    if (!mounted) return;
+    setState(() {
+      _suggestions = suggestions;
+      _isSearching = false;
+    });
+  }
+
+  Future<void> _select(PlaceSuggestion suggestion) async {
+    setState(() => _isSearching = true);
+    final point = await MapService.getPlaceLatLng(suggestion.placeId);
+    if (!mounted) return;
+    setState(() => _isSearching = false);
+    if (point == null) return;
+    Navigator.of(context).pop(
+      _DropoffSelection(
+        name: suggestion.mainText,
+        point: point,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return AnimatedPadding(
+      duration: const Duration(milliseconds: 180),
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Material(
+          color: Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          clipBehavior: Clip.antiAlias,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 22),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 38,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(children: [
+                  Expanded(
+                    child: Text(widget.title,
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.backgroundDark,
+                        )),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: (_) => _search(),
+                      decoration: InputDecoration(
+                        hintText: 'Search drop-off location',
+                        filled: true,
+                        fillColor: const Color(0xFFF5F6FA),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                      ),
+                      style: GoogleFonts.poppins(fontSize: 13),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    height: 46,
+                    child: ElevatedButton(
+                      onPressed: _isSearching ? null : _search,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.backgroundDark,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _isSearching
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.search_rounded),
+                    ),
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: media.size.height * 0.38,
+                  ),
+                  child: _suggestions.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 18),
+                          child: Text('Search and choose a pinned location.',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                color: AppColors.textHint,
+                              )),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _suggestions.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final suggestion = _suggestions[index];
+                            return ListTile(
+                              onTap: () => _select(suggestion),
+                              leading: const Icon(
+                                Icons.location_on_rounded,
+                                color: AppColors.primary,
+                              ),
+                              title: Text(
+                                suggestion.mainText,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              subtitle: suggestion.secondaryText.isEmpty
+                                  ? null
+                                  : Text(
+                                      suggestion.secondaryText,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.poppins(fontSize: 11),
+                                    ),
+                            );
+                          },
+                        ),
+                ),
+              ]),
+            ),
+          ),
         ),
       ),
     );

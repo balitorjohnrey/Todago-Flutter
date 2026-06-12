@@ -198,6 +198,59 @@ class AdminAuthService {
     }
   }
 
+  static Future<List<Map<String, dynamic>>> fetchReports({
+    String status = 'pending',
+  }) async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/reports').replace(
+              queryParameters: {'status': status},
+            ),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 12));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final reports = data['reports'] as List<dynamic>? ?? [];
+        return reports.whereType<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<AdminAuthResponse> updateReportStatus({
+    required String issueId,
+    required String status,
+    String? adminNotes,
+  }) async {
+    try {
+      final response = await http
+          .patch(
+            Uri.parse('$_baseUrl/reports/$issueId/status'),
+            headers: await _headers(),
+            body: jsonEncode({
+              'status': status,
+              if (adminNotes != null && adminNotes.isNotEmpty)
+                'adminNotes': adminNotes,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return AdminAuthResponse(
+        success: response.statusCode == 200 && data['success'] == true,
+        message: data['message'] ?? 'Unable to update report',
+      );
+    } catch (_) {
+      return AdminAuthResponse(
+        success: false,
+        message: 'Connection failed. Check your internet.',
+      );
+    }
+  }
+
   static Future<FareSettings?> fetchFareSettings() async {
     try {
       final response = await http

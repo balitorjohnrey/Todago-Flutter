@@ -15,6 +15,7 @@ import 'driver_profile_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
+import 'report_issue_dialog.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -380,6 +381,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         .then((_) => _loadDriver());
   }
 
+  void _openReportIssue() {
+    showReportIssueDialog(
+      context: context,
+      reporterRole: 'driver',
+    );
+  }
+
   static double _asDouble(dynamic value) {
     if (value is double) return value;
     if (value is int) return value.toDouble();
@@ -488,6 +496,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                 ]),
               ),
               const Spacer(),
+              _iconBox(Icons.report_problem_outlined, _openReportIssue),
+              const SizedBox(width: 8),
               _iconBox(Icons.settings_outlined, _logout),
             ]).animate().fadeIn(duration: 400.ms),
           ),

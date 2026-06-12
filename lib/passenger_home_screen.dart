@@ -20,6 +20,7 @@ import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
+import 'report_issue_dialog.dart';
 import 'smart_ride_service.dart';
 import 'panabo_config.dart';
 
@@ -377,6 +378,27 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       pageBuilder: (_, __, ___) => AIChatScreen(
         userType: 'passenger',
         userName: _user?['full_name']?.toString() ?? 'Passenger',
+      ),
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionsBuilder: (_, anim, __, child) => SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+        child: child,
+      ),
+    ));
+  }
+
+  void _openReportIssue() {
+    showReportIssueDialog(
+      context: context,
+      reporterRole: 'passenger',
+    );
+  }
+
+  void _openDestinationPicker({String? initialServiceType}) {
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => DestinationPickerScreen(
+        initialServiceType: initialServiceType,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(
@@ -778,20 +800,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton.icon(
-                    onPressed: () =>
-                        Navigator.of(context).push(PageRouteBuilder(
-                      pageBuilder: (_, __, ___) =>
-                          const DestinationPickerScreen(),
-                      transitionDuration: const Duration(milliseconds: 400),
-                      transitionsBuilder: (_, anim, __, child) =>
-                          SlideTransition(
-                        position: Tween<Offset>(
-                                begin: const Offset(0, 1), end: Offset.zero)
-                            .animate(CurvedAnimation(
-                                parent: anim, curve: Curves.easeOut)),
-                        child: child,
-                      ),
-                    )),
+                    onPressed: () => _openDestinationPicker(),
                     icon: const Icon(Icons.bolt_rounded,
                         color: Colors.white, size: 20),
                     label: Text('Book Now',
@@ -812,7 +821,28 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   width: double.infinity,
                   height: 52,
                   child: OutlinedButton.icon(
-                    onPressed: () {},
+                    onPressed: () =>
+                        _openDestinationPicker(initialServiceType: 'pickup'),
+                    icon: const Icon(Icons.inventory_2_rounded,
+                        color: AppColors.backgroundDark, size: 20),
+                    label: Text('Book Pick-up',
+                        style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.backgroundDark)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openDestinationPicker(),
                     icon: const Icon(Icons.calendar_month_rounded,
                         color: AppColors.backgroundDark, size: 20),
                     label: Text('Schedule Reservation',
@@ -1776,6 +1806,29 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           _pItem(Icons.home_rounded, 'Saved Places', 'Home, School, Work'),
           _pItem(Icons.emergency_rounded, 'Emergency Contact', 'Not set'),
           _pItem(Icons.tune_rounded, 'Ride Preferences', 'Cash, solo first'),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: _openReportIssue,
+              icon: const Icon(Icons.report_problem_rounded, size: 18),
+              label: Text(
+                'Report an Issue',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.error,
+                side: const BorderSide(color: AppColors.error),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _pItem(Icons.card_giftcard_rounded, 'Rewards Tier', 'Starter'),
           const SizedBox(height: 24),
           SizedBox(

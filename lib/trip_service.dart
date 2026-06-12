@@ -65,6 +65,12 @@ class TripService {
     required String paymentMethod,
     LatLng? pickupLatLng,
     LatLng? destinationLatLng,
+    double otherFeeAmount = 0,
+    String? otherFeeLabel,
+    String? bookingNotes,
+    String? pickupItemDescription,
+    String? pickupItemWeight,
+    List<Map<String, dynamic>>? sharedDropoffs,
   }) async {
     try {
       final token = await _getPassengerToken();
@@ -80,6 +86,18 @@ class TripService {
               'fare': fare,
               'passengerCount': passengerCount,
               'passengerFareType': passengerFareType,
+              'otherFeeAmount': otherFeeAmount,
+              if (otherFeeLabel != null && otherFeeLabel.isNotEmpty)
+                'otherFeeLabel': otherFeeLabel,
+              if (bookingNotes != null && bookingNotes.isNotEmpty)
+                'bookingNotes': bookingNotes,
+              if (pickupItemDescription != null &&
+                  pickupItemDescription.isNotEmpty)
+                'pickupItemDescription': pickupItemDescription,
+              if (pickupItemWeight != null && pickupItemWeight.isNotEmpty)
+                'pickupItemWeight': pickupItemWeight,
+              if (sharedDropoffs != null && sharedDropoffs.isNotEmpty)
+                'sharedDropoffs': sharedDropoffs,
               'paymentMethod': paymentMethod,
               if (pickupLatLng != null) 'pickupLat': pickupLatLng.latitude,
               if (pickupLatLng != null) 'pickupLng': pickupLatLng.longitude,
@@ -109,6 +127,12 @@ class TripService {
     required DateTime scheduledAt,
     LatLng? pickupLatLng,
     LatLng? destinationLatLng,
+    double otherFeeAmount = 0,
+    String? otherFeeLabel,
+    String? bookingNotes,
+    String? pickupItemDescription,
+    String? pickupItemWeight,
+    List<Map<String, dynamic>>? sharedDropoffs,
   }) async {
     try {
       final token = await _getPassengerToken();
@@ -124,6 +148,18 @@ class TripService {
               'fare': fare,
               'passengerCount': passengerCount,
               'passengerFareType': passengerFareType,
+              'otherFeeAmount': otherFeeAmount,
+              if (otherFeeLabel != null && otherFeeLabel.isNotEmpty)
+                'otherFeeLabel': otherFeeLabel,
+              if (bookingNotes != null && bookingNotes.isNotEmpty)
+                'bookingNotes': bookingNotes,
+              if (pickupItemDescription != null &&
+                  pickupItemDescription.isNotEmpty)
+                'pickupItemDescription': pickupItemDescription,
+              if (pickupItemWeight != null && pickupItemWeight.isNotEmpty)
+                'pickupItemWeight': pickupItemWeight,
+              if (sharedDropoffs != null && sharedDropoffs.isNotEmpty)
+                'sharedDropoffs': sharedDropoffs,
               'paymentMethod': paymentMethod,
               'scheduledPickupAt': scheduledAt.toUtc().toIso8601String(),
               if (pickupLatLng != null) 'pickupLat': pickupLatLng.latitude,
@@ -207,6 +243,22 @@ class TripService {
             Uri.parse('$_baseUrl/$tripId/status'),
             headers: _headers(token),
             body: jsonEncode({'status': status}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> markSharedPassengerDropped(
+      String tripId) async {
+    try {
+      final token = await _getDriverToken();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/$tripId/dropoff'),
+            headers: _headers(token),
           )
           .timeout(const Duration(seconds: 10));
       return jsonDecode(response.body) as Map<String, dynamic>;

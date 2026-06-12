@@ -24,6 +24,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _drivers = [];
   List<Map<String, dynamic>> _routePerformance = [];
   List<Map<String, dynamic>> _peakHours = [];
+  List<Map<String, dynamic>> _reports = [];
   FareSettings _fareSettings = const FareSettings();
 
   late final TextEditingController _fuelPriceController;
@@ -65,6 +66,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAuthService.fetchFareSettings(),
         AdminAuthService.fetchRoutePerformance(),
         AdminAuthService.fetchPeakHours(),
+        AdminAuthService.fetchReports(),
       ]);
       if (!mounted) return;
       final fareSettings =
@@ -77,6 +79,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         _routePerformance = (results[3] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
         _peakHours = (results[4] as List<Map<String, dynamic>>?) ??
+            <Map<String, dynamic>>[];
+        _reports = (results[5] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
         _syncFareControllers(fareSettings);
       });
@@ -180,6 +184,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (!mounted) return;
     _showSnack(
       result.message ?? (approve ? 'Driver approved.' : 'Approval revoked.'),
+      result.success ? AppColors.success : AppColors.error,
+    );
+    if (result.success) await _load();
+  }
+
+  Future<void> _setReportStatus(
+    Map<String, dynamic> report,
+    String status,
+  ) async {
+    final issueId = report['issue_id']?.toString();
+    if (issueId == null || issueId.isEmpty) return;
+    final result = await AdminAuthService.updateReportStatus(
+      issueId: issueId,
+      status: status,
+    );
+    if (!mounted) return;
+    _showSnack(
+      result.message ?? 'Report updated.',
       result.success ? AppColors.success : AppColors.error,
     );
     if (result.success) await _load();
@@ -358,6 +380,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
+          _reportsCard(),
+          const SizedBox(height: 16),
           _fareCard(),
           const SizedBox(height: 16),
           _peakHoursCard(),
@@ -384,6 +408,154 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         ],
       ),
     );
+  }
+
+  Widget _reportsCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE8EDF2)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.report_problem_rounded,
+                color: AppColors.error, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Reports for Validation',
+                  style: GoogleFonts.poppins(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+              Text('Passenger, driver, operator, and GPS alerts',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: AppColors.textHint,
+                  )),
+            ]),
+          ),
+          _pill('${_reports.length} pending', AppColors.error),
+        ]),
+        const SizedBox(height: 12),
+        if (_reports.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Text('No pending reports',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: AppColors.textHint,
+                )),
+          )
+        else
+          ...List.generate(
+            _reports.length > 5 ? 5 : _reports.length,
+            (index) => _reportRow(_reports[index], index),
+          ),
+      ]),
+    );
+  }
+
+  Widget _reportRow(Map<String, dynamic> report, int index) {
+    final priority = report['priority']?.toString() ?? 'normal';
+    final priorityColor = priority == 'urgent' || priority == 'high'
+        ? AppColors.error
+        : AppColors.primary;
+    return Container(
+      padding: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 12),
+      decoration: BoxDecoration(
+        border: index == 0
+            ? null
+            : const Border(top: BorderSide(color: Color(0xFFF0F2F5))),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: Text(report['title']?.toString() ?? 'Report',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+          ),
+          const SizedBox(width: 8),
+          _pill(priority, priorityColor),
+        ]),
+        const SizedBox(height: 6),
+        Text(_reportMeta(report),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: AppColors.textHint,
+            )),
+        if ((report['details']?.toString() ?? '').isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(report['details'].toString(),
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                color: AppColors.backgroundDark,
+              )),
+        ],
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _setReportStatus(report, 'rejected'),
+              icon: const Icon(Icons.close_rounded, size: 18),
+              label: const Text('Reject'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.error,
+                side: const BorderSide(color: AppColors.error),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ElevatedButton.icon(
+              onPressed: () => _setReportStatus(report, 'validated'),
+              icon: const Icon(Icons.check_rounded, size: 18),
+              label: const Text('Validate'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.backgroundDark,
+                foregroundColor: Colors.white,
+                elevation: 0,
+              ),
+            ),
+          ),
+        ]),
+      ]),
+    );
+  }
+
+  String _reportMeta(Map<String, dynamic> report) {
+    final reporter = report['reporter_name']?.toString();
+    final reporterRole = report['reporter_role']?.toString() ?? 'reporter';
+    final subject = report['subject_name']?.toString();
+    final type = report['report_type']?.toString() ?? 'issue';
+    final parts = <String>[
+      '${reporter ?? reporterRole} reported $type',
+      if (subject != null && subject.isNotEmpty) 'about $subject',
+    ];
+    return parts.join(' ');
   }
 
   Widget _peakHoursCard() {

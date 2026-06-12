@@ -14,6 +14,12 @@ class DriverSelectionScreen extends StatefulWidget {
   final double fareAmount;
   final int passengerCount;
   final String passengerFareType;
+  final double otherFeeAmount;
+  final String? otherFeeLabel;
+  final String? bookingNotes;
+  final String? pickupItemDescription;
+  final String? pickupItemWeight;
+  final List<Map<String, dynamic>>? sharedDropoffs;
   final List<Map<String, dynamic>> onlineDrivers;
   final String pickupName;
   final String destinationName;
@@ -28,6 +34,12 @@ class DriverSelectionScreen extends StatefulWidget {
     required this.fareAmount,
     this.passengerCount = 1,
     this.passengerFareType = 'regular',
+    this.otherFeeAmount = 0,
+    this.otherFeeLabel,
+    this.bookingNotes,
+    this.pickupItemDescription,
+    this.pickupItemWeight,
+    this.sharedDropoffs,
     required this.onlineDrivers,
     this.pickupName = 'Your Location',
     this.destinationName = 'Davao del Norte State College',
@@ -84,6 +96,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
 
   String _normalizeServiceType(String raw) {
     final s = raw.toLowerCase().replaceAll(RegExp(r'[-\s]'), '');
+    if (s.contains('pickup') || s.contains('delivery')) return 'pickup';
     if (s.contains('express')) return 'express';
     if (s.contains('shared')) return 'shared';
     return 'solo';
@@ -104,6 +117,12 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             fare: widget.fareAmount,
             passengerCount: widget.passengerCount,
             passengerFareType: widget.passengerFareType,
+            otherFeeAmount: widget.otherFeeAmount,
+            otherFeeLabel: widget.otherFeeLabel,
+            bookingNotes: widget.bookingNotes,
+            pickupItemDescription: widget.pickupItemDescription,
+            pickupItemWeight: widget.pickupItemWeight,
+            sharedDropoffs: widget.sharedDropoffs,
             paymentMethod: 'cash',
             scheduledAt: widget.scheduledAt!,
             pickupLatLng: widget.pickupLatLng,
@@ -117,6 +136,12 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             fare: widget.fareAmount,
             passengerCount: widget.passengerCount,
             passengerFareType: widget.passengerFareType,
+            otherFeeAmount: widget.otherFeeAmount,
+            otherFeeLabel: widget.otherFeeLabel,
+            bookingNotes: widget.bookingNotes,
+            pickupItemDescription: widget.pickupItemDescription,
+            pickupItemWeight: widget.pickupItemWeight,
+            sharedDropoffs: widget.sharedDropoffs,
             paymentMethod: 'cash',
             pickupLatLng: widget.pickupLatLng,
             destinationLatLng: widget.destinationLatLng,
@@ -451,6 +476,21 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                 const SizedBox(height: 6),
                 _summaryRow(
                     'Fare Type', _formatFareType(widget.passengerFareType)),
+                if (widget.otherFeeAmount > 0) ...[
+                  const SizedBox(height: 6),
+                  _summaryRow(
+                    'Other Fee',
+                    '${widget.otherFeeLabel ?? 'Extra'} PHP ${widget.otherFeeAmount.toStringAsFixed(0)}',
+                  ),
+                ],
+                if ((widget.pickupItemDescription ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _summaryRow('Pickup Item', widget.pickupItemDescription!),
+                ],
+                if ((widget.bookingNotes ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _summaryRow('Driver Note', widget.bookingNotes!),
+                ],
                 if (_isScheduled) ...[
                   const SizedBox(height: 6),
                   _summaryRow(
@@ -532,13 +572,19 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
         Text(label,
             style:
                 GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
-        const Spacer(),
-        Text(value,
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.poppins(
               fontSize: 13,
               fontWeight: FontWeight.w700,
               color: AppColors.backgroundDark,
-            )),
+            ),
+          ),
+        ),
       ]);
 
   String _formatSchedule(DateTime? value) {

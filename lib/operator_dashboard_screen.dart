@@ -7,6 +7,7 @@ import 'auth_service.dart';
 import 'operator_auth_service.dart';
 import 'operator_fleet_map_screen.dart';
 import 'operator_drivers_screen.dart';
+import 'report_issue_dialog.dart';
 import 'splash_screen.dart';
 
 class OperatorDashboardScreen extends StatefulWidget {
@@ -116,6 +117,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
 
   void _onDriverManagement() {
     _pushOperatorTool(const OperatorDriversScreen());
+  }
+
+  void _onReportIssue() {
+    showReportIssueDialog(
+      context: context,
+      reporterRole: 'operator',
+      metadata: {
+        'association_name': _operator?['association_name']?.toString(),
+        'association_code': _operator?['association_code']?.toString(),
+      },
+    );
   }
 
   void _pushOperatorTool(Widget screen) {
@@ -512,6 +524,14 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                         icon: Icons.logout_rounded,
                         label: 'Logout',
                         onTap: _logout,
+                        isDestructive: true,
+                      )),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: _actionCard(
+                        icon: Icons.report_problem_rounded,
+                        label: 'Report an Issue',
+                        onTap: _onReportIssue,
                         isDestructive: true,
                       )),
                     ],

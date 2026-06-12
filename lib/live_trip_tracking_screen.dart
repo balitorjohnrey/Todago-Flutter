@@ -9,6 +9,7 @@ import 'trip_service.dart';
 import 'passenger_home_screen.dart';
 import 'rate_driver_screen.dart';
 import 'map_service.dart';
+import 'report_issue_dialog.dart';
 
 class LiveTripTrackingScreen extends StatefulWidget {
   final String tripId;
@@ -65,6 +66,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String _destination = '';
   String? _driverPhone;
   double _fare = 0;
+  Map<String, dynamic>? _latestTrip;
 
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
@@ -150,6 +152,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         _checkIfCompleted();
         return;
       }
+      _latestTrip = trip;
 
       // Update text fields from server
       if (trip['destination'] != null &&
@@ -830,6 +833,28 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
               ]),
               const SizedBox(height: 14),
 
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: OutlinedButton.icon(
+                  onPressed: _reportDriverIssue,
+                  icon: const Icon(Icons.report_problem_rounded, size: 18),
+                  label: Text('Report an Issue',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      )),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: const BorderSide(color: AppColors.error),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+
               // Context hint — changes based on phase
               Container(
                 padding: const EdgeInsets.all(14),
@@ -924,6 +949,24 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         behavior: SnackBarBehavior.floating,
       ));
     }
+  }
+
+  void _reportDriverIssue() {
+    final trip = _latestTrip;
+    showReportIssueDialog(
+      context: context,
+      reporterRole: 'passenger',
+      initialType: 'wrong_driver_vehicle',
+      tripId: widget.tripId,
+      subjectRole: 'driver',
+      subjectId: trip?['driver_id']?.toString(),
+      subjectName: widget.driverName,
+      metadata: {
+        'plate_no': widget.plateNo,
+        'toda_body_number': widget.todaBodyNumber,
+        'trip_status': _tripStatus,
+      },
+    );
   }
 
   Widget _actionBtn(IconData icon, Color color, VoidCallback onTap) =>

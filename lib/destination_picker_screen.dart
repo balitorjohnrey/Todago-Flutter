@@ -11,7 +11,12 @@ import 'panabo_config.dart';
 import 'fare_settings_service.dart';
 
 class DestinationPickerScreen extends StatefulWidget {
-  const DestinationPickerScreen({super.key});
+  final String? initialServiceType;
+
+  const DestinationPickerScreen({
+    super.key,
+    this.initialServiceType,
+  });
   @override
   State<DestinationPickerScreen> createState() =>
       _DestinationPickerScreenState();
@@ -499,6 +504,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         destinationLatLng: _destination,
         etaMinutes: _route?.etaMinutes,
         distanceKm: _route?.distanceKm,
+        initialServiceType: widget.initialServiceType,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(
