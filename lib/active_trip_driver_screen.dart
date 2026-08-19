@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -43,10 +44,16 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   String get _passengerName =>
       _trip['commuter_name']?.toString() ?? 'Passenger';
   String? get _passengerPhone => _trip['commuter_phone']?.toString();
-  String get _destination =>
-      _currentDropoff?['location']?.toString() ??
-      _trip['destination']?.toString() ??
-      'Destination';
+  String get _destination {
+    final dropoff = _currentDropoff;
+    if (dropoff != null) {
+      return dropoff['location']?.toString() ?? 'Destination';
+    }
+    if (_isSharedTrip && _sharedDropoffs.isNotEmpty) {
+      return 'All shared passengers dropped';
+    }
+    return _trip['destination']?.toString() ?? 'Destination';
+  }
   String get _passengerInitials => _passengerName
       .trim()
       .split(' ')
@@ -65,18 +72,51 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
   bool get _isSharedTrip => _trip['service_type']?.toString() == 'shared';
 
-  List<dynamic> get _sharedDropoffs {
-    final raw = _trip['shared_dropoffs'];
-    return raw is List ? raw : const [];
+  List<Map<String, dynamic>> get _sharedDropoffs {
+    dynamic value = _trip['shared_dropoffs'];
+    if (value is String) {
+      try {
+        value = jsonDecode(value);
+      } catch (_) {
+        return const [];
+      }
+    }
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((dropoff) =>
+            dropoff.map((key, val) => MapEntry(key.toString(), val)))
+        .toList(growable: false);
   }
 
   Map<String, dynamic>? get _currentDropoff {
     for (final dropoff in _sharedDropoffs) {
-      if (dropoff is Map && dropoff['status'] != 'dropped') {
-        return Map<String, dynamic>.from(dropoff);
-      }
+      if (dropoff['status'] != 'dropped') return dropoff;
     }
     return null;
+  }
+
+  int get _completedDropoffs =>
+      _sharedDropoffs.where((dropoff) => dropoff['status'] == 'dropped').length;
+
+  int get _totalDropoffs => _sharedDropoffs.length;
+
+  int get _currentStopNumber => (_completedDropoffs + 1).clamp(1, 99).toInt();
+
+  String get _currentDropoffLabel =>
+      _currentDropoff?['label']?.toString() ?? 'Passenger $_currentStopNumber';
+
+  String get _dropButtonTitle =>
+      _remainingPassengers == 1 ? 'Drop Last Passenger' : 'Drop Passenger';
+
+  String get _dropButtonSubtitle {
+    final total = _totalDropoffs;
+    final stopText =
+        total > 0 ? 'Stop $_currentStopNumber of $total' : 'Next stop';
+    final nextText = _remainingPassengers <= 1
+        ? 'complete the trip after this'
+        : 'then proceed to the next destination';
+    return '$stopText - $_currentDropoffLabel, $nextText';
   }
 
   int get _remainingPassengers {
@@ -84,13 +124,25 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     if (value is int) return value;
     if (value is double) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ??
-        (_sharedDropoffs.isNotEmpty ? _sharedDropoffs.length : 0);
+        _sharedDropoffs
+            .where((dropoff) => dropoff['status'] != 'dropped')
+            .length;
   }
 
   bool get _hasPendingSharedDropoffs =>
       _isSharedTrip && _sharedDropoffs.isNotEmpty && _remainingPassengers > 0;
 
   LatLng? _currentDestinationPoint() {
+    if (_isSharedTrip && _sharedDropoffs.isNotEmpty) {
+      final dropoff = _currentDropoff;
+      final dropLat = double.tryParse(dropoff?['lat']?.toString() ?? '');
+      final dropLng = double.tryParse(dropoff?['lng']?.toString() ?? '');
+      if (dropLat != null && dropLng != null) {
+        return LatLng(dropLat, dropLng);
+      }
+      return null;
+    }
+
     final dropoff = _currentDropoff;
     final dropLat = double.tryParse(dropoff?['lat']?.toString() ?? '');
     final dropLng = double.tryParse(dropoff?['lng']?.toString() ?? '');
@@ -247,6 +299,12 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     return latMeters + lngMeters;
   }
 
+  bool _sameDestination(LatLng? a, LatLng? b) {
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    return _approxDistanceMeters(a, b) < 1;
+  }
+
   void _updateMarkers(LatLng driver, LatLng dest) {
     setState(() {
       _markers = {
@@ -279,6 +337,16 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           infoWindow: const InfoWindow(title: 'You (Driver)'),
         ),
       };
+    });
+  }
+
+  void _clearDestinationRoute() {
+    setState(() {
+      _destPoint = null;
+      _route = null;
+      _polylines = {};
+      _markers =
+          _markers.where((m) => m.markerId.value != 'destination').toSet();
     });
   }
 
@@ -327,10 +395,20 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     if (tripId.isEmpty || !mounted) return;
     final trip = await TripService.getTripById(tripId, forDriver: true);
     if (!mounted || trip == null) return;
+    final previousDest = _destPoint;
     setState(() {
       _trip = Map<String, dynamic>.from(trip);
       _destPoint = _currentDestinationPoint();
     });
+    final nextDest = _destPoint;
+    if (_myLocation != null && !_sameDestination(previousDest, nextDest)) {
+      if (nextDest != null) {
+        _updateMarkers(_myLocation!, nextDest);
+        await _fetchAndDrawRoute(_myLocation!, nextDest, force: true);
+      } else {
+        _clearDestinationRoute();
+      }
+    }
     if (trip['status']?.toString() == 'cancelled') {
       _showPassengerCancelled();
     }
@@ -404,6 +482,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       if (_myLocation != null && _destPoint != null) {
         _updateMarkers(_myLocation!, _destPoint!);
         await _fetchAndDrawRoute(_myLocation!, _destPoint!, force: true);
+      } else if (_myLocation != null) {
+        _clearDestinationRoute();
+        _updateDriverMarker(_myLocation!);
       }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -892,7 +973,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Drop Passenger',
+                                _dropButtonTitle,
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w800,
@@ -900,7 +981,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                                 ),
                               ),
                               Text(
-                                '$_remainingPassengers remaining in this shared ride',
+                                _dropButtonSubtitle,
                                 style: GoogleFonts.poppins(
                                   fontSize: 10,
                                   color:
@@ -918,14 +999,18 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
                 // Complete Trip button
                 GestureDetector(
-                  onTap: _isCompleting ? null : _completeTrip,
+                  onTap: (_isCompleting || _hasPendingSharedDropoffs)
+                      ? null
+                      : _completeTrip,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 14),
                     decoration: BoxDecoration(
-                      color: _isCompleting
-                          ? Colors.green.withOpacity(0.7)
-                          : Colors.green,
+                      color: _hasPendingSharedDropoffs
+                          ? Colors.grey
+                          : _isCompleting
+                              ? Colors.green.withOpacity(0.7)
+                              : Colors.green,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(children: [
@@ -960,7 +1045,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                                 ),
                               ),
                               Text(
-                                'Tap when passenger reaches destination',
+                                _hasPendingSharedDropoffs
+                                    ? 'Available after all shared passengers are dropped'
+                                    : 'Tap when passenger reaches destination',
                                 style: GoogleFonts.poppins(
                                     fontSize: 10, color: Colors.white70),
                               ),

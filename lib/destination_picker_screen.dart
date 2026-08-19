@@ -42,6 +42,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   bool _isRouting = false;
   bool _showSugg = false;
   bool _loadingLoc = false;
+  bool _isResolvingMapTap = false;
+  int _destinationRequestId = 0;
   Timer? _debounce;
   StreamSubscription<LatLng>? _locSub;
   DateTime? _lastRouteRefresh;
@@ -263,8 +265,94 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     });
   }
 
+  void _setSearchText(String value) {
+    _searchCtrl.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: value.length),
+    );
+  }
+
+  String _placeDisplayName(PlaceSuggestion place) {
+    final main = place.mainText.trim();
+    if (main.isNotEmpty) return main;
+    final full = place.fullText.trim();
+    if (full.isNotEmpty) return full;
+    return 'Selected destination';
+  }
+
+  String _placeSearchText(PlaceSuggestion place) {
+    final full = place.fullText.trim();
+    if (full.isNotEmpty) return full;
+
+    final parts = [
+      place.mainText.trim(),
+      place.secondaryText.trim(),
+    ].where((part) => part.isNotEmpty).toList();
+    if (parts.isNotEmpty) return parts.join(', ');
+    return 'Selected destination';
+  }
+
+  String _mapDestinationLabel(LatLng pos) {
+    return 'Pinned destination (${pos.latitude.toStringAsFixed(5)}, '
+        '${pos.longitude.toStringAsFixed(5)})';
+  }
+
+  Future<void> _setDestinationAndRoute(
+    LatLng coords, {
+    required String name,
+    String? searchText,
+    int? requestId,
+    bool fitBounds = true,
+  }) async {
+    if (!mounted) return;
+    if (requestId != null && requestId != _destinationRequestId) return;
+
+    final destinationName =
+        name.trim().isEmpty ? _mapDestinationLabel(coords) : name.trim();
+    final searchValue = (searchText ?? destinationName).trim();
+
+    setState(() {
+      _destination = coords;
+      _destName = destinationName;
+      _route = null;
+      _polylines = {};
+      _isRouting = true;
+      _showSugg = false;
+      _suggestions = [];
+      _setSearchText(searchValue.isEmpty ? destinationName : searchValue);
+    });
+    _setDestMarker(coords, destinationName);
+
+    final pickup = _myLocation;
+    if (pickup == null) {
+      _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(coords, 14));
+      if (!mounted) return;
+      if (requestId != null && requestId != _destinationRequestId) return;
+      setState(() => _isRouting = false);
+      return;
+    }
+
+    if (fitBounds) _fitBounds(pickup, coords);
+    final route = await MapService.fetchRoute(pickup, coords);
+    if (!mounted) return;
+    if (requestId != null && requestId != _destinationRequestId) return;
+
+    setState(() {
+      _route = route;
+      _isRouting = false;
+    });
+    if (route != null) _setPolyline(route.points);
+  }
+
   // ── Text search ───────────────────────────────────────────────────────────
   void _onSearchChanged(String q) {
+    if (_isResolvingMapTap) {
+      _destinationRequestId++;
+      setState(() {
+        _isResolvingMapTap = false;
+        _isRouting = false;
+      });
+    }
     _debounce?.cancel();
     if (q.trim().length < 2) {
       setState(() {
@@ -286,46 +374,99 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       q,
       locationBias: _myLocation ?? PanaboConfig.cityCenter,
     );
-    if (mounted)
+    if (mounted) {
       setState(() {
         _suggestions = results;
         _isSearching = false;
       });
+    }
   }
 
   // ── Select suggestion ─────────────────────────────────────────────────────
   Future<void> _selectPlace(PlaceSuggestion place) async {
     _searchFocus.unfocus();
+    _debounce?.cancel();
+    final requestId = ++_destinationRequestId;
+    final destinationName = _placeDisplayName(place);
+    final searchText = _placeSearchText(place);
+
     setState(() {
       _showSugg = false;
       _suggestions = [];
+      _isSearching = false;
       _isRouting = true;
-      _searchCtrl.text = place.mainText;
-      _destName = place.mainText;
+      _isResolvingMapTap = false;
+      _destination = null;
+      _route = null;
+      _polylines = {};
+      _markers =
+          _markers.where((m) => m.markerId.value != 'destination').toSet();
+      _setSearchText(searchText);
+      _destName = destinationName;
     });
+
     final coords = await MapService.getPlaceLatLng(place.placeId);
-    if (!mounted || coords == null) {
+    if (!mounted || requestId != _destinationRequestId) return;
+    if (coords == null) {
       setState(() => _isRouting = false);
       return;
     }
-    setState(() => _destination = coords);
-    _setDestMarker(coords, place.mainText);
+
+    await _setDestinationAndRoute(
+      coords,
+      name: destinationName,
+      searchText: searchText,
+      requestId: requestId,
+    );
+  }
+
+  Future<void> _selectMapDestination(LatLng coords) async {
+    _searchFocus.unfocus();
+    _debounce?.cancel();
+    final requestId = ++_destinationRequestId;
+    const initialName = 'Pinned destination';
+
+    setState(() {
+      _showSugg = false;
+      _suggestions = [];
+      _isSearching = false;
+      _isRouting = true;
+      _isResolvingMapTap = true;
+      _destination = coords;
+      _destName = initialName;
+      _route = null;
+      _polylines = {};
+      _setSearchText(initialName);
+    });
+    _setDestMarker(coords, initialName);
+
     if (_myLocation != null) {
       _fitBounds(_myLocation!, coords);
-      final route = await MapService.fetchRoute(_myLocation!, coords);
-      if (mounted && route != null) {
-        setState(() {
-          _route = route;
-          _isRouting = false;
-        });
-        _setPolyline(route.points);
-      } else {
-        setState(() => _isRouting = false);
-      }
     } else {
       _mapCtrl?.animateCamera(CameraUpdate.newLatLngZoom(coords, 14));
-      setState(() => _isRouting = false);
     }
+
+    var destinationName = _mapDestinationLabel(coords);
+    try {
+      final address = await MapService.reverseGeocode(coords)
+          .timeout(const Duration(seconds: 6));
+      final trimmed = address.trim();
+      if (trimmed.isNotEmpty && trimmed != 'Your Location') {
+        destinationName = trimmed;
+      }
+    } catch (_) {
+      debugPrint('[MapTap] Reverse geocode timed out or failed');
+    }
+
+    if (!mounted || requestId != _destinationRequestId) return;
+    setState(() => _isResolvingMapTap = false);
+    await _setDestinationAndRoute(
+      coords,
+      name: destinationName,
+      searchText: destinationName,
+      requestId: requestId,
+      fitBounds: false,
+    );
   }
 
   void _fitBounds(LatLng a, LatLng b) {
@@ -543,10 +684,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
-              onTap: (_) {
-                _searchFocus.unfocus();
-                setState(() => _showSugg = false);
-              }),
+              onTap: _selectMapDestination),
         ),
 
         // ── Top search panel ───────────────────────────────────────────────
@@ -633,10 +771,14 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
                           if (_searchCtrl.text.isNotEmpty && !_isListening)
                             GestureDetector(
                                 onTap: () {
+                                  _destinationRequestId++;
                                   _searchCtrl.clear();
                                   setState(() {
                                     _suggestions = [];
                                     _showSugg = false;
+                                    _isSearching = false;
+                                    _isRouting = false;
+                                    _isResolvingMapTap = false;
                                     _destination = null;
                                     _route = null;
                                     _polylines = {};
@@ -947,6 +1089,39 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
                               color: Colors.grey[300],
                               borderRadius: BorderRadius.circular(2)))),
                   const SizedBox(height: 14),
+
+                  Row(children: [
+                    Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10)),
+                        child: const Icon(Icons.electric_rickshaw_rounded,
+                            color: AppColors.primary, size: 21)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                          Text('Want to book a ride to this destination?',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.backgroundDark),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis),
+                          Text(
+                              _isResolvingMapTap
+                                  ? 'Finding the address for this pin...'
+                                  : 'Review the route before confirming.',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11, color: Colors.black45),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        ])),
+                  ]),
+                  const SizedBox(height: 12),
 
                   // Route A → B card
                   Container(

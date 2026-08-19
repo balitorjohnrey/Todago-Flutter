@@ -53,7 +53,6 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   late final TextEditingController _driverNoteController;
   double _otherFeeAmount = 0;
   String? _otherFeeLabel;
-  bool _differentDropoffs = false;
   List<String> _dropoffNames = [];
   List<LatLng?> _dropoffPoints = [];
 
@@ -275,9 +274,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     }
 
     final sharedDropoffs = _buildSharedDropoffPayload();
-    if (_selectedServiceId == 'shared' &&
-        _differentDropoffs &&
-        sharedDropoffs == null) {
+    if (_selectedServiceId == 'shared' && sharedDropoffs == null) {
       _showSnack(
           'Pin every shared passenger drop-off location.', AppColors.error);
       return;
@@ -435,7 +432,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   }
 
   List<Map<String, dynamic>>? _buildSharedDropoffPayload() {
-    if (_selectedServiceId != 'shared' || !_differentDropoffs) return null;
+    if (_selectedServiceId != 'shared') return null;
     _syncSharedDropoffs();
     final items = <Map<String, dynamic>>[];
     for (var i = 0; i < _sharedPassengerCount; i++) {
@@ -443,7 +440,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
       final name = _dropoffNames[i].trim();
       if (point == null || name.isEmpty) return null;
       items.add({
-        'label': 'Passenger ${i + 1}',
+        'label': i == 0 ? 'Passenger 1 (booker)' : 'Passenger ${i + 1}',
         'location': name,
         'lat': point.latitude,
         'lng': point.longitude,
@@ -689,7 +686,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
             ),
           ]),
           const SizedBox(height: 10),
-          _differentDropoffControls(),
+          _sharedDropoffControls(),
         ],
       ]),
     );
@@ -821,86 +818,88 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         ),
       );
 
-  Widget _differentDropoffControls() {
+  Widget _sharedDropoffControls() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      SwitchListTile(
-        value: _differentDropoffs,
-        onChanged: (value) {
-          setState(() {
-            _differentDropoffs = value;
-            _syncSharedDropoffs();
-          });
-        },
-        contentPadding: EdgeInsets.zero,
-        title: Text('Different drop-off locations',
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: AppColors.backgroundDark,
-            )),
-        subtitle: Text('Pin each passenger stop before booking.',
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              color: AppColors.textHint,
-            )),
-        activeColor: AppColors.primary,
+      Row(children: [
+        const Icon(Icons.alt_route_rounded,
+            color: AppColors.primary, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text('Shared Drop-off Order',
+              style: GoogleFonts.poppins(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                color: AppColors.backgroundDark,
+              )),
+        ),
+      ]),
+      const SizedBox(height: 4),
+      Text(
+        'Passenger 1 uses your main destination. Pin each additional passenger stop before booking.',
+        style: GoogleFonts.poppins(
+          fontSize: 10,
+          color: AppColors.textHint,
+          height: 1.4,
+        ),
       ),
-      if (_differentDropoffs) ...[
-        const SizedBox(height: 4),
-        ...List.generate(_sharedPassengerCount, (index) {
-          final pinned = index < _dropoffNames.length &&
-              _dropoffNames[index].trim().isNotEmpty &&
-              index < _dropoffPoints.length &&
-              _dropoffPoints[index] != null;
-          return Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE8EDF2)),
+      const SizedBox(height: 10),
+      ...List.generate(_sharedPassengerCount, (index) {
+        final pinned = index < _dropoffNames.length &&
+            _dropoffNames[index].trim().isNotEmpty &&
+            index < _dropoffPoints.length &&
+            _dropoffPoints[index] != null;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE8EDF2)),
+          ),
+          child: Row(children: [
+            Icon(
+              pinned
+                  ? Icons.location_on_rounded
+                  : Icons.add_location_alt_rounded,
+              size: 18,
+              color: pinned ? AppColors.primary : AppColors.textHint,
             ),
-            child: Row(children: [
-              Icon(
-                pinned
-                    ? Icons.location_on_rounded
-                    : Icons.add_location_alt_rounded,
-                size: 18,
-                color: pinned ? AppColors.primary : AppColors.textHint,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Passenger ${index + 1}',
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            color: AppColors.textHint,
-                          )),
-                      Text(
-                        pinned ? _dropoffNames[index] : 'Pin drop-off',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.backgroundDark,
-                        ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      index == 0
+                          ? 'Passenger 1 (booker)'
+                          : 'Passenger ${index + 1}',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        color: AppColors.textHint,
                       ),
-                    ]),
+                    ),
+                    Text(
+                      pinned ? _dropoffNames[index] : 'Pin drop-off',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.backgroundDark,
+                      ),
+                    ),
+                  ]),
+            ),
+            TextButton(
+              onPressed: index == 0 ? null : () => _pickSharedDropoff(index),
+              child: Text(
+                index == 0 ? 'Main' : (pinned ? 'Change' : 'Pin'),
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
               ),
-              TextButton(
-                onPressed: index == 0 ? null : () => _pickSharedDropoff(index),
-                child: Text(
-                  index == 0 ? 'Main' : 'Pin',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
-                ),
-              ),
-            ]),
-          );
-        }),
-      ],
+            ),
+          ]),
+        );
+      }),
     ]);
   }
 
@@ -1336,9 +1335,14 @@ class _DropoffPickerSheetState extends State<_DropoffPickerSheet> {
     if (!mounted) return;
     setState(() => _isSearching = false);
     if (point == null) return;
+    final fullText = suggestion.fullText.trim();
+    final fallbackText = [
+      suggestion.mainText.trim(),
+      suggestion.secondaryText.trim(),
+    ].where((part) => part.isNotEmpty).join(', ');
     Navigator.of(context).pop(
       _DropoffSelection(
-        name: suggestion.mainText,
+        name: fullText.isNotEmpty ? fullText : fallbackText,
         point: point,
       ),
     );

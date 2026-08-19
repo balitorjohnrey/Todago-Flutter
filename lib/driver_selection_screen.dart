@@ -89,6 +89,9 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
   Map<String, dynamic> get _selectedDriver => widget.onlineDrivers[_selected];
   bool get _isScheduled => widget.scheduledAt != null;
 
+  List<Map<String, dynamic>> get _sharedDropoffs =>
+      widget.sharedDropoffs ?? const [];
+
   String _etaText(Map<String, dynamic> driver) {
     final eta = _tryInt(driver['eta_minutes']);
     return eta == null ? 'Locating driver' : '$eta min away';
@@ -476,6 +479,28 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                 const SizedBox(height: 6),
                 _summaryRow(
                     'Fare Type', _formatFareType(widget.passengerFareType)),
+                if (_sharedDropoffs.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _summaryRow(
+                    'Shared Stops',
+                    '${_sharedDropoffs.length} drop-off${_sharedDropoffs.length == 1 ? '' : 's'}',
+                  ),
+                  const SizedBox(height: 6),
+                  ...List.generate(_sharedDropoffs.length, (index) {
+                    final stop = _sharedDropoffs[index];
+                    final location =
+                        stop['location']?.toString() ?? 'Drop-off ${index + 1}';
+                    final label =
+                        stop['label']?.toString() ?? 'Passenger ${index + 1}';
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: _summaryRow(
+                        index == 0 ? 'Stop Order' : '',
+                        '${index + 1}. $label - $location',
+                      ),
+                    );
+                  }),
+                ],
                 if (widget.otherFeeAmount > 0) ...[
                   const SizedBox(height: 6),
                   _summaryRow(
