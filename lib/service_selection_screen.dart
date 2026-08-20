@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'fare_settings_service.dart';
 import 'finding_driver_screen.dart';
+import 'live_map_screen.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
 import 'trip_service.dart';
@@ -237,6 +238,17 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         _driversLoaded = true;
       });
     }
+  }
+
+  void _openLiveMap() {
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => LiveMapScreen(
+        initialLocation: widget.pickupLatLng ?? widget.destinationLatLng,
+      ),
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionsBuilder: (_, anim, __, child) =>
+          FadeTransition(opacity: anim, child: child),
+    ));
   }
 
   Future<void> _confirmRide() async {
@@ -521,31 +533,60 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
             ),
           ),
           const SizedBox(width: 14),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Select Service',
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-            Text('Choose your ride type',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  color: AppColors.textHint,
-                )),
-          ]),
-          const Spacer(),
+          Expanded(
+            child:
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Select Service',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  )),
+              Text('Choose your ride type',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.poppins(
+                    fontSize: 12,
+                    color: AppColors.textHint,
+                  )),
+            ]),
+          ),
+          const SizedBox(width: 10),
+          Tooltip(
+            message: 'View Live Map',
+            child: Semantics(
+              label: 'View Live Map',
+              button: true,
+              child: GestureDetector(
+                onTap: _openLiveMap,
+                child: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE8EDF2)),
+                  ),
+                  child: const Icon(Icons.map_rounded,
+                      color: AppColors.backgroundDark, size: 20),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: _onlineDrivers.isNotEmpty
-                  ? Colors.green.withOpacity(0.1)
-                  : Colors.orange.withOpacity(0.1),
+                  ? Colors.green.withValues(alpha: 0.1)
+                  : Colors.orange.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
                 color: _onlineDrivers.isNotEmpty
-                    ? Colors.green.withOpacity(0.4)
-                    : Colors.orange.withOpacity(0.4),
+                    ? Colors.green.withValues(alpha: 0.4)
+                    : Colors.orange.withValues(alpha: 0.4),
               ),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -821,8 +862,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   Widget _sharedDropoffControls() {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        const Icon(Icons.alt_route_rounded,
-            color: AppColors.primary, size: 18),
+        const Icon(Icons.alt_route_rounded, color: AppColors.primary, size: 18),
         const SizedBox(width: 8),
         Expanded(
           child: Text('Shared Drop-off Order',
@@ -1084,9 +1124,9 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Colors.orange.withOpacity(0.08),
+                color: Colors.orange.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
               ),
               child: Row(children: [
                 const Icon(Icons.warning_rounded,
@@ -1131,8 +1171,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFFBF0),
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: AppColors.primary.withOpacity(0.35)),
+                  border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.35)),
                 ),
                 child: Row(children: [
                   const Icon(Icons.notifications_active_rounded,
@@ -1197,7 +1237,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.backgroundDark,
                 disabledBackgroundColor:
-                    AppColors.backgroundDark.withOpacity(0.5),
+                    AppColors.backgroundDark.withValues(alpha: 0.5),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
