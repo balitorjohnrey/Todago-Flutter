@@ -964,7 +964,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final isScheduled =
         b['trip_type']?.toString() == 'scheduled' || status == 'scheduled';
     final canTrack =
-        ['requested', 'accepted', 'pickup', 'ongoing'].contains(status);
+        ['requested', 'accepted', 'pickup', 'ongoing', 'arrived'].contains(status);
     final hasRatingData = _tripRatings.containsKey(tripId);
     final existingRating = _tripRatings[tripId];
 
@@ -972,6 +972,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     if (status == 'completed') statusColor = Colors.green;
     if (status == 'cancelled') statusColor = Colors.red;
     if (status == 'accepted') statusColor = Colors.green;
+    if (status == 'arrived') statusColor = AppColors.primary;
     if (status == 'requested') statusColor = Colors.orange;
     if (status == 'scheduled') statusColor = AppColors.primary;
     if (b['statusColor'] is Color) statusColor = b['statusColor'] as Color;

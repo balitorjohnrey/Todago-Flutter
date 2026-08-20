@@ -132,8 +132,8 @@ class _AIChatScreenState extends State<AIChatScreen>
     _FaqItem(
       question: 'How do I complete a trip?',
       answer:
-          'After pickup, follow the active trip screen. When the passenger reaches the destination, tap Complete Trip. The app then records the completed status and shows earnings.',
-      keywords: ['complete', 'finish', 'end', 'trip', 'destination'],
+          'After pickup, follow the active trip screen. When the passenger reaches the destination, tap Arrived at Destination, then Collect Payment after cash or TodaGo online payment is settled.',
+      keywords: ['complete', 'finish', 'end', 'trip', 'destination', 'payment'],
       roles: {'driver'},
     ),
     _FaqItem(

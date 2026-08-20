@@ -22,87 +22,48 @@ class DriverAuthService {
 
   static const _storage = FlutterSecureStorage();
 
-  // Keys — main account token lives under 'auth_token' (set by AuthService)
-  static const _mainTokenKey =
-      'auth_token'; // ← written by AuthService on login/register
   static const _driverTokenKey = 'driver_auth_token';
   static const _driverDataKey = 'driver_data';
 
-  // ── Fetch main account data (auto-fill for driver registration form) ─────────
-  // Call this in initState of your DriverRegistrationScreen to pre-fill
-  // Full Name, Phone Number, and Email Address from the main account.
-  //
-  // Returns null if the user is not signed in to their main account.
-  static Future<Map<String, dynamic>?> fetchMainAccountData() async {
-    try {
-      final token = await _storage.read(key: _mainTokenKey);
-      if (token == null || token.isEmpty) return null;
-
-      final response = await http.get(
-        Uri.parse(
-            'https://todago-backend-production.up.railway.app/api/auth/me'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-
-      if (response.statusCode == 200 && data['success'] == true) {
-        // Returns: { id, full_name, email, phone, role, ... }
-        return data['user'] as Map<String, dynamic>;
-      }
-      return null;
-    } catch (_) {
-      return null;
-    }
-  }
-
   // ── Register driver ───────────────────────────────────────────────────────────
-  // FIX: Now sends the main account JWT in the Authorization header.
-  // The backend reads name/phone/email/password directly from the main account
-  // using req.userId — no more phone number mismatches or "No account found".
-  //
-  // Only vehicle details are needed from the form.
   static Future<DriverAuthResponse> register({
+    required String fullName,
+    required String email,
+    required String phone,
+    required String password,
     required String driverType,
     required String licenseNo,
     required String todaBodyNumber,
     required String plateNo,
+    required String validIdType,
+    required String validIdNumber,
+    required String validIdImageUrl,
+    required String faceImageUrl,
     String? vehicleColor,
     String? todaAssociation,
   }) async {
     try {
-      // Get main account token — required for registration
-      final mainToken = await _storage.read(key: _mainTokenKey);
-
-      if (mainToken == null || mainToken.isEmpty) {
-        return DriverAuthResponse(
-          success: false,
-          message:
-              'You must be signed in to your main TodaGo account to register as a driver.',
-        );
-      }
-
       final response = await http
           .post(
             Uri.parse('$_baseUrl/register'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $mainToken', // ← FIX: send main token
-            },
+            headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
+              'fullName': fullName.trim(),
+              'email': email.toLowerCase().trim(),
+              'phone': phone.trim(),
+              'password': password,
               'driverType': driverType,
               'licenseNo': licenseNo.trim(),
               'todaBodyNumber': todaBodyNumber.trim(),
               'plateNo': plateNo.trim(),
+              'validIdType': validIdType,
+              'validIdNumber': validIdNumber,
+              'validIdImageUrl': validIdImageUrl,
+              'faceImageUrl': faceImageUrl,
               if (vehicleColor != null && vehicleColor.isNotEmpty)
                 'vehicleColor': vehicleColor,
               if (todaAssociation != null && todaAssociation.isNotEmpty)
                 'todaAssociation': todaAssociation.trim(),
-              // name, phone, email are NOT sent — backend reads them from
-              // the main account using the token
             }),
           )
           .timeout(const Duration(seconds: 20));
@@ -134,7 +95,7 @@ class DriverAuthService {
   }
 
   // ── Login driver ──────────────────────────────────────────────────────────────
-  // TODA body number + plate number + main account password
+  // License number + driver password
   static Future<DriverAuthResponse> login({
     required String driverType,
     required String licenseNo,
@@ -193,6 +154,13 @@ class DriverAuthService {
   // ── Storage helpers ───────────────────────────────────────────────────────────
   static Future<void> _saveSession(
       String token, Map<String, dynamic>? driver) async {
+    await _storage.delete(key: 'auth_token');
+    await _storage.delete(key: 'user_data');
+    await _storage.delete(key: 'user_role');
+    await _storage.delete(key: 'operator_auth_token');
+    await _storage.delete(key: 'operator_data');
+    await _storage.delete(key: 'admin_auth_token');
+    await _storage.delete(key: 'admin_data');
     await _storage.write(key: _driverTokenKey, value: token);
     if (driver != null) {
       await _storage.write(key: _driverDataKey, value: jsonEncode(driver));

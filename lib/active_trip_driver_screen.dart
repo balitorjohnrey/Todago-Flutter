@@ -69,6 +69,35 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   }
 
   double get _driverEarnings => _fare;
+  String get _tripStatus => _trip['status']?.toString() ?? '';
+  String get _paymentMethod => _trip['payment_method']?.toString() ?? 'cash';
+  String get _paymentStatus => _trip['payment_status']?.toString() ?? 'unpaid';
+  bool get _hasArrivedAtDestination => _tripStatus == 'arrived';
+  bool get _isOnlinePayment => _paymentMethod != 'cash';
+  bool get _isPaymentPaid => _paymentStatus == 'paid';
+
+  String get _paymentLabel {
+    switch (_paymentMethod) {
+      case 'gcash':
+        return 'GCash';
+      case 'maya':
+        return 'Maya';
+      case 'wallet':
+        return 'TodaGo Payment';
+      default:
+        return 'Cash';
+    }
+  }
+
+  String get _primaryActionTitle =>
+      _hasArrivedAtDestination ? 'Collect Payment' : 'Arrived at Destination';
+
+  String get _primaryActionSubtitle {
+    if (!_hasArrivedAtDestination) return 'Tap when passenger reaches destination';
+    if (_paymentMethod == 'cash') return 'Confirm cash payment from passenger';
+    if (_isPaymentPaid) return 'Online payment received by TodaGo';
+    return 'Waiting for passenger $_paymentLabel payment';
+  }
 
   bool get _isSharedTrip => _trip['service_type']?.toString() == 'shared';
 
@@ -526,11 +555,38 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       ));
       return;
     }
+
     setState(() => _isCompleting = true);
     final tripId = _trip['trip_id']?.toString() ?? '';
     Map<String, dynamic> result = {'success': false};
     if (tripId.isNotEmpty) {
-      result = await TripService.updateTripStatus(tripId, 'completed');
+      if (!_hasArrivedAtDestination) {
+        result = await TripService.updateTripStatus(tripId, 'arrived');
+        final latest = await TripService.getTripById(tripId, forDriver: true);
+        if (!mounted) return;
+        setState(() {
+          _isCompleting = false;
+          if (latest != null) {
+            _trip = Map<String, dynamic>.from(latest);
+          } else if (result['success'] == true) {
+            _trip['status'] = 'arrived';
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+            result['success'] == true
+                ? 'Destination arrival marked. Collect payment next.'
+                : result['message']?.toString() ?? 'Could not mark arrival.',
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor:
+              result['success'] == true ? AppColors.success : AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ));
+        return;
+      }
+      result = await TripService.collectTripPayment(tripId);
     }
     if (!mounted) return;
     setState(() => _isCompleting = false);
@@ -731,7 +787,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'TRIP IN PROGRESS',
+                            _hasArrivedAtDestination
+                                ? 'ARRIVED AT DESTINATION'
+                                : 'TRIP IN PROGRESS',
                             style: GoogleFonts.poppins(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
@@ -795,7 +853,10 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
           bottom: 0,
           left: 0,
           right: 0,
-          child: Container(
+           child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.68,
+            ),
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -809,7 +870,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 32),
             child: SafeArea(
               top: false,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              child: SingleChildScrollView(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Center(
                   child: Container(
                     width: 40,
@@ -930,6 +992,68 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                             'Earnings', Icons.payments_rounded, Colors.green),
                       ]),
                 ),
+                 const SizedBox(height: 16),
+
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: _isPaymentPaid
+                        ? Colors.green.withOpacity(0.08)
+                        : const Color(0xFFFFFBF0),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _isPaymentPaid
+                          ? Colors.green.withOpacity(0.25)
+                          : AppColors.primary.withOpacity(0.45),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      _isPaymentPaid
+                          ? Icons.check_circle_rounded
+                          : Icons.payments_rounded,
+                      color: _isPaymentPaid ? Colors.green : AppColors.primary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _paymentLabel,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.backgroundDark,
+                            ),
+                          ),
+                          Text(
+                            _isPaymentPaid
+                                ? 'Payment received'
+                                : _isOnlinePayment
+                                    ? 'Passenger pays through TodaGo'
+                                    : 'Collect cash from passenger',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: AppColors.textHint,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Text(
+                      _paymentStatus.toUpperCase(),
+                      style: GoogleFonts.poppins(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color:
+                            _isPaymentPaid ? Colors.green : AppColors.textHint,
+                      ),
+                    ),
+                  ]),
+                ),
                 const SizedBox(height: 16),
 
                 if (_hasPendingSharedDropoffs) ...[
@@ -997,7 +1121,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                   const SizedBox(height: 12),
                 ],
 
-                // Complete Trip button
+                // Arrival / payment button
                 GestureDetector(
                   onTap: (_isCompleting || _hasPendingSharedDropoffs)
                       ? null
@@ -1028,7 +1152,10 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                                 child: CircularProgressIndicator(
                                     strokeWidth: 2, color: Colors.white),
                               ))
-                            : const Icon(Icons.check_rounded,
+                            : Icon(
+                                _hasArrivedAtDestination
+                                    ? Icons.payments_rounded
+                                    : Icons.flag_rounded,
                                 color: Colors.white, size: 22),
                       ),
                       const SizedBox(width: 12),
@@ -1037,7 +1164,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'Complete Trip',
+                                _primaryActionTitle,
                                 style: GoogleFonts.poppins(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
@@ -1047,7 +1174,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                               Text(
                                 _hasPendingSharedDropoffs
                                     ? 'Available after all shared passengers are dropped'
-                                    : 'Tap when passenger reaches destination',
+                                    : _primaryActionSubtitle,
                                 style: GoogleFonts.poppins(
                                     fontSize: 10, color: Colors.white70),
                               ),
@@ -1056,7 +1183,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                     ]),
                   ),
                 ),
-              ]),
+                ]),
+              ),
             ),
           ).animate().slideY(
               begin: 0.3, end: 0, duration: 400.ms, curve: Curves.easeOut),

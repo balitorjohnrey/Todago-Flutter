@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'app_theme.dart';
 import 'contact_service.dart';
 import 'trip_service.dart';
@@ -67,6 +68,35 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String? _driverPhone;
   double _fare = 0;
   Map<String, dynamic>? _latestTrip;
+  bool _isChangingPaymentMethod = false;
+  bool _isStartingPayment = false;
+
+  static const List<Map<String, dynamic>> _paymentOptions = [
+    {
+      'value': 'cash',
+      'label': 'Cash',
+      'subtitle': 'Pay the driver at drop-off',
+      'icon': Icons.payments_rounded,
+    },
+    {
+      'value': 'gcash',
+      'label': 'GCash',
+      'subtitle': 'Pay through PayMongo checkout',
+      'icon': Icons.account_balance_wallet_rounded,
+    },
+    {
+      'value': 'maya',
+      'label': 'Maya',
+      'subtitle': 'Pay through PayMongo checkout',
+      'icon': Icons.phone_iphone_rounded,
+    },
+    {
+      'value': 'wallet',
+      'label': 'TodaGo Payment',
+      'subtitle': 'Keep payment inside TodaGo',
+      'icon': Icons.verified_rounded,
+    },
+  ];
 
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
@@ -80,6 +110,17 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String get _liveEtaText => _liveEta == null ? 'Locating' : '$_liveEta min';
   String get _liveDistText =>
       _liveDist == null ? 'GPS pending' : '${_liveDist!.toStringAsFixed(1)} km';
+  String get _paymentMethod =>
+      _latestTrip?['payment_method']?.toString() ?? 'cash';
+  String get _paymentStatus =>
+      _latestTrip?['payment_status']?.toString() ?? 'unpaid';
+  bool get _hasArrivedAtDestination => _tripStatus == 'arrived';
+  bool get _isOnlinePayment => _paymentMethod != 'cash';
+  bool get _isPaymentPaid => _paymentStatus == 'paid';
+  String get _paymentLabel => _paymentOptions.firstWhere(
+        (option) => option['value'] == _paymentMethod,
+        orElse: () => _paymentOptions.first,
+      )['label'] as String;
 
   @override
   void initState() {
@@ -152,7 +193,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         _checkIfCompleted();
         return;
       }
-      _latestTrip = trip;
+      setState(() => _latestTrip = Map<String, dynamic>.from(trip));
 
       // Update text fields from server
       if (trip['destination'] != null &&
@@ -182,7 +223,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       // ── Phase switch: 'pickup' = driver confirmed arrival at passenger ─
       // Switch to riding phase immediately so the map shows
       // current location → destination.
-      if ((status == 'pickup' || status == 'ongoing') &&
+      if ((status == 'pickup' || status == 'ongoing' || status == 'arrived') &&
           _phase == 'approaching') {
         setState(() => _tripStatus = status);
         _switchToRidingPhase();
@@ -497,6 +538,179 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     _goHome();
   }
 
+  Future<void> _choosePaymentMethod() async {
+    if (_isChangingPaymentMethod || _isPaymentPaid) return;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Payment Method',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ..._paymentOptions.map((option) {
+                final value = option['value'] as String;
+                final selected = value == _paymentMethod;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(value),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary.withOpacity(0.14)
+                            : const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : const Color(0xFFEEEEEE),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                          option['icon'] as IconData,
+                          color: selected
+                              ? AppColors.backgroundDark
+                              : AppColors.textHint,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                option['label'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.backgroundDark,
+                                ),
+                              ),
+                              Text(
+                                option['subtitle'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (selected)
+                          const Icon(Icons.check_circle_rounded,
+                              color: AppColors.primary),
+                      ]),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || choice == _paymentMethod || !mounted) return;
+
+    setState(() => _isChangingPaymentMethod = true);
+    final result = await TripService.updatePaymentMethod(widget.tripId, choice);
+    if (!mounted) return;
+    setState(() {
+      _isChangingPaymentMethod = false;
+      final trip = result['trip'];
+      if (trip is Map<String, dynamic>) {
+        _latestTrip = trip;
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        result['message']?.toString() ??
+            (result['success'] == true
+                ? 'Payment method updated.'
+                : 'Could not update payment method.'),
+        style: GoogleFonts.poppins(fontSize: 13),
+      ),
+      backgroundColor:
+          result['success'] == true ? AppColors.success : AppColors.error,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
+  Future<void> _startOnlinePayment() async {
+    if (_isStartingPayment || !_isOnlinePayment || _isPaymentPaid) return;
+    setState(() => _isStartingPayment = true);
+    final result = await TripService.createPaymentCheckout(
+      widget.tripId,
+      paymentMethod: _paymentMethod,
+    );
+    if (!mounted) return;
+    setState(() {
+      _isStartingPayment = false;
+      final trip = result['trip'];
+      if (trip is Map<String, dynamic>) {
+        _latestTrip = trip;
+      }
+    });
+
+    final checkoutUrl = result['checkoutUrl']?.toString();
+    if (result['success'] == true &&
+        checkoutUrl != null &&
+        checkoutUrl.isNotEmpty) {
+      final launched = await launchUrl(
+        Uri.parse(checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted) return;
+      if (!launched) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Could not open PayMongo checkout.',
+              style: GoogleFonts.poppins(fontSize: 13)),
+          backgroundColor: AppColors.error,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(
+        result['message']?.toString() ?? 'Could not start payment.',
+        style: GoogleFonts.poppins(fontSize: 13),
+      ),
+      backgroundColor: AppColors.error,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
   void _stopTimers() {
     _pollTimer?.cancel();
     _routeRefreshTimer?.cancel();
@@ -514,6 +728,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String get _statusLabel {
     if (_phase == 'riding') {
       switch (_tripStatus) {
+        case 'arrived':
+          return 'Arrived at destination';
         case 'completed':
           return 'Trip Completed! 🎉';
         default:
@@ -750,7 +966,10 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
           bottom: 0,
           left: 0,
           right: 0,
-          child: Container(
+           child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.62,
+            ),
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
@@ -762,7 +981,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
               ],
             ),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
               // drag handle
               Center(
                 child: Container(
@@ -837,6 +1057,110 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                 width: double.infinity,
                 height: 42,
                 child: OutlinedButton.icon(
+                  onPressed: (_isChangingPaymentMethod || _isPaymentPaid)
+                      ? null
+                      : _choosePaymentMethod,
+                  icon: _isChangingPaymentMethod
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.payments_rounded, size: 18),
+                  label: Text(
+                    'Payment Method: $_paymentLabel',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.backgroundDark,
+                    side: const BorderSide(color: AppColors.primary),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              if (_hasArrivedAtDestination) ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: _isOnlinePayment
+                      ? ElevatedButton.icon(
+                          onPressed: (_isStartingPayment || _isPaymentPaid)
+                              ? null
+                              : _startOnlinePayment,
+                          icon: _isStartingPayment
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.backgroundDark,
+                                  ),
+                                )
+                              : Icon(_isPaymentPaid
+                                  ? Icons.check_circle_rounded
+                                  : Icons.account_balance_wallet_rounded),
+                          label: Text(
+                            _isPaymentPaid
+                                ? 'Payment Received'
+                                : 'Pay with $_paymentLabel',
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _isPaymentPaid
+                                ? AppColors.success
+                                : AppColors.primary,
+                            foregroundColor: AppColors.backgroundDark,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFBF0),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: AppColors.primary.withOpacity(0.4)),
+                          ),
+                          child: Row(children: [
+                            const Icon(Icons.payments_rounded,
+                                color: AppColors.primary, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Please pay cash to the driver',
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.backgroundDark,
+                                ),
+                              ),
+                            ),
+                          ]),
+                        ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              SizedBox(
+                width: double.infinity,
+                height: 42,
+                child: OutlinedButton.icon(
                   onPressed: _reportDriverIssue,
                   icon: const Icon(Icons.report_problem_rounded, size: 18),
                   label: Text('Report an Issue',
@@ -859,34 +1183,49 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: _phase == 'riding'
-                      ? Colors.green.withOpacity(0.06)
-                      : const Color(0xFFF8F9FA),
+                  color: _hasArrivedAtDestination
+                      ? AppColors.primary.withOpacity(0.08)
+                      : _phase == 'riding'
+                          ? Colors.green.withOpacity(0.06)
+                          : const Color(0xFFF8F9FA),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: _phase == 'riding'
-                        ? Colors.green.withOpacity(0.25)
-                        : const Color(0xFFEEEEEE),
+                    color: _hasArrivedAtDestination
+                        ? AppColors.primary.withOpacity(0.35)
+                        : _phase == 'riding'
+                            ? Colors.green.withOpacity(0.25)
+                            : const Color(0xFFEEEEEE),
                   ),
                 ),
                 child: Row(children: [
                   Icon(
-                    _phase == 'riding'
-                        ? Icons.electric_rickshaw_rounded
-                        : Icons.navigation_rounded,
-                    color:
-                        _phase == 'riding' ? Colors.green : AppColors.primary,
+                    _hasArrivedAtDestination
+                        ? Icons.flag_rounded
+                        : _phase == 'riding'
+                            ? Icons.electric_rickshaw_rounded
+                            : Icons.navigation_rounded,
+                    color: _hasArrivedAtDestination
+                        ? AppColors.primary
+                        : _phase == 'riding'
+                            ? Colors.green
+                            : AppColors.primary,
                     size: 18,
                   ),
                   const SizedBox(width: 10),
-                  Text(
-                    _phase == 'riding'
-                        ? 'You are on the way to your destination'
-                        : 'Your driver is heading to you',
-                    style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.backgroundDark),
+                  Expanded(
+                    child: Text(
+                      _hasArrivedAtDestination
+                          ? (_isPaymentPaid
+                              ? 'Payment received by TodaGo'
+                              : 'Settle payment to complete the trip')
+                          : _phase == 'riding'
+                              ? 'You are on the way to your destination'
+                              : 'Your driver is heading to you',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.backgroundDark),
+                    ),
                   ),
                 ]),
               ),
@@ -911,7 +1250,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                             color: AppColors.textHint)),
                   ),
                 ),
-            ]),
+              ]),
+            ),
           ).animate().slideY(
               begin: 0.3, end: 0, duration: 400.ms, curve: Curves.easeOut),
         ),

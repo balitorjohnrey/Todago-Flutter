@@ -267,6 +267,61 @@ class TripService {
     }
   }
 
+  static Future<Map<String, dynamic>> updatePaymentMethod(
+    String tripId,
+    String paymentMethod,
+  ) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .put(
+            Uri.parse('$_baseUrl/$tripId/payment-method'),
+            headers: _headers(token),
+            body: jsonEncode({'paymentMethod': paymentMethod}),
+          )
+          .timeout(const Duration(seconds: 10));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> createPaymentCheckout(
+    String tripId, {
+    String? paymentMethod,
+  }) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/$tripId/payment/checkout'),
+            headers: _headers(token),
+            body: jsonEncode({
+              if (paymentMethod != null) 'paymentMethod': paymentMethod,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
+  static Future<Map<String, dynamic>> collectTripPayment(String tripId) async {
+    try {
+      final token = await _getDriverToken();
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/$tripId/payment/collect'),
+            headers: _headers(token),
+          )
+          .timeout(const Duration(seconds: 10));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      return {'success': false, 'message': 'Connection failed'};
+    }
+  }
+
   // ── Driver: update online/offline status ─────────────────────────────────
   static Future<Map<String, dynamic>> cancelPassengerTrip(String tripId) async {
     try {

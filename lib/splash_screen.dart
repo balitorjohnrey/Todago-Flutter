@@ -4,7 +4,11 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
-import 'login_screen.dart';
+import 'driver_auth_service.dart';
+import 'driver_dashboard_screen.dart';
+import 'operator_auth_service.dart';
+import 'operator_dashboard_screen.dart';
+import 'passenger_home_screen.dart';
 import 'role_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -31,10 +35,24 @@ class _SplashScreenState extends State<SplashScreen> {
     await Future.delayed(const Duration(milliseconds: 1200));
     if (mounted) setState(() => _showGetStarted = true);
 
-    final loggedIn = await AuthService.isLoggedIn();
-    if (loggedIn && mounted) {
+    final driverLoggedIn = await DriverAuthService.isLoggedIn();
+    if (driverLoggedIn && mounted) {
       await Future.delayed(const Duration(milliseconds: 600));
-      _navigateTo(const RoleSelectionScreen(successMessage: ''));
+      _navigateTo(const DriverDashboardScreen());
+      return;
+    }
+
+    final operatorLoggedIn = await OperatorAuthService.isLoggedIn();
+    if (operatorLoggedIn && mounted) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      _navigateTo(const OperatorDashboardScreen());
+      return;
+    }
+
+    final passengerLoggedIn = await AuthService.isLoggedIn();
+    if (passengerLoggedIn && mounted) {
+      await Future.delayed(const Duration(milliseconds: 600));
+      _navigateTo(const PassengerHomeScreen());
     }
   }
 
@@ -117,7 +135,9 @@ class _SplashScreenState extends State<SplashScreen> {
                       duration: const Duration(milliseconds: 500),
                       curve: Curves.easeOut,
                       child: ElevatedButton(
-                        onPressed: () => _navigateTo(const LoginScreen()),
+                        onPressed: () => _navigateTo(
+                          const RoleSelectionScreen(successMessage: ''),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: AppColors.backgroundDark,

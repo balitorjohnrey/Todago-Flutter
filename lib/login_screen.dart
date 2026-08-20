@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
-import 'admin_login_screen.dart';
 import 'auth_service.dart';
+import 'passenger_home_screen.dart';
 import 'password_reset_dialog.dart';
 import 'register_screen.dart';
-import 'role_selection_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -56,10 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
     if (result.success && hasFreshToken) {
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => RoleSelectionScreen(
-            successMessage:
-                result.message ?? 'Login successful! Welcome back 👋',
-          ),
+          pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -93,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ).animate().fadeIn(duration: 400.ms),
               const SizedBox(height: 40),
               Text(
-                'Welcome\nBack 👋',
+                'Passenger\nLogin',
                 style: GoogleFonts.poppins(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
@@ -266,32 +262,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ).animate().fadeIn(delay: 700.ms),
-              const SizedBox(height: 18),
-              Center(
-                child: TextButton.icon(
-                  onPressed: () => Navigator.of(context).push(PageRouteBuilder(
-                    pageBuilder: (_, __, ___) => const AdminLoginScreen(),
-                    transitionDuration: const Duration(milliseconds: 400),
-                    transitionsBuilder: (_, anim, __, child) => SlideTransition(
-                      position: Tween<Offset>(
-                              begin: const Offset(0, 1), end: Offset.zero)
-                          .animate(CurvedAnimation(
-                              parent: anim, curve: Curves.easeOut)),
-                      child: child,
-                    ),
-                  )),
-                  icon:
-                      const Icon(Icons.admin_panel_settings_rounded, size: 17),
-                  label: Text('Admin Secret Access',
-                      style: GoogleFonts.poppins(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      )),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.primary,
-                  ),
-                ),
-              ).animate().fadeIn(delay: 760.ms),
               const SizedBox(height: 40),
             ],
           ),

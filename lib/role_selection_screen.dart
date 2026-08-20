@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
-import 'auth_service.dart';
-import 'passenger_home_screen.dart';
-import 'driver_check_screen.dart';
-import 'operator_check_screen.dart';
+import 'driver_login_screen.dart';
+import 'login_screen.dart';
+import 'operator_login_screen.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
   final String successMessage;
@@ -25,21 +24,21 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
       'title': 'Passenger',
       'subtitle': 'I need a ride',
       'icon': Icons.directions_walk_rounded,
-      'tags': ['Book Rides', 'Track Trips'],
+      'tags': ['Passenger Login', 'Passenger Sign Up'],
     },
     {
       'id': 'driver',
       'title': 'Driver',
       'subtitle': 'I am a TODA driver',
       'icon': Icons.person_rounded,
-      'tags': ['Accept Rides', 'Track Earnings'],
+      'tags': ['Driver Login', 'Driver Sign Up'],
     },
     {
       'id': 'operator',
       'title': 'Operator Dashboard',
       'subtitle': 'I manage a fleet of trikes',
       'icon': Icons.groups_rounded,
-      'tags': ['Fleet Manager', 'Analytics'],
+      'tags': ['Operator Login', 'Operator Sign Up'],
     },
   ];
 
@@ -85,42 +84,27 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
     }
 
     setState(() => _isLoading = true);
-    await AuthService.saveRole(_selectedRole!);
+
+    final Widget screen;
+    if (_selectedRole == 'driver') {
+      screen = const DriverLoginScreen();
+    } else if (_selectedRole == 'operator') {
+      screen = const OperatorLoginScreen();
+    } else {
+      screen = const LoginScreen();
+    }
+
     if (!mounted) return;
     setState(() => _isLoading = false);
-
-    if (_selectedRole == 'operator') {
-      Navigator.of(context).push(PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const OperatorCheckScreen(),
-        transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: child,
-        ),
-      ));
-    } else if (_selectedRole == 'driver') {
-      Navigator.of(context).push(PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const DriverCheckScreen(),
-        transitionDuration: const Duration(milliseconds: 400),
-        transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
-          child: child,
-        ),
-      ));
-    } else {
-      // Passenger → go directly to PassengerHomeScreen
-      Navigator.of(context).pushAndRemoveUntil(
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
-          transitionDuration: const Duration(milliseconds: 500),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-        ),
-        (_) => false,
-      );
-    }
+    Navigator.of(context).push(PageRouteBuilder(
+      pageBuilder: (_, __, ___) => screen,
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionsBuilder: (_, anim, __, child) => SlideTransition(
+        position: Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero)
+            .animate(CurvedAnimation(parent: anim, curve: Curves.easeOut)),
+        child: child,
+      ),
+    ));
   }
 
   @override
@@ -143,20 +127,20 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
 
             const SizedBox(height: 20),
 
-            Text('Welcome to TodaGo', style: GoogleFonts.poppins(
+            Text('Choose Your Account', style: GoogleFonts.poppins(
               fontSize: 22, fontWeight: FontWeight.w700,
               color: AppColors.textPrimary,
             )).animate().fadeIn(delay: 100.ms, duration: 400.ms),
 
             const SizedBox(height: 28),
 
-            Text('How will you use TodaGo today?', style: GoogleFonts.poppins(
+            Text('Sign in or create the account type you need', style: GoogleFonts.poppins(
               fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
             ), textAlign: TextAlign.center).animate().fadeIn(delay: 150.ms),
 
             const SizedBox(height: 6),
 
-            Text('Choose your role to continue', style: GoogleFonts.poppins(
+            Text('Passenger, driver, and operator accounts are separate', style: GoogleFonts.poppins(
               fontSize: 13, color: AppColors.textSecondary,
             )).animate().fadeIn(delay: 200.ms),
 
@@ -193,7 +177,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     ? const SizedBox(width: 22, height: 22,
                         child: CircularProgressIndicator(
                             strokeWidth: 2.5, color: AppColors.backgroundDark))
-                    : Text('Continue', style: GoogleFonts.poppins(
+                    : Text('Continue to Login', style: GoogleFonts.poppins(
                         fontSize: 15, fontWeight: FontWeight.w700,
                         color: _selectedRole != null
                             ? AppColors.backgroundDark : AppColors.textHint,

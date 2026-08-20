@@ -56,6 +56,34 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
   int _selected = 0;
   bool _isLoading = false;
   String? _errorMessage;
+  String _selectedPaymentMethod = 'cash';
+
+  static const List<Map<String, dynamic>> _paymentOptions = [
+    {
+      'value': 'cash',
+      'label': 'Cash',
+      'subtitle': 'Pay the driver at drop-off',
+      'icon': Icons.payments_rounded,
+    },
+    {
+      'value': 'gcash',
+      'label': 'GCash',
+      'subtitle': 'Pay through PayMongo checkout',
+      'icon': Icons.account_balance_wallet_rounded,
+    },
+    {
+      'value': 'maya',
+      'label': 'Maya',
+      'subtitle': 'Pay through PayMongo checkout',
+      'icon': Icons.phone_iphone_rounded,
+    },
+    {
+      'value': 'wallet',
+      'label': 'TodaGo Payment',
+      'subtitle': 'Keep payment inside TodaGo',
+      'icon': Icons.verified_rounded,
+    },
+  ];
 
   // Safe numeric parser — all API values may come as Strings
   static double _safeDouble(dynamic v, [double fallback = 0.0]) {
@@ -88,6 +116,10 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
 
   Map<String, dynamic> get _selectedDriver => widget.onlineDrivers[_selected];
   bool get _isScheduled => widget.scheduledAt != null;
+  String get _paymentLabel => _paymentOptions.firstWhere(
+        (option) => option['value'] == _selectedPaymentMethod,
+        orElse: () => _paymentOptions.first,
+      )['label'] as String;
 
   List<Map<String, dynamic>> get _sharedDropoffs =>
       widget.sharedDropoffs ?? const [];
@@ -126,7 +158,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             pickupItemDescription: widget.pickupItemDescription,
             pickupItemWeight: widget.pickupItemWeight,
             sharedDropoffs: widget.sharedDropoffs,
-            paymentMethod: 'cash',
+            paymentMethod: _selectedPaymentMethod,
             scheduledAt: widget.scheduledAt!,
             pickupLatLng: widget.pickupLatLng,
             destinationLatLng: widget.destinationLatLng,
@@ -145,7 +177,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             pickupItemDescription: widget.pickupItemDescription,
             pickupItemWeight: widget.pickupItemWeight,
             sharedDropoffs: widget.sharedDropoffs,
-            paymentMethod: 'cash',
+            paymentMethod: _selectedPaymentMethod,
             pickupLatLng: widget.pickupLatLng,
             destinationLatLng: widget.destinationLatLng,
           );
@@ -211,6 +243,110 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
     }
   }
 
+  Future<void> _choosePaymentMethod() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Payment Method',
+                  style: GoogleFonts.poppins(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              ..._paymentOptions.map((option) {
+                final value = option['value'] as String;
+                final selected = value == _selectedPaymentMethod;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(value),
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary.withOpacity(0.14)
+                            : const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : const Color(0xFFEEEEEE),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(
+                          option['icon'] as IconData,
+                          color: selected
+                              ? AppColors.backgroundDark
+                              : AppColors.textHint,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                option['label'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.backgroundDark,
+                                ),
+                              ),
+                              Text(
+                                option['subtitle'] as String,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (selected)
+                          const Icon(Icons.check_circle_rounded,
+                              color: AppColors.primary),
+                      ]),
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice != null && mounted) {
+      setState(() => _selectedPaymentMethod = choice);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -224,7 +360,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             color: Color(0xFFF5F5F5),
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
+          child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
             // Header
             Container(
               width: double.infinity,
@@ -522,6 +659,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                       'Pickup Time', _formatSchedule(widget.scheduledAt)),
                 ],
                 const SizedBox(height: 6),
+                _summaryRow('Payment Method', _paymentLabel),
+                const SizedBox(height: 6),
                 _summaryRow('ETA', _etaText(_selectedDriver)),
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 10),
@@ -544,6 +683,32 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                 ]),
               ]),
             ).animate().fadeIn(delay: 400.ms),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _choosePaymentMethod,
+                  icon: const Icon(Icons.payments_rounded, size: 18),
+                  label: Text(
+                    'Payment Method: $_paymentLabel',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.backgroundDark,
+                    side: const BorderSide(color: AppColors.primary, width: 1.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+            ).animate().fadeIn(delay: 425.ms),
 
             // Confirm button
             Padding(
@@ -587,7 +752,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                   style: GoogleFonts.poppins(
                       fontSize: 11, color: AppColors.textHint)),
             ),
-          ]),
+            ]),
+          ),
         ),
       ),
     );

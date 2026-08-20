@@ -249,7 +249,10 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
           }
         }
 
-        if (status == 'accepted' || status == 'pickup' || status == 'ongoing') {
+        if (status == 'accepted' ||
+            status == 'pickup' ||
+            status == 'ongoing' ||
+            status == 'arrived') {
           _isNavigating = true;
           _stopTimers();
 

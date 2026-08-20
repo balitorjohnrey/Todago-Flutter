@@ -28,6 +28,10 @@ class AuthService {
     required String email,
     required String phone,
     required String password,
+    required String validIdType,
+    required String validIdNumber,
+    required String validIdImageUrl,
+    required String faceImageUrl,
   }) async {
     try {
       final response = await http
@@ -39,6 +43,10 @@ class AuthService {
               'email': email.toLowerCase().trim(),
               'phone': phone.trim(),
               'password': password,
+              'validIdType': validIdType,
+              'validIdNumber': validIdNumber,
+              'validIdImageUrl': validIdImageUrl,
+              'faceImageUrl': faceImageUrl,
             }),
           )
           .timeout(const Duration(seconds: 20));
@@ -53,7 +61,8 @@ class AuthService {
         await _saveSession(token, data['user']);
         return AuthResponse(
           success: true,
-          message: 'Account created successfully! Welcome to TodaGo 🎉',
+          message: data['message'] ??
+              'Passenger account created. Identity proof submitted.',
           token: token,
           user: data['user'],
         );
@@ -165,6 +174,12 @@ class AuthService {
   // ─── Storage Helpers ────────────────────────────────────────────────────────
   static Future<void> _saveSession(
       String token, Map<String, dynamic>? user) async {
+    await _storage.delete(key: 'driver_auth_token');
+    await _storage.delete(key: 'driver_data');
+    await _storage.delete(key: 'operator_auth_token');
+    await _storage.delete(key: 'operator_data');
+    await _storage.delete(key: 'admin_auth_token');
+    await _storage.delete(key: 'admin_data');
     await _storage.write(key: _tokenKey, value: token);
     if (user != null) {
       await _storage.write(key: _userKey, value: jsonEncode(user));

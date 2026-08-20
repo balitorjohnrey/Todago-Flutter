@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
+import 'identity_verification_fields.dart';
 import 'operator_auth_service.dart';
 import 'operator_login_screen.dart';
 
@@ -16,8 +17,10 @@ class _OperatorRegistrationScreenState
   int _currentStep = 0;
   final PageController _pageController = PageController();
   bool _isLoading = false;
-  bool _isFetchingAccount = true; // true while loading main account data
   String? _errorMessage;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
+  IdentityVerificationData _identityData = const IdentityVerificationData();
 
   // Step 1 — Association Info
   final _assocNameCtrl = TextEditingController();
@@ -25,47 +28,17 @@ class _OperatorRegistrationScreenState
   final _ltfrbCtrl     = TextEditingController();
   final _regionCtrl    = TextEditingController();
 
-  // Step 2 — Contact Info (read-only, auto-filled from main account)
+  // Step 2 — Contact Info
   final _contactNameCtrl = TextEditingController();
   final _emailCtrl       = TextEditingController();
   final _mobileCtrl      = TextEditingController();
+  final _passwordCtrl    = TextEditingController();
+  final _confirmCtrl     = TextEditingController();
 
   // Step 3 — Fleet Info
   final _totalTricyclesCtrl = TextEditingController();
   final _activeDriversCtrl  = TextEditingController();
   final _serviceAreaCtrl    = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    _loadMainAccountData();
-  }
-
-  // ── Auto-fill contact info from the signed-in main account ─────────────────
-  Future<void> _loadMainAccountData() async {
-    final user = await OperatorAuthService.fetchMainAccountData();
-
-    if (!mounted) return;
-
-    if (user == null) {
-      // Not signed in — block the flow and tell the user
-      setState(() {
-        _isFetchingAccount = false;
-        _errorMessage =
-            'You must be signed in to your main TodaGo account first. '
-            'Please go back and sign in.';
-      });
-      return;
-    }
-
-    setState(() {
-      _isFetchingAccount  = false;
-      _contactNameCtrl.text = user['full_name'] ?? '';
-      _emailCtrl.text       = user['email']     ?? '';
-      _mobileCtrl.text      = user['phone']     ?? '';
-      _errorMessage         = null;
-    });
-  }
 
   @override
   void dispose() {
@@ -76,6 +49,8 @@ class _OperatorRegistrationScreenState
     _contactNameCtrl.dispose();
     _emailCtrl.dispose();
     _mobileCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
     _totalTricyclesCtrl.dispose();
     _activeDriversCtrl.dispose();
     _serviceAreaCtrl.dispose();
@@ -83,7 +58,66 @@ class _OperatorRegistrationScreenState
     super.dispose();
   }
 
+  bool _validateAssociationStep() {
+    if (_assocNameCtrl.text.trim().isEmpty ||
+        _assocCodeCtrl.text.trim().isEmpty ||
+        _ltfrbCtrl.text.trim().isEmpty ||
+        _regionCtrl.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please fill in all required fields');
+      return false;
+    }
+    return true;
+  }
+
+  bool _validateContactStep() {
+    final email = _emailCtrl.text.trim();
+    if (_contactNameCtrl.text.trim().split(RegExp(r'\s+')).length < 2) {
+      setState(() => _errorMessage = 'Enter the authorized officer full name');
+      return false;
+    }
+    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(email)) {
+      setState(() => _errorMessage = 'Enter a valid operator email');
+      return false;
+    }
+    if (_mobileCtrl.text.replaceAll(RegExp(r'\D'), '').length < 10) {
+      setState(() => _errorMessage = 'Enter a valid phone number');
+      return false;
+    }
+    if (_passwordCtrl.text.length < 8 ||
+        !RegExp(r'[A-Z]').hasMatch(_passwordCtrl.text) ||
+        !RegExp(r'[a-z]').hasMatch(_passwordCtrl.text) ||
+        !RegExp(r'[0-9]').hasMatch(_passwordCtrl.text)) {
+      setState(() => _errorMessage =
+          'Password must be 8+ characters with uppercase, lowercase, and number');
+      return false;
+    }
+    if (_confirmCtrl.text != _passwordCtrl.text) {
+      setState(() => _errorMessage = 'Passwords do not match');
+      return false;
+    }
+    if ((_identityData.validIdType ?? '').isEmpty ||
+        (_identityData.validIdNumber ?? '').trim().length < 3 ||
+        (_identityData.validIdImageUrl ?? '').isEmpty ||
+        (_identityData.faceImageUrl ?? '').isEmpty) {
+      setState(() => _errorMessage =
+          'Complete valid ID and face verification before continuing');
+      return false;
+    }
+    return true;
+  }
+
+  bool _validateFleetStep() {
+    if (_totalTricyclesCtrl.text.trim().isEmpty ||
+        _serviceAreaCtrl.text.trim().isEmpty) {
+      setState(() => _errorMessage = 'Please fill in all required fields');
+      return false;
+    }
+    return true;
+  }
+
   void _nextStep() {
+    if (_currentStep == 0 && !_validateAssociationStep()) return;
+    if (_currentStep == 1 && !_validateContactStep()) return;
     if (_currentStep < 2) {
       setState(() {
         _currentStep++;
@@ -114,26 +148,28 @@ class _OperatorRegistrationScreenState
   }
 
   Future<void> _submit() async {
-    if (_assocNameCtrl.text.trim().isEmpty ||
-        _assocCodeCtrl.text.trim().isEmpty ||
-        _ltfrbCtrl.text.trim().isEmpty ||
-        _regionCtrl.text.trim().isEmpty) {
-      setState(() => _errorMessage = 'Please fill in all required fields');
-      return;
-    }
+    if (!_validateAssociationStep() ||
+        !_validateContactStep() ||
+        !_validateFleetStep()) return;
 
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    // ── FIX: contactName / email / phone are NOT passed here anymore. ─────────
-    // The backend reads them from the main account via the Authorization token.
     final result = await OperatorAuthService.register(
       associationName: _assocNameCtrl.text,
       associationCode: _assocCodeCtrl.text,
       ltfrbNumber:     _ltfrbCtrl.text,
       region:          _regionCtrl.text,
+      contactName:     _contactNameCtrl.text,
+      email:           _emailCtrl.text,
+      phone:           _mobileCtrl.text,
+      password:        _passwordCtrl.text,
+      validIdType:     _identityData.validIdType ?? '',
+      validIdNumber:   _identityData.validIdNumber ?? '',
+      validIdImageUrl: _identityData.validIdImageUrl ?? '',
+      faceImageUrl:    _identityData.faceImageUrl ?? '',
       serviceArea:     _serviceAreaCtrl.text.isNotEmpty
                            ? _serviceAreaCtrl.text
                            : null,
@@ -271,7 +307,7 @@ class _OperatorRegistrationScreenState
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Use your main TodaGo account password to log in as operator.',
+                'Operator accounts use a separate password and identity verification.',
                 style: GoogleFonts.poppins(
                   fontSize: 11,
                   color: AppColors.backgroundDark,
@@ -303,17 +339,15 @@ class _OperatorRegistrationScreenState
 
         // ── Page content ────────────────────────────────────────────────────────
         Expanded(
-          child: _isFetchingAccount
-              ? const Center(child: CircularProgressIndicator())
-              : PageView(
-                  controller: _pageController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  children: [
-                    _buildStep1(),
-                    _buildStep2(),
-                    _buildStep3(),
-                  ],
-                ),
+          child: PageView(
+            controller: _pageController,
+            physics: const NeverScrollableScrollPhysics(),
+            children: [
+              _buildStep1(),
+              _buildStep2(),
+              _buildStep3(),
+            ],
+          ),
         ),
       ]),
     );
@@ -404,7 +438,7 @@ class _OperatorRegistrationScreenState
         ]),
       );
 
-  // ── Step 2: Contact Info (read-only — auto-filled from main account) ────────
+  // ── Step 2: Contact Info ───────────────────────────────────────────────────
   Widget _buildStep2() => SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -415,19 +449,17 @@ class _OperatorRegistrationScreenState
                 fontWeight: FontWeight.w800,
                 color: AppColors.backgroundDark,
               )),
-          Text('Fetched from your main TodaGo account',
+          Text('Authorized officer account details',
               style:
                   GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 24),
 
           _lbl('Contact Person Name', required: true),
           const SizedBox(height: 6),
-          // ── READ-ONLY: value comes from main account ──
           _fld(
             controller: _contactNameCtrl,
             hint: 'Full name of authorized officer',
             icon: Icons.person_outline_rounded,
-            readOnly: true,
           ),
           const SizedBox(height: 18),
 
@@ -438,13 +470,6 @@ class _OperatorRegistrationScreenState
             hint: 'operator@toda.ph',
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
-            readOnly: true, // ── READ-ONLY: linked to main account
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Linked to your main TodaGo account',
-            style:
-                GoogleFonts.poppins(fontSize: 11, color: Colors.grey[500]),
           ),
           const SizedBox(height: 18),
 
@@ -455,40 +480,53 @@ class _OperatorRegistrationScreenState
             hint: '+63 912 345 6789',
             icon: Icons.phone_outlined,
             keyboardType: TextInputType.phone,
-            readOnly: true, // ── READ-ONLY: linked to main account
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          // No password needed box
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.green.withOpacity(0.06),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.green.withOpacity(0.3)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.lock_rounded, color: Colors.green, size: 20),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('No separate password needed',
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.green[800],
-                          )),
-                      const SizedBox(height: 2),
-                      Text(
-                        'You will use your main TodaGo account password to log in. No need to create a new one.',
-                        style: GoogleFonts.poppins(
-                            fontSize: 11, color: Colors.green[700]),
-                      ),
-                    ]),
+          _lbl('Operator Password', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _passwordCtrl,
+            hint: 'Min. 8 characters',
+            icon: Icons.lock_outline_rounded,
+            obscureText: _obscurePassword,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscurePassword
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: Colors.grey[400],
+                size: 20,
               ),
-            ]),
+              onPressed: () =>
+                  setState(() => _obscurePassword = !_obscurePassword),
+            ),
+          ),
+          const SizedBox(height: 18),
+
+          _lbl('Confirm Password', required: true),
+          const SizedBox(height: 6),
+          _fld(
+            controller: _confirmCtrl,
+            hint: 'Re-enter your password',
+            icon: Icons.lock_person_outlined,
+            obscureText: _obscureConfirm,
+            suffixIcon: IconButton(
+              icon: Icon(
+                _obscureConfirm
+                    ? Icons.visibility_outlined
+                    : Icons.visibility_off_outlined,
+                color: Colors.grey[400],
+                size: 20,
+              ),
+              onPressed: () =>
+                  setState(() => _obscureConfirm = !_obscureConfirm),
+            ),
+          ),
+          const SizedBox(height: 22),
+
+          IdentityVerificationFields(
+            onChanged: (data) => _identityData = data,
           ),
           const SizedBox(height: 28),
           _continueBtn(_nextStep),
@@ -628,14 +666,15 @@ class _OperatorRegistrationScreenState
     required IconData icon,
     TextInputType keyboardType = TextInputType.text,
     Widget? suffixIcon,
-    bool readOnly = false, // ← NEW: locks auto-filled fields
+    bool readOnly = false,
+    bool obscureText = false,
   }) =>
       TextFormField(
         controller: controller,
         keyboardType: keyboardType,
         readOnly: readOnly,
+        obscureText: obscureText,
         style: GoogleFonts.poppins(
-          // Dim read-only fields so the user knows they can't edit them
           color: readOnly ? Colors.grey[500] : Colors.grey[800],
           fontSize: 15,
         ),
@@ -649,7 +688,6 @@ class _OperatorRegistrationScreenState
                   color: Colors.grey, size: 16)
               : suffixIcon,
           filled: true,
-          // Slightly different background for read-only fields
           fillColor: readOnly ? Colors.grey[100] : Colors.grey[50],
           border: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),

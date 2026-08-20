@@ -3,7 +3,8 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
-import 'role_selection_screen.dart';
+import 'identity_verification_fields.dart';
+import 'passenger_home_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -25,6 +26,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _agreedToTerms = false;
   String? _errorMessage;
+  IdentityVerificationData _identityData = const IdentityVerificationData();
 
   // Password strength
   double _passwordStrength = 0;
@@ -96,6 +98,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
       email: _emailCtrl.text,
       phone: _phoneCtrl.text,
       password: _passwordCtrl.text,
+      validIdType: _identityData.validIdType ?? '',
+      validIdNumber: _identityData.validIdNumber ?? '',
+      validIdImageUrl: _identityData.validIdImageUrl ?? '',
+      faceImageUrl: _identityData.faceImageUrl ?? '',
     );
 
     if (!mounted) return;
@@ -104,7 +110,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (result.success) {
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => RoleSelectionScreen(successMessage: result.message ?? 'Account created! Welcome to TodaGo 🎉'),
+          pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -141,7 +147,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
               // Header
               Text(
-                'Create\nAccount ✨',
+                'Passenger\nSign Up',
                 style: GoogleFonts.poppins(
                   fontSize: 34,
                   fontWeight: FontWeight.w800,
@@ -157,7 +163,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               const SizedBox(height: 8),
 
               Text(
-                'Join TodaGo and ride with confidence',
+                'Create your passenger account',
                 style: GoogleFonts.poppins(
                     fontSize: 14, color: AppColors.textSecondary),
               ).animate().fadeIn(delay: 200.ms, duration: 500.ms),
@@ -322,6 +328,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         return null;
                       },
                     ).animate().fadeIn(delay: 500.ms, duration: 400.ms),
+
+                    const SizedBox(height: 18),
+
+                    IdentityVerificationFields(
+                      onChanged: (data) => _identityData = data,
+                      dark: true,
+                    ).animate().fadeIn(delay: 540.ms, duration: 400.ms),
 
                     const SizedBox(height: 20),
 
