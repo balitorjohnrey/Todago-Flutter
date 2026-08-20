@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
-import 'identity_verification_fields.dart';
 import 'operator_auth_service.dart';
 import 'operator_login_screen.dart';
+import 'persona_verification_launcher.dart';
+import 'persona_verification_notice.dart';
 
 class OperatorRegistrationScreen extends StatefulWidget {
   const OperatorRegistrationScreen({super.key});
@@ -20,7 +21,6 @@ class _OperatorRegistrationScreenState
   String? _errorMessage;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
-  IdentityVerificationData _identityData = const IdentityVerificationData();
 
   // Step 1 — Association Info
   final _assocNameCtrl = TextEditingController();
@@ -95,14 +95,6 @@ class _OperatorRegistrationScreenState
       setState(() => _errorMessage = 'Passwords do not match');
       return false;
     }
-    if ((_identityData.validIdType ?? '').isEmpty ||
-        (_identityData.validIdNumber ?? '').trim().length < 3 ||
-        (_identityData.validIdImageUrl ?? '').isEmpty ||
-        (_identityData.faceImageUrl ?? '').isEmpty) {
-      setState(() => _errorMessage =
-          'Complete valid ID and face verification before continuing');
-      return false;
-    }
     return true;
   }
 
@@ -166,10 +158,6 @@ class _OperatorRegistrationScreenState
       email:           _emailCtrl.text,
       phone:           _mobileCtrl.text,
       password:        _passwordCtrl.text,
-      validIdType:     _identityData.validIdType ?? '',
-      validIdNumber:   _identityData.validIdNumber ?? '',
-      validIdImageUrl: _identityData.validIdImageUrl ?? '',
-      faceImageUrl:    _identityData.faceImageUrl ?? '',
       serviceArea:     _serviceAreaCtrl.text.isNotEmpty
                            ? _serviceAreaCtrl.text
                            : null,
@@ -182,6 +170,8 @@ class _OperatorRegistrationScreenState
     setState(() => _isLoading = false);
 
     if (result.success) {
+      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
@@ -525,9 +515,7 @@ class _OperatorRegistrationScreenState
           ),
           const SizedBox(height: 22),
 
-          IdentityVerificationFields(
-            onChanged: (data) => _identityData = data,
-          ),
+          const PersonaVerificationNotice(),
           const SizedBox(height: 28),
           _continueBtn(_nextStep),
           const SizedBox(height: 24),

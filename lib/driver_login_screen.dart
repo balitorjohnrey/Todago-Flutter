@@ -6,6 +6,7 @@ import 'driver_auth_service.dart';
 import 'driver_dashboard_screen.dart';
 import 'driver_registration_screen.dart';
 import 'password_reset_dialog.dart';
+import 'persona_verification_launcher.dart';
 
 class DriverLoginScreen extends StatefulWidget {
   const DriverLoginScreen({super.key});
@@ -84,9 +85,13 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
         (_) => false,
       );
     } else {
+      final openedPersona =
+          await PersonaVerificationLauncher.open(result.personaVerificationUrl);
       await DriverAuthService.clearSession();
       if (!mounted) return;
-      setState(() => _errorMessage = result.message);
+      setState(() => _errorMessage = openedPersona
+          ? 'Complete Persona identity verification, then log in again.'
+          : result.message);
     }
   }
 

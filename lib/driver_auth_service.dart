@@ -7,12 +7,14 @@ class DriverAuthResponse {
   final String? message;
   final String? token;
   final Map<String, dynamic>? driver;
+  final String? personaVerificationUrl;
 
   DriverAuthResponse({
     required this.success,
     this.message,
     this.token,
     this.driver,
+    this.personaVerificationUrl,
   });
 }
 
@@ -35,10 +37,6 @@ class DriverAuthService {
     required String licenseNo,
     required String todaBodyNumber,
     required String plateNo,
-    required String validIdType,
-    required String validIdNumber,
-    required String validIdImageUrl,
-    required String faceImageUrl,
     String? vehicleColor,
     String? todaAssociation,
   }) async {
@@ -56,10 +54,6 @@ class DriverAuthService {
               'licenseNo': licenseNo.trim(),
               'todaBodyNumber': todaBodyNumber.trim(),
               'plateNo': plateNo.trim(),
-              'validIdType': validIdType,
-              'validIdNumber': validIdNumber,
-              'validIdImageUrl': validIdImageUrl,
-              'faceImageUrl': faceImageUrl,
               if (vehicleColor != null && vehicleColor.isNotEmpty)
                 'vehicleColor': vehicleColor,
               if (todaAssociation != null && todaAssociation.isNotEmpty)
@@ -69,6 +63,8 @@ class DriverAuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 201) {
         if (data['token'] != null) {
@@ -79,6 +75,7 @@ class DriverAuthService {
           message: data['message'] ?? 'Driver account created!',
           token: data['token'],
           driver: data['driver'],
+          personaVerificationUrl: personaVerificationUrl,
         );
       }
 
@@ -123,6 +120,8 @@ class DriverAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 200 &&
           data['success'] == true &&
@@ -141,6 +140,7 @@ class DriverAuthService {
       return DriverAuthResponse(
         success: false,
         message: data['message'] ?? 'Invalid credentials',
+        personaVerificationUrl: personaVerificationUrl,
       );
     } catch (e) {
       await _clearSession();

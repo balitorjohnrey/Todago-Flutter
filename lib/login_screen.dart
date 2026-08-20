@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'auth_service.dart';
 import 'passenger_home_screen.dart';
 import 'password_reset_dialog.dart';
+import 'persona_verification_launcher.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -53,6 +54,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final hasFreshToken = result.token != null && result.token!.isNotEmpty;
     if (result.success && hasFreshToken) {
+      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => const PassengerHomeScreen(),

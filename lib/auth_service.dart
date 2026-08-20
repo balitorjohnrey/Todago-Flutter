@@ -7,8 +7,15 @@ class AuthResponse {
   final String? message;
   final String? token;
   final Map<String, dynamic>? user;
+  final String? personaVerificationUrl;
 
-  AuthResponse({required this.success, this.message, this.token, this.user});
+  AuthResponse({
+    required this.success,
+    this.message,
+    this.token,
+    this.user,
+    this.personaVerificationUrl,
+  });
 }
 
 class AuthService {
@@ -28,10 +35,6 @@ class AuthService {
     required String email,
     required String phone,
     required String password,
-    required String validIdType,
-    required String validIdNumber,
-    required String validIdImageUrl,
-    required String faceImageUrl,
   }) async {
     try {
       final response = await http
@@ -43,16 +46,14 @@ class AuthService {
               'email': email.toLowerCase().trim(),
               'phone': phone.trim(),
               'password': password,
-              'validIdType': validIdType,
-              'validIdNumber': validIdNumber,
-              'validIdImageUrl': validIdImageUrl,
-              'faceImageUrl': faceImageUrl,
             }),
           )
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 201 &&
           data['success'] == true &&
@@ -65,6 +66,7 @@ class AuthService {
               'Passenger account created. Identity proof submitted.',
           token: token,
           user: data['user'],
+          personaVerificationUrl: personaVerificationUrl,
         );
       }
       return AuthResponse(
@@ -98,6 +100,8 @@ class AuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 200 &&
           data['success'] == true &&
@@ -109,6 +113,7 @@ class AuthService {
           message: 'Login successful! Welcome back 👋',
           token: token,
           user: data['user'],
+          personaVerificationUrl: personaVerificationUrl,
         );
       }
       await _clearSession();

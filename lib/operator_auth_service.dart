@@ -7,12 +7,14 @@ class OperatorAuthResponse {
   final String? message;
   final String? token;
   final Map<String, dynamic>? operator;
+  final String? personaVerificationUrl;
 
   OperatorAuthResponse({
     required this.success,
     this.message,
     this.token,
     this.operator,
+    this.personaVerificationUrl,
   });
 }
 
@@ -35,10 +37,6 @@ class OperatorAuthService {
     required String email,
     required String phone,
     required String password,
-    required String validIdType,
-    required String validIdNumber,
-    required String validIdImageUrl,
-    required String faceImageUrl,
     String? serviceArea,
     String? totalTricycles,
   }) async {
@@ -56,10 +54,6 @@ class OperatorAuthService {
               'email': email.toLowerCase().trim(),
               'phone': phone.trim(),
               'password': password,
-              'validIdType': validIdType,
-              'validIdNumber': validIdNumber,
-              'validIdImageUrl': validIdImageUrl,
-              'faceImageUrl': faceImageUrl,
               if (serviceArea != null && serviceArea.isNotEmpty)
                 'serviceArea': serviceArea,
               if (totalTricycles != null && totalTricycles.isNotEmpty)
@@ -69,6 +63,8 @@ class OperatorAuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 201) {
         if (data['token'] != null) {
@@ -79,6 +75,7 @@ class OperatorAuthService {
           message: data['message'] ?? 'Operator account created!',
           token: data['token'],
           operator: data['operator'],
+          personaVerificationUrl: personaVerificationUrl,
         );
       }
 
@@ -118,6 +115,8 @@ class OperatorAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
+      final persona = data['persona'] as Map<String, dynamic>?;
+      final personaVerificationUrl = persona?['verificationUrl'] as String?;
 
       if (response.statusCode == 200 &&
           data['success'] == true &&
@@ -136,6 +135,7 @@ class OperatorAuthService {
       return OperatorAuthResponse(
         success: false,
         message: data['message'] ?? 'Invalid credentials',
+        personaVerificationUrl: personaVerificationUrl,
       );
     } catch (e) {
       await _clearSession();

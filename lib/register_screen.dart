@@ -3,8 +3,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
-import 'identity_verification_fields.dart';
 import 'passenger_home_screen.dart';
+import 'persona_verification_launcher.dart';
+import 'persona_verification_notice.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -26,7 +27,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _isLoading = false;
   bool _agreedToTerms = false;
   String? _errorMessage;
-  IdentityVerificationData _identityData = const IdentityVerificationData();
 
   // Password strength
   double _passwordStrength = 0;
@@ -98,16 +98,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
       email: _emailCtrl.text,
       phone: _phoneCtrl.text,
       password: _passwordCtrl.text,
-      validIdType: _identityData.validIdType ?? '',
-      validIdNumber: _identityData.validIdNumber ?? '',
-      validIdImageUrl: _identityData.validIdImageUrl ?? '',
-      faceImageUrl: _identityData.faceImageUrl ?? '',
     );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
 
     if (result.success) {
+      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
@@ -331,10 +329,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
                     const SizedBox(height: 18),
 
-                    IdentityVerificationFields(
-                      onChanged: (data) => _identityData = data,
-                      dark: true,
-                    ).animate().fadeIn(delay: 540.ms, duration: 400.ms),
+                    const PersonaVerificationNotice(dark: true)
+                        .animate()
+                        .fadeIn(delay: 540.ms, duration: 400.ms),
 
                     const SizedBox(height: 20),
 

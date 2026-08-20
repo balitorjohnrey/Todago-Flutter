@@ -6,6 +6,7 @@ import 'operator_auth_service.dart';
 import 'operator_dashboard_screen.dart';
 import 'operator_registration_screen.dart';
 import 'password_reset_dialog.dart';
+import 'persona_verification_launcher.dart';
 
 class OperatorLoginScreen extends StatefulWidget {
   const OperatorLoginScreen({super.key});
@@ -80,9 +81,13 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
         (_) => false,
       );
     } else {
+      final openedPersona =
+          await PersonaVerificationLauncher.open(result.personaVerificationUrl);
       await OperatorAuthService.clearSession();
       if (!mounted) return;
-      setState(() => _errorMessage = result.message);
+      setState(() => _errorMessage = openedPersona
+          ? 'Complete Persona identity verification, then log in again.'
+          : result.message);
     }
   }
 

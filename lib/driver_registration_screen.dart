@@ -3,7 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'driver_auth_service.dart';
 import 'driver_login_screen.dart';
-import 'identity_verification_fields.dart';
+import 'persona_verification_launcher.dart';
+import 'persona_verification_notice.dart';
 
 class DriverRegistrationScreen extends StatefulWidget {
   const DriverRegistrationScreen({super.key});
@@ -20,7 +21,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
   bool _withAssociation = false;
   bool _obscurePassword = true;
   bool _obscureConfirm = true;
-  IdentityVerificationData _identityData = const IdentityVerificationData();
 
   // Step 1 — Personal Info
   final _fullNameCtrl = TextEditingController();
@@ -89,14 +89,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
           () => _errorMessage = 'Enter your TODA Association Name or Code');
       return false;
     }
-    if ((_identityData.validIdType ?? '').isEmpty ||
-        (_identityData.validIdNumber ?? '').trim().length < 3 ||
-        (_identityData.validIdImageUrl ?? '').isEmpty ||
-        (_identityData.faceImageUrl ?? '').isEmpty) {
-      setState(() => _errorMessage =
-          'Complete valid ID and face verification before continuing');
-      return false;
-    }
     return true;
   }
 
@@ -155,10 +147,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
       licenseNo: _licenseCtrl.text,
       todaBodyNumber: _bodyNumberCtrl.text,
       plateNo: _plateCtrl.text,
-      validIdType: _identityData.validIdType ?? '',
-      validIdNumber: _identityData.validIdNumber ?? '',
-      validIdImageUrl: _identityData.validIdImageUrl ?? '',
-      faceImageUrl: _identityData.faceImageUrl ?? '',
       vehicleColor: _colorCtrl.text.isNotEmpty ? _colorCtrl.text : null,
       todaAssociation: _withAssociation ? _todaBranchCtrl.text.trim() : null,
     );
@@ -167,6 +155,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
     setState(() => _isLoading = false);
 
     if (result.success) {
+      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
@@ -476,9 +466,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             const SizedBox(height: 18),
           ],
 
-          IdentityVerificationFields(
-            onChanged: (data) => _identityData = data,
-          ),
+          const PersonaVerificationNotice(),
           const SizedBox(height: 18),
 
           // Benefits card
@@ -506,7 +494,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               _benefit(
                   'Registered TODA membership is reviewed by its operator'),
               _benefit('Independent drivers are reviewed by TodaGo admin'),
-              _benefit('Your ID and face photo are submitted for review'),
+              _benefit('Persona checks your valid ID and face match'),
             ]),
           ),
           const SizedBox(height: 28),
