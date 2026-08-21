@@ -701,6 +701,18 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       return;
     }
 
+    if (result['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          result['message']?.toString() ?? 'Payment received.',
+          style: GoogleFonts.poppins(fontSize: 13),
+        ),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(
         result['message']?.toString() ?? 'Could not start payment.',
@@ -966,7 +978,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
           bottom: 0,
           left: 0,
           right: 0,
-           child: Container(
+          child: Container(
             constraints: BoxConstraints(
               maxHeight: MediaQuery.of(context).size.height * 0.62,
             ),
@@ -983,273 +995,273 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
             child: SingleChildScrollView(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-              // drag handle
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2)),
+                // drag handle
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
+                const SizedBox(height: 16),
 
-              // Driver info row
-              Row(children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppColors.backgroundDark,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(_initials,
-                        style: GoogleFonts.poppins(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(widget.driverName,
+                // Driver info row
+                Row(children: [
+                  Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: AppColors.backgroundDark,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Center(
+                      child: Text(_initials,
                           style: GoogleFonts.poppins(
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.backgroundDark)),
-                      Row(children: [
-                        const Icon(Icons.star_rounded,
-                            color: AppColors.primary, size: 14),
-                        const SizedBox(width: 3),
-                        Text(widget.driverRating.toStringAsFixed(1),
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary)),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(widget.driverName,
                             style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.backgroundDark,
-                                fontWeight: FontWeight.w600)),
-                        if (widget.todaBodyNumber.isNotEmpty)
-                          Text(' · ${widget.todaBodyNumber}',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.backgroundDark)),
+                        Row(children: [
+                          const Icon(Icons.star_rounded,
+                              color: AppColors.primary, size: 14),
+                          const SizedBox(width: 3),
+                          Text(widget.driverRating.toStringAsFixed(1),
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  color: AppColors.backgroundDark,
+                                  fontWeight: FontWeight.w600)),
+                          if (widget.todaBodyNumber.isNotEmpty)
+                            Text(' · ${widget.todaBodyNumber}',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 11, color: AppColors.textHint)),
+                        ]),
+                        if (widget.plateNo.isNotEmpty)
+                          Text('Plate: ${widget.plateNo}',
                               style: GoogleFonts.poppins(
                                   fontSize: 11, color: AppColors.textHint)),
-                      ]),
-                      if (widget.plateNo.isNotEmpty)
-                        Text('Plate: ${widget.plateNo}',
-                            style: GoogleFonts.poppins(
-                                fontSize: 11, color: AppColors.textHint)),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-                Row(children: [
-                  _actionBtn(Icons.phone_rounded, Colors.green,
-                      () => _contactDriver(call: true)),
-                  const SizedBox(width: 10),
-                  _actionBtn(Icons.chat_bubble_rounded, AppColors.primary,
-                      () => _contactDriver(call: false)),
+                  Row(children: [
+                    _actionBtn(Icons.phone_rounded, Colors.green,
+                        () => _contactDriver(call: true)),
+                    const SizedBox(width: 10),
+                    _actionBtn(Icons.chat_bubble_rounded, AppColors.primary,
+                        () => _contactDriver(call: false)),
+                  ]),
                 ]),
-              ]),
-              const SizedBox(height: 14),
+                const SizedBox(height: 14),
 
-              SizedBox(
-                width: double.infinity,
-                height: 42,
-                child: OutlinedButton.icon(
-                  onPressed: (_isChangingPaymentMethod || _isPaymentPaid)
-                      ? null
-                      : _choosePaymentMethod,
-                  icon: _isChangingPaymentMethod
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.payments_rounded, size: 18),
-                  label: Text(
-                    'Payment Method: $_paymentLabel',
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.backgroundDark,
-                    side: const BorderSide(color: AppColors.primary),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              if (_hasArrivedAtDestination) ...[
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
-                  child: _isOnlinePayment
-                      ? ElevatedButton.icon(
-                          onPressed: (_isStartingPayment || _isPaymentPaid)
-                              ? null
-                              : _startOnlinePayment,
-                          icon: _isStartingPayment
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.backgroundDark,
-                                  ),
-                                )
-                              : Icon(_isPaymentPaid
-                                  ? Icons.check_circle_rounded
-                                  : Icons.account_balance_wallet_rounded),
-                          label: Text(
-                            _isPaymentPaid
-                                ? 'Payment Received'
-                                : 'Pay with $_paymentLabel',
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.poppins(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _isPaymentPaid
-                                ? AppColors.success
-                                : AppColors.primary,
-                            foregroundColor: AppColors.backgroundDark,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                          ),
-                        )
-                      : Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFFBF0),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: AppColors.primary.withOpacity(0.4)),
-                          ),
-                          child: Row(children: [
-                            const Icon(Icons.payments_rounded,
-                                color: AppColors.primary, size: 20),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Please pay cash to the driver',
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.backgroundDark,
-                                ),
-                              ),
-                            ),
-                          ]),
-                        ),
-                ),
-                const SizedBox(height: 10),
-              ],
-
-              SizedBox(
-                width: double.infinity,
-                height: 42,
-                child: OutlinedButton.icon(
-                  onPressed: _reportDriverIssue,
-                  icon: const Icon(Icons.report_problem_rounded, size: 18),
-                  label: Text('Report an Issue',
+                  height: 42,
+                  child: OutlinedButton.icon(
+                    onPressed: (_isChangingPaymentMethod || _isPaymentPaid)
+                        ? null
+                        : _choosePaymentMethod,
+                    icon: _isChangingPaymentMethod
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.payments_rounded, size: 18),
+                    label: Text(
+                      'Payment Method: $_paymentLabel',
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.poppins(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                      )),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.error,
-                    side: const BorderSide(color: AppColors.error),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.backgroundDark,
+                      side: const BorderSide(color: AppColors.primary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 14),
+                const SizedBox(height: 10),
 
-              // Context hint — changes based on phase
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: _hasArrivedAtDestination
-                      ? AppColors.primary.withOpacity(0.08)
-                      : _phase == 'riding'
-                          ? Colors.green.withOpacity(0.06)
-                          : const Color(0xFFF8F9FA),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: _hasArrivedAtDestination
-                        ? AppColors.primary.withOpacity(0.35)
-                        : _phase == 'riding'
-                            ? Colors.green.withOpacity(0.25)
-                            : const Color(0xFFEEEEEE),
+                if (_hasArrivedAtDestination) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: _isOnlinePayment
+                        ? ElevatedButton.icon(
+                            onPressed: (_isStartingPayment || _isPaymentPaid)
+                                ? null
+                                : _startOnlinePayment,
+                            icon: _isStartingPayment
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.backgroundDark,
+                                    ),
+                                  )
+                                : Icon(_isPaymentPaid
+                                    ? Icons.check_circle_rounded
+                                    : Icons.account_balance_wallet_rounded),
+                            label: Text(
+                              _isPaymentPaid
+                                  ? 'Payment Received'
+                                  : 'Pay with $_paymentLabel',
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.poppins(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _isPaymentPaid
+                                  ? AppColors.success
+                                  : AppColors.primary,
+                              foregroundColor: AppColors.backgroundDark,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              elevation: 0,
+                            ),
+                          )
+                        : Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFFBF0),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                  color: AppColors.primary.withOpacity(0.4)),
+                            ),
+                            child: Row(children: [
+                              const Icon(Icons.payments_rounded,
+                                  color: AppColors.primary, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Please pay cash to the driver',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.backgroundDark,
+                                  ),
+                                ),
+                              ),
+                            ]),
+                          ),
                   ),
-                ),
-                child: Row(children: [
-                  Icon(
-                    _hasArrivedAtDestination
-                        ? Icons.flag_rounded
-                        : _phase == 'riding'
-                            ? Icons.electric_rickshaw_rounded
-                            : Icons.navigation_rounded,
-                    color: _hasArrivedAtDestination
-                        ? AppColors.primary
-                        : _phase == 'riding'
-                            ? Colors.green
-                            : AppColors.primary,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      _hasArrivedAtDestination
-                          ? (_isPaymentPaid
-                              ? 'Payment received by TodaGo'
-                              : 'Settle payment to complete the trip')
-                          : _phase == 'riding'
-                              ? 'You are on the way to your destination'
-                              : 'Your driver is heading to you',
-                      style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.backgroundDark),
-                    ),
-                  ),
-                ]),
-              ),
-              const SizedBox(height: 14),
+                  const SizedBox(height: 10),
+                ],
 
-              // Cancel button (approaching phase only)
-              if (_phase == 'approaching')
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
-                  child: OutlinedButton(
-                    onPressed: () => _cancelTrip(context),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: Colors.grey[300]!, width: 1.5),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                    ),
-                    child: Text('Cancel Trip',
+                  height: 42,
+                  child: OutlinedButton.icon(
+                    onPressed: _reportDriverIssue,
+                    icon: const Icon(Icons.report_problem_rounded, size: 18),
+                    label: Text('Report an Issue',
                         style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textHint)),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                        )),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                      side: const BorderSide(color: AppColors.error),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
                   ),
                 ),
+                const SizedBox(height: 14),
+
+                // Context hint — changes based on phase
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _hasArrivedAtDestination
+                        ? AppColors.primary.withOpacity(0.08)
+                        : _phase == 'riding'
+                            ? Colors.green.withOpacity(0.06)
+                            : const Color(0xFFF8F9FA),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: _hasArrivedAtDestination
+                          ? AppColors.primary.withOpacity(0.35)
+                          : _phase == 'riding'
+                              ? Colors.green.withOpacity(0.25)
+                              : const Color(0xFFEEEEEE),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Icon(
+                      _hasArrivedAtDestination
+                          ? Icons.flag_rounded
+                          : _phase == 'riding'
+                              ? Icons.electric_rickshaw_rounded
+                              : Icons.navigation_rounded,
+                      color: _hasArrivedAtDestination
+                          ? AppColors.primary
+                          : _phase == 'riding'
+                              ? Colors.green
+                              : AppColors.primary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _hasArrivedAtDestination
+                            ? (_isPaymentPaid
+                                ? 'Payment received by TodaGo'
+                                : 'Settle payment to complete the trip')
+                            : _phase == 'riding'
+                                ? 'You are on the way to your destination'
+                                : 'Your driver is heading to you',
+                        style: GoogleFonts.poppins(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.backgroundDark),
+                      ),
+                    ),
+                  ]),
+                ),
+                const SizedBox(height: 14),
+
+                // Cancel button (approaching phase only)
+                if (_phase == 'approaching')
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: OutlinedButton(
+                      onPressed: () => _cancelTrip(context),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                      ),
+                      child: Text('Cancel Trip',
+                          style: GoogleFonts.poppins(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textHint)),
+                    ),
+                  ),
               ]),
             ),
           ).animate().slideY(

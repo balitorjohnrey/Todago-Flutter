@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'location_service.dart';
@@ -23,6 +24,7 @@ import 'reservation_notification_service.dart';
 import 'report_issue_dialog.dart';
 import 'smart_ride_service.dart';
 import 'panabo_config.dart';
+import 'wallet_service.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -51,69 +53,25 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   // ── Wallet state ──────────────────────────────────────────────────────────
   bool _balanceVisible = true;
   int _walletTab = 0;
-  final double _balance = 245.50;
-  final List<Map<String, dynamic>> _transactions = [
-    {
-      'type': 'trip',
-      'title': 'Solo Ride — Night Market',
-      'subtitle': 'Paid to Juan Reyes',
-      'date': 'Mar 22, 2026',
-      'time': '08:14 AM',
-      'amount': -20.00,
-      'icon': Icons.electric_rickshaw_rounded
-    },
-    {
-      'type': 'topup',
-      'title': 'GCash Top-up',
-      'subtitle': 'via GCash ••••4821',
-      'date': 'Mar 21, 2026',
-      'time': '10:30 AM',
-      'amount': 100.00,
-      'icon': Icons.add_circle_rounded
-    },
-    {
-      'type': 'trip',
-      'title': 'Shared Ride — DNSC',
-      'subtitle': 'Paid to Maria Santos',
-      'date': 'Mar 18, 2026',
-      'time': '05:12 PM',
-      'amount': -15.00,
-      'icon': Icons.electric_rickshaw_rounded
-    },
-    {
-      'type': 'cashback',
-      'title': 'Ride Cashback',
-      'subtitle': 'TodaGo Rewards',
-      'date': 'Mar 10, 2026',
-      'time': '09:01 AM',
-      'amount': 5.00,
-      'icon': Icons.card_giftcard_rounded
-    },
-    {
-      'type': 'topup',
-      'title': 'Maya Top-up',
-      'subtitle': 'via Maya Wallet',
-      'date': 'Mar 10, 2026',
-      'time': '09:00 AM',
-      'amount': 200.00,
-      'icon': Icons.add_circle_rounded
-    },
-    {
-      'type': 'trip',
-      'title': 'Toda-Express — Airport',
-      'subtitle': 'Paid to Pedro Lopez',
-      'date': 'Mar 5, 2026',
-      'time': '04:00 AM',
-      'amount': -90.00,
-      'icon': Icons.electric_rickshaw_rounded
-    },
-  ];
+  double _walletBalance = 0;
+  double _walletTotalSpent = 0;
+  double _walletRewards = 0;
+  int _walletTrips = 0;
+  bool _loadingWallet = false;
+  bool _startingTopUp = false;
+  Timer? _walletTimer;
+  List<Map<String, dynamic>> _transactions = [];
+  Map<String, Map<String, dynamic>> _linkedAccounts = {};
+
+  double get _balance => _walletBalance;
 
   List<Map<String, dynamic>> get _filteredTx {
-    if (_walletTab == 1)
+    if (_walletTab == 1) {
       return _transactions.where((t) => t['type'] == 'topup').toList();
-    if (_walletTab == 2)
+    }
+    if (_walletTab == 2) {
       return _transactions.where((t) => t['type'] == 'trip').toList();
+    }
     return _transactions;
   }
 
@@ -132,6 +90,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     _initLocation();
     _loadBookings();
     _startBookingsRealtime();
+    _loadWallet();
+    _startWalletRealtime();
   }
 
   Future<void> _loadUser() async {
@@ -185,6 +145,101 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     _bookingsTimer?.cancel();
     _bookingsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (mounted) _loadBookings(silent: true);
+    });
+  }
+
+  void _startWalletRealtime() {
+    _walletTimer?.cancel();
+    _walletTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) _loadWallet(silent: true);
+    });
+  }
+
+  Future<void> _loadWallet({bool silent = false}) async {
+    if (_loadingWallet) return;
+    if (!silent && mounted) setState(() => _loadingWallet = true);
+    try {
+      final wallet = await WalletService.getWallet();
+      if (!mounted) return;
+      if (wallet == null) {
+        setState(() => _loadingWallet = false);
+        return;
+      }
+
+      final stats = wallet['stats'] as Map<String, dynamic>? ?? {};
+      final rawAccounts = wallet['linked_accounts'];
+      final accounts = <String, Map<String, dynamic>>{};
+      if (rawAccounts is List) {
+        for (final account in rawAccounts) {
+          if (account is! Map) continue;
+          final data = Map<String, dynamic>.from(account);
+          final provider = data['provider']?.toString();
+          if (provider != null && provider.isNotEmpty) {
+            accounts[provider] = data;
+          }
+        }
+      }
+
+      final rawTransactions = wallet['transactions'];
+      final transactions = <Map<String, dynamic>>[];
+      if (rawTransactions is List) {
+        for (final item in rawTransactions) {
+          if (item is Map) {
+            transactions.add(
+                _normalizeWalletTransaction(Map<String, dynamic>.from(item)));
+          }
+        }
+      }
+
+      setState(() {
+        _walletBalance = _asDouble(wallet['balance']);
+        _walletTotalSpent = _asDouble(stats['total_spent']);
+        _walletRewards = _asDouble(stats['rewards']);
+        _walletTrips = _asInt(stats['completed_trips']);
+        _linkedAccounts = accounts;
+        _transactions = transactions;
+        _loadingWallet = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingWallet = false);
+    }
+  }
+
+  Future<void> _loadWalletFromPayload(Map<String, dynamic> wallet) async {
+    if (!mounted) return;
+    final stats = wallet['stats'] as Map<String, dynamic>? ?? {};
+    final rawAccounts = wallet['linked_accounts'];
+    final accounts = <String, Map<String, dynamic>>{};
+    if (rawAccounts is List) {
+      for (final account in rawAccounts) {
+        if (account is! Map) continue;
+        final data = Map<String, dynamic>.from(account);
+        final provider = data['provider']?.toString();
+        if (provider != null && provider.isNotEmpty) {
+          accounts[provider] = data;
+        }
+      }
+    }
+
+    final rawTransactions = wallet['transactions'];
+    final transactions = <Map<String, dynamic>>[];
+    if (rawTransactions is List) {
+      for (final item in rawTransactions) {
+        if (item is Map) {
+          transactions.add(
+              _normalizeWalletTransaction(Map<String, dynamic>.from(item)));
+        }
+      }
+    }
+
+    setState(() {
+      _walletBalance = _asDouble(wallet['balance']);
+      _walletTotalSpent = _asDouble(stats['total_spent']);
+      _walletRewards = _asDouble(stats['rewards']);
+      _walletTrips = _asInt(stats['completed_trips']);
+      _linkedAccounts = accounts;
+      _transactions = transactions;
+      _loadingWallet = false;
     });
   }
 
@@ -301,6 +356,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
   @override
   void dispose() {
     _bookingsTimer?.cancel();
+    _walletTimer?.cancel();
     _locationStream?.cancel();
     _mapController?.dispose();
     super.dispose();
@@ -356,6 +412,100 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final value = data?['profile_photo_url']?.toString();
     if (value == null || value.isEmpty) return null;
     return value;
+  }
+
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _formatPeso(double amount, {int decimals = 2}) {
+    return '₱${amount.toStringAsFixed(decimals)}';
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value == null) return null;
+    return DateTime.tryParse(value.toString())?.toLocal();
+  }
+
+  String _formatTxDate(DateTime? date) {
+    if (date == null) return 'Pending';
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _formatTxTime(DateTime? date) {
+    if (date == null) return '';
+    final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
+    final minute = date.minute.toString().padLeft(2, '0');
+    final suffix = date.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  IconData _walletTxIcon(String type) {
+    switch (type) {
+      case 'topup':
+        return Icons.add_circle_rounded;
+      case 'reward':
+      case 'cashback':
+        return Icons.card_giftcard_rounded;
+      case 'cashout':
+        return Icons.arrow_upward_rounded;
+      case 'send':
+        return Icons.send_rounded;
+      default:
+        return Icons.electric_rickshaw_rounded;
+    }
+  }
+
+  Map<String, dynamic> _normalizeWalletTransaction(Map<String, dynamic> raw) {
+    final type = raw['type']?.toString() ?? 'trip';
+    final status = raw['status']?.toString() ?? 'completed';
+    final occurredAt = _parseDate(raw['occurred_at']);
+    final subtitle = raw['subtitle']?.toString() ?? '';
+    return {
+      'type': type,
+      'status': status,
+      'title': raw['title']?.toString() ?? 'Wallet transaction',
+      'subtitle': status == 'pending' && subtitle.isNotEmpty
+          ? '$subtitle · Pending'
+          : subtitle,
+      'date': _formatTxDate(occurredAt),
+      'time': _formatTxTime(occurredAt),
+      'amount': _asDouble(raw['amount']),
+      'icon': _walletTxIcon(type),
+    };
+  }
+
+  bool _isProviderLinked(String provider) {
+    return _linkedAccounts[provider]?['connected'] == true;
+  }
+
+  String _linkedAccountDetail(String provider) {
+    final account = _linkedAccounts[provider];
+    if (account?['connected'] != true) return 'Not linked';
+    return account?['masked_number']?.toString() ??
+        account?['account_name']?.toString() ??
+        'Linked';
   }
 
   void _showSnack(String message, Color color) {
@@ -963,8 +1113,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     final isCompleted = status == 'completed';
     final isScheduled =
         b['trip_type']?.toString() == 'scheduled' || status == 'scheduled';
-    final canTrack =
-        ['requested', 'accepted', 'pickup', 'ongoing', 'arrived'].contains(status);
+    final canTrack = ['requested', 'accepted', 'pickup', 'ongoing', 'arrived']
+        .contains(status);
     final hasRatingData = _tripRatings.containsKey(tripId);
     final existingRating = _tripRatings[tripId];
 
@@ -1338,9 +1488,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Text(
-                            _balanceVisible
-                                ? '₱${_balance.toStringAsFixed(2)}'
-                                : '₱•••••',
+                            _balanceVisible ? _formatPeso(_balance) : '₱•••••',
                             style: GoogleFonts.poppins(
                                 fontSize: 38,
                                 fontWeight: FontWeight.w900,
@@ -1363,13 +1511,20 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                     const SizedBox(height: 24),
                     Row(children: [
                       _walletActionBtn(Icons.add_rounded, 'Top Up',
-                          AppColors.primary, AppColors.backgroundDark),
+                          AppColors.primary, AppColors.backgroundDark,
+                          onTap: _showTopUpSheet),
                       const SizedBox(width: 12),
                       _walletActionBtn(Icons.arrow_upward_rounded, 'Cash Out',
-                          Colors.white.withOpacity(0.12), Colors.white),
+                          Colors.white.withOpacity(0.12), Colors.white,
+                          onTap: () => _showSnack(
+                              'Cash out requires a live payout provider.',
+                              AppColors.error)),
                       const SizedBox(width: 12),
                       _walletActionBtn(Icons.send_rounded, 'Send',
-                          Colors.white.withOpacity(0.12), Colors.white),
+                          Colors.white.withOpacity(0.12), Colors.white,
+                          onTap: () => _showSnack(
+                              'Send requires a live recipient wallet.',
+                              AppColors.error)),
                     ]),
                   ]),
             )),
@@ -1383,11 +1538,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFEEEEEE))),
         child: Row(children: [
-          _wStat('Total Spent', '₱620', Icons.payments_rounded),
+          _wStat('Total Spent', _formatPeso(_walletTotalSpent, decimals: 0),
+              Icons.payments_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Trips', '31', Icons.electric_rickshaw_rounded),
+          _wStat('Trips', '$_walletTrips', Icons.electric_rickshaw_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Saved', '₱48', Icons.card_giftcard_rounded,
+          _wStat('Rewards', _formatPeso(_walletRewards, decimals: 0),
+              Icons.card_giftcard_rounded,
               color: AppColors.success),
         ]),
       )),
@@ -1401,9 +1558,27 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
                   fontWeight: FontWeight.w700,
                   color: AppColors.backgroundDark)),
           const SizedBox(height: 12),
-          _linkedAcc('💙', 'GCash', '••••4821', 'Connected', true),
+          _linkedAcc(
+            '💙',
+            'GCash',
+            _linkedAccountDetail('gcash'),
+            _isProviderLinked('gcash') ? 'Connected' : 'Connect',
+            _isProviderLinked('gcash'),
+            onTap: () => _isProviderLinked('gcash')
+                ? _confirmUnlinkAccount('gcash')
+                : _showLinkAccountDialog('gcash'),
+          ),
           const SizedBox(height: 10),
-          _linkedAcc('💜', 'Maya', 'Not linked', 'Connect', false),
+          _linkedAcc(
+            '💜',
+            'Maya',
+            _linkedAccountDetail('maya'),
+            _isProviderLinked('maya') ? 'Connected' : 'Connect',
+            _isProviderLinked('maya'),
+            onTap: () => _isProviderLinked('maya')
+                ? _confirmUnlinkAccount('maya')
+                : _showLinkAccountDialog('maya'),
+          ),
         ]),
       )),
       SliverToBoxAdapter(
@@ -1425,21 +1600,32 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
           ]),
         ]),
       )),
-      SliverList(
-          delegate: SliverChildBuilderDelegate(
-        (_, i) => Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
-            child: _txCard(_filteredTx[i])),
-        childCount: _filteredTx.length,
-      )),
+      if (_loadingWallet && _transactions.isEmpty)
+        const SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 28),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        )
+      else if (_filteredTx.isEmpty)
+        SliverToBoxAdapter(child: _emptyWalletTransactions())
+      else
+        SliverList(
+            delegate: SliverChildBuilderDelegate(
+          (_, i) => Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+              child: _txCard(_filteredTx[i])),
+          childCount: _filteredTx.length,
+        )),
       const SliverToBoxAdapter(child: SizedBox(height: 30)),
     ]);
   }
 
-  Widget _walletActionBtn(IconData icon, String label, Color bg, Color fg) =>
+  Widget _walletActionBtn(IconData icon, String label, Color bg, Color fg,
+          {required VoidCallback onTap}) =>
       Expanded(
           child: GestureDetector(
-        onTap: _showTopUpSheet,
+        onTap: onTap,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration:
@@ -1469,45 +1655,50 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
       ]));
 
   Widget _linkedAcc(String emoji, String name, String detail, String action,
-          bool connected) =>
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFEEEEEE))),
-        child: Row(children: [
-          Text(emoji, style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 14),
-          Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                Text(name,
-                    style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.backgroundDark)),
-                Text(detail,
-                    style: GoogleFonts.poppins(
-                        fontSize: 12, color: AppColors.textHint)),
-              ])),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          bool connected,
+          {required VoidCallback onTap}) =>
+      GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: connected
-                  ? AppColors.success.withOpacity(0.1)
-                  : AppColors.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(action,
-                style: GoogleFonts.poppins(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: connected ? AppColors.success : AppColors.primary)),
-          ),
-        ]),
-      );
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFEEEEEE))),
+            child: Row(children: [
+              Text(emoji, style: const TextStyle(fontSize: 24)),
+              const SizedBox(width: 14),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(name,
+                        style: GoogleFonts.poppins(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.backgroundDark)),
+                    Text(detail,
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, color: AppColors.textHint)),
+                  ])),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: connected
+                      ? AppColors.success.withOpacity(0.1)
+                      : AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(action,
+                    style: GoogleFonts.poppins(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color:
+                            connected ? AppColors.success : AppColors.primary)),
+              ),
+            ]),
+          ));
 
   Widget _wFilterTab(String label, int idx) {
     final sel = _walletTab == idx;
@@ -1584,115 +1775,340 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
     );
   }
 
+  Widget _emptyWalletTransactions() => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFEEEEEE)),
+          ),
+          child: Column(children: [
+            Icon(Icons.receipt_long_rounded,
+                color: AppColors.textHint.withValues(alpha: 0.7), size: 28),
+            const SizedBox(height: 8),
+            Text('No live transactions yet',
+                style: GoogleFonts.poppins(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.backgroundDark)),
+            const SizedBox(height: 2),
+            Text('Completed rides and confirmed top-ups will appear here.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.poppins(
+                    fontSize: 11, color: AppColors.textHint)),
+          ]),
+        ),
+      );
+
+  Future<void> _showLinkAccountDialog(String provider) async {
+    final accountController =
+        TextEditingController(text: _user?['phone']?.toString() ?? '');
+    final nameController =
+        TextEditingController(text: _user?['full_name']?.toString() ?? '');
+    final label = provider == 'maya' ? 'Maya' : 'GCash';
+
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('Link $label',
+              style: GoogleFonts.poppins(
+                  fontSize: 18, fontWeight: FontWeight.w800)),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: accountController,
+              keyboardType: TextInputType.phone,
+              decoration: InputDecoration(
+                labelText: '$label account number',
+                labelStyle: GoogleFonts.poppins(fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: nameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: InputDecoration(
+                labelText: 'Account name',
+                labelStyle: GoogleFonts.poppins(fontSize: 12),
+              ),
+            ),
+          ]),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Cancel', style: GoogleFonts.poppins()),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final accountNumber = accountController.text.trim();
+                if (accountNumber.length < 4) {
+                  _showSnack(
+                      'Enter a valid $label account number.', AppColors.error);
+                  return;
+                }
+                Navigator.pop(dialogContext);
+                final result = await WalletService.linkAccount(
+                  provider: provider,
+                  accountNumber: accountNumber,
+                  accountName: nameController.text,
+                );
+                if (!mounted) return;
+                final wallet = result['wallet'];
+                if (result['success'] == true &&
+                    wallet is Map<String, dynamic>) {
+                  await _loadWalletFromPayload(wallet);
+                  _showSnack('$label linked.', AppColors.success);
+                } else {
+                  _showSnack(
+                      result['message']?.toString() ?? 'Could not link $label.',
+                      AppColors.error);
+                }
+              },
+              child: Text('Link',
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      accountController.dispose();
+      nameController.dispose();
+    }
+  }
+
+  Future<void> _confirmUnlinkAccount(String provider) async {
+    final label = provider == 'maya' ? 'Maya' : 'GCash';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Unlink $label',
+            style:
+                GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800)),
+        content: Text('Remove this linked $label account from your wallet?',
+            style: GoogleFonts.poppins(fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text('Unlink',
+                style: GoogleFonts.poppins(
+                    color: AppColors.error, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final result = await WalletService.unlinkAccount(provider);
+    if (!mounted) return;
+    final wallet = result['wallet'];
+    if (result['success'] == true && wallet is Map<String, dynamic>) {
+      await _loadWalletFromPayload(wallet);
+      _showSnack('$label unlinked.', AppColors.success);
+    } else {
+      _showSnack(result['message']?.toString() ?? 'Could not unlink $label.',
+          AppColors.error);
+    }
+  }
+
   void _showTopUpSheet() {
+    int selectedAmount = 100;
+    String selectedProvider = _isProviderLinked('gcash') ? 'gcash' : 'maya';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: EdgeInsets.fromLTRB(
-            24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
-        child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                  child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 20),
-              Text('Top Up Wallet',
-                  style: GoogleFonts.poppins(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.backgroundDark)),
-              const SizedBox(height: 4),
-              Text('Select amount and payment method',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13, color: AppColors.textHint)),
-              const SizedBox(height: 20),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [50, 100, 200, 300, 500, 1000]
-                    .map((amt) => GestureDetector(
-                          onTap: () {},
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 10),
-                            decoration: BoxDecoration(
-                                color: const Color(0xFFF0F2F5),
-                                borderRadius: BorderRadius.circular(12)),
-                            child: Text('₱$amt',
-                                style: GoogleFonts.poppins(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.backgroundDark)),
-                          ),
-                        ))
-                    .toList(),
-              ),
-              const SizedBox(height: 20),
-              Text('Pay with',
-                  style: GoogleFonts.poppins(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.backgroundDark)),
-              const SizedBox(height: 12),
-              Row(children: [
-                _payOpt('💙', 'GCash', true),
-                const SizedBox(width: 10),
-                _payOpt('💜', 'Maya', false),
-              ]),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.backgroundDark,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      elevation: 0),
-                  child: Text('Proceed to Top Up',
+      builder: (_) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final providerLinked = _isProviderLinked(selectedProvider);
+          return Container(
+            decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+            padding: EdgeInsets.fromLTRB(
+                24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24),
+            child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                      child: Container(
+                          width: 40,
+                          height: 4,
+                          decoration: BoxDecoration(
+                              color: Colors.grey[300],
+                              borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 20),
+                  Text('Top Up Wallet',
                       style: GoogleFonts.poppins(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
-                ),
-              ),
-            ]),
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.backgroundDark)),
+                  const SizedBox(height: 4),
+                  Text('Select amount and payment method',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13, color: AppColors.textHint)),
+                  const SizedBox(height: 20),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [50, 100, 200, 300, 500, 1000]
+                        .map((amt) => GestureDetector(
+                              onTap: () =>
+                                  setSheetState(() => selectedAmount = amt),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 10),
+                                decoration: BoxDecoration(
+                                    color: selectedAmount == amt
+                                        ? AppColors.backgroundDark
+                                        : const Color(0xFFF0F2F5),
+                                    borderRadius: BorderRadius.circular(12)),
+                                child: Text('₱$amt',
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700,
+                                        color: selectedAmount == amt
+                                            ? Colors.white
+                                            : AppColors.backgroundDark)),
+                              ),
+                            ))
+                        .toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Pay with',
+                      style: GoogleFonts.poppins(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.backgroundDark)),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    _payOpt('💙', 'GCash', selectedProvider == 'gcash',
+                        enabled: _isProviderLinked('gcash'),
+                        onTap: () =>
+                            setSheetState(() => selectedProvider = 'gcash')),
+                    const SizedBox(width: 10),
+                    _payOpt('💜', 'Maya', selectedProvider == 'maya',
+                        enabled: _isProviderLinked('maya'),
+                        onTap: () =>
+                            setSheetState(() => selectedProvider = 'maya')),
+                  ]),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: providerLinked && !_startingTopUp
+                          ? () {
+                              Navigator.pop(context);
+                              _startTopUp(
+                                  selectedProvider, selectedAmount.toDouble());
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.backgroundDark,
+                          disabledBackgroundColor: const Color(0xFFE5E7EB),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16)),
+                          elevation: 0),
+                      child: Text(
+                          providerLinked
+                              ? 'Proceed to Top Up'
+                              : 'Link account first',
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: providerLinked
+                                  ? Colors.white
+                                  : AppColors.textHint)),
+                    ),
+                  ),
+                ]),
+          );
+        },
       ),
     );
   }
 
-  Widget _payOpt(String emoji, String label, bool sel) => Expanded(
+  Future<void> _startTopUp(String provider, double amount) async {
+    if (_startingTopUp) return;
+    setState(() => _startingTopUp = true);
+    final result = await WalletService.createTopUpCheckout(
+      provider: provider,
+      amount: amount,
+    );
+    if (!mounted) return;
+    setState(() => _startingTopUp = false);
+
+    final wallet = result['wallet'];
+    if (wallet is Map<String, dynamic>) {
+      await _loadWalletFromPayload(wallet);
+    } else {
+      await _loadWallet(silent: true);
+    }
+
+    final checkoutUrl = result['checkoutUrl']?.toString();
+    if (result['success'] == true &&
+        checkoutUrl != null &&
+        checkoutUrl.isNotEmpty) {
+      final launched = await launchUrl(
+        Uri.parse(checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted) return;
+      if (!launched) {
+        _showSnack('Could not open PayMongo checkout.', AppColors.error);
+      }
+      return;
+    }
+
+    _showSnack(
+      result['message']?.toString() ?? 'Could not start top-up.',
+      AppColors.error,
+    );
+  }
+
+  Widget _payOpt(String emoji, String label, bool sel,
+          {required bool enabled, required VoidCallback onTap}) =>
+      Expanded(
+          child: GestureDetector(
+        onTap: enabled ? onTap : null,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: sel ? AppColors.backgroundDark : const Color(0xFFF0F2F5),
+            color: sel
+                ? AppColors.backgroundDark
+                : enabled
+                    ? const Color(0xFFF0F2F5)
+                    : const Color(0xFFF8F9FA),
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: sel ? AppColors.primary : Colors.transparent, width: 2),
           ),
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Text(emoji, style: const TextStyle(fontSize: 20)),
+            Text(emoji,
+                style: TextStyle(
+                    fontSize: 20, color: enabled ? null : Colors.grey)),
             const SizedBox(width: 8),
             Text(label,
                 style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: sel ? Colors.white : AppColors.backgroundDark)),
+                    color: sel
+                        ? Colors.white
+                        : enabled
+                            ? AppColors.backgroundDark
+                            : AppColors.textHint)),
           ]),
         ),
-      );
+      ));
 
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildEnhancedProfileTab() {
@@ -1789,7 +2205,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
             const SizedBox(width: 10),
             _profileStat(
               'Wallet',
-              'P${_balance.toStringAsFixed(0)}',
+              _formatPeso(_balance, decimals: 0),
               Icons.account_balance_wallet_rounded,
             ),
           ]),
@@ -1953,9 +2369,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen> {
         const SizedBox(height: 32),
         _pItem(Icons.phone_rounded, 'Phone', _user?['phone'] ?? '—'),
         _pItem(Icons.email_rounded, 'Email', _user?['email'] ?? '—'),
-        _pItem(Icons.star_rounded, 'Total Trips', '31 completed'),
-        _pItem(
-            Icons.account_balance_wallet_rounded, 'Wallet Balance', '₱245.50'),
+        _pItem(Icons.star_rounded, 'Total Trips', '$_walletTrips completed'),
+        _pItem(Icons.account_balance_wallet_rounded, 'Wallet Balance',
+            _formatPeso(_balance)),
         const SizedBox(height: 24),
         SizedBox(
           width: double.infinity,
