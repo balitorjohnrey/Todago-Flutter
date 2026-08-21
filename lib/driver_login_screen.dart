@@ -90,7 +90,7 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
       await DriverAuthService.clearSession();
       if (!mounted) return;
       setState(() => _errorMessage = openedPersona
-          ? 'Complete Persona identity verification, then log in again.'
+          ? 'Complete valid ID and face verification, then log in again.'
           : result.message);
     }
   }

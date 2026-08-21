@@ -15,9 +15,8 @@ class PersonaVerificationNotice extends StatelessWidget {
     final background = dark
         ? AppColors.surface.withOpacity(0.65)
         : AppColors.primary.withOpacity(0.08);
-    final border = dark
-        ? AppColors.inputBorder
-        : AppColors.primary.withOpacity(0.25);
+    final border =
+        dark ? AppColors.inputBorder : AppColors.primary.withOpacity(0.25);
     final titleColor = dark ? AppColors.textPrimary : AppColors.backgroundDark;
     final bodyColor = dark ? AppColors.textSecondary : Colors.grey[700];
 
@@ -51,7 +50,7 @@ class PersonaVerificationNotice extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Persona identity check',
+                  'Valid ID identity check',
                   style: GoogleFonts.poppins(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

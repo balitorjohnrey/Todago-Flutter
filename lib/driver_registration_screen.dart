@@ -328,7 +328,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               style:
                   GoogleFonts.poppins(fontSize: 13, color: Colors.grey[500])),
           const SizedBox(height: 24),
-
           _lbl('Full Name', required: true),
           const SizedBox(height: 6),
           _fld(
@@ -337,7 +336,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             icon: Icons.person_outline_rounded,
           ),
           const SizedBox(height: 18),
-
           _lbl('Mobile Number', required: true),
           const SizedBox(height: 6),
           _fld(
@@ -347,7 +345,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             keyboardType: TextInputType.phone,
           ),
           const SizedBox(height: 18),
-
           _lbl('Email Address', required: true),
           const SizedBox(height: 6),
           _fld(
@@ -357,7 +354,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             keyboardType: TextInputType.emailAddress,
           ),
           const SizedBox(height: 18),
-
           _lbl('Driver Password', required: true),
           const SizedBox(height: 6),
           _fld(
@@ -378,7 +374,6 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
             ),
           ),
           const SizedBox(height: 18),
-
           _lbl('Confirm Password', required: true),
           const SizedBox(height: 6),
           _fld(
@@ -494,7 +489,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               _benefit(
                   'Registered TODA membership is reviewed by its operator'),
               _benefit('Independent drivers are reviewed by TodaGo admin'),
-              _benefit('Persona checks your valid ID and face match'),
+              _benefit('Valid ID and face match are checked securely'),
             ]),
           ),
           const SizedBox(height: 28),
@@ -569,7 +564,8 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
               border: Border.all(color: Colors.green.withOpacity(0.3)),
             ),
             child: Row(children: [
-              const Icon(Icons.verified_user_rounded, color: Colors.green, size: 18),
+              const Icon(Icons.verified_user_rounded,
+                  color: Colors.green, size: 18),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -581,8 +577,7 @@ class _DriverRegistrationScreenState extends State<DriverRegistrationScreen> {
                             fontWeight: FontWeight.w700,
                             color: Colors.green[800],
                           )),
-                      Text(
-                          'You can log in after admin or operator approval.',
+                      Text('You can log in after admin or operator approval.',
                           style: GoogleFonts.poppins(
                               fontSize: 11, color: Colors.green[700])),
                     ]),

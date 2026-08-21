@@ -86,7 +86,7 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
       await OperatorAuthService.clearSession();
       if (!mounted) return;
       setState(() => _errorMessage = openedPersona
-          ? 'Complete Persona identity verification, then log in again.'
+          ? 'Complete valid ID and face verification, then log in again.'
           : result.message);
     }
   }

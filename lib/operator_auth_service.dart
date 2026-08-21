@@ -27,6 +27,20 @@ class OperatorAuthService {
   static const _operatorTokenKey = 'operator_auth_token';
   static const _operatorDataKey = 'operator_data';
 
+  static String? _verificationUrlFrom(Map<String, dynamic> data) {
+    final kyc = data['kyc'];
+    if (kyc is Map<String, dynamic>) {
+      final url = kyc['verificationUrl'];
+      if (url is String && url.trim().isNotEmpty) return url;
+    }
+    final persona = data['persona'];
+    if (persona is Map<String, dynamic>) {
+      final url = persona['verificationUrl'];
+      if (url is String && url.trim().isNotEmpty) return url;
+    }
+    return null;
+  }
+
   // ── Register operator ─────────────────────────────────────────────────────────
   static Future<OperatorAuthResponse> register({
     required String associationName,
@@ -63,8 +77,7 @@ class OperatorAuthService {
           .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final persona = data['persona'] as Map<String, dynamic>?;
-      final personaVerificationUrl = persona?['verificationUrl'] as String?;
+      final personaVerificationUrl = _verificationUrlFrom(data);
 
       if (response.statusCode == 201) {
         if (data['token'] != null) {
@@ -115,8 +128,7 @@ class OperatorAuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
-      final persona = data['persona'] as Map<String, dynamic>?;
-      final personaVerificationUrl = persona?['verificationUrl'] as String?;
+      final personaVerificationUrl = _verificationUrlFrom(data);
 
       if (response.statusCode == 200 &&
           data['success'] == true &&

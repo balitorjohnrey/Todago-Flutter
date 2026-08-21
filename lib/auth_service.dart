@@ -29,6 +29,20 @@ class AuthService {
   static const String _userKey = 'user_data';
   static const String _roleKey = 'user_role';
 
+  static String? _verificationUrlFrom(Map<String, dynamic> data) {
+    final kyc = data['kyc'];
+    if (kyc is Map<String, dynamic>) {
+      final url = kyc['verificationUrl'];
+      if (url is String && url.trim().isNotEmpty) return url;
+    }
+    final persona = data['persona'];
+    if (persona is Map<String, dynamic>) {
+      final url = persona['verificationUrl'];
+      if (url is String && url.trim().isNotEmpty) return url;
+    }
+    return null;
+  }
+
   // ─── Register ───────────────────────────────────────────────────────────────
   static Future<AuthResponse> register({
     required String fullName,
@@ -52,8 +66,7 @@ class AuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
-      final persona = data['persona'] as Map<String, dynamic>?;
-      final personaVerificationUrl = persona?['verificationUrl'] as String?;
+      final personaVerificationUrl = _verificationUrlFrom(data);
 
       if (response.statusCode == 201 &&
           data['success'] == true &&
@@ -100,8 +113,7 @@ class AuthService {
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final token = data['token'];
-      final persona = data['persona'] as Map<String, dynamic>?;
-      final personaVerificationUrl = persona?['verificationUrl'] as String?;
+      final personaVerificationUrl = _verificationUrlFrom(data);
 
       if (response.statusCode == 200 &&
           data['success'] == true &&
