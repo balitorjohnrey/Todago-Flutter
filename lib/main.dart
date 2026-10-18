@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'app_theme.dart';
 import 'reservation_notification_service.dart';
 import 'splash_screen.dart';
+import 'wallet_return_links.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await WalletReturnLinks.initialize();
   await ReservationNotificationService.initialize();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const TodaGoApp());

@@ -96,4 +96,27 @@ class WalletService {
       return {'success': false, 'message': 'Connection failed'};
     }
   }
+
+  static Future<Map<String, dynamic>> getPaymentMethods() async {
+    return _getPaymentData('payment-methods');
+  }
+
+  static Future<Map<String, dynamic>> checkTopUp(String transactionId) async {
+    return _getPaymentData('top-ups/${Uri.encodeComponent(transactionId)}');
+  }
+
+  static Future<Map<String, dynamic>> _getPaymentData(String path) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .get(Uri.parse('$_baseUrl/$path'), headers: _headers(token))
+          .timeout(const Duration(seconds: 20));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {
+        'success': false,
+        'message': 'Unable to connect. Please try again.'
+      };
+    }
+  }
 }
