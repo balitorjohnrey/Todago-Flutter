@@ -5,16 +5,21 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'app_theme.dart';
 import 'wallet_return_links.dart';
 import 'wallet_service.dart';
+import 'payment_app_links.dart';
 
 class WalletCheckoutScreen extends StatefulWidget {
   const WalletCheckoutScreen(
       {super.key,
       required this.checkoutUrl,
       required this.transactionId,
-      this.testMode = false});
+      this.testMode = false,
+      this.providerAuthorization = false,
+      this.providerLabel = 'payment provider'});
   final String checkoutUrl;
   final String transactionId;
   final bool testMode;
+  final bool providerAuthorization;
+  final String providerLabel;
 
   @override
   State<WalletCheckoutScreen> createState() => _WalletCheckoutScreenState();
@@ -36,7 +41,11 @@ class _WalletCheckoutScreenState extends State<WalletCheckoutScreen>
     WidgetsBinding.instance.addObserver(this);
     _links = WalletReturnLinks.stream.listen((_) => _onReturn());
     final uri = Uri.tryParse(widget.checkoutUrl);
-    if (uri?.scheme != 'https' || uri?.host != 'checkout.paymongo.com') {
+    if (uri?.scheme != 'https' ||
+        uri!.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        (!widget.providerAuthorization &&
+            uri.host != 'checkout.paymongo.com')) {
       _error =
           'The checkout link is invalid. Please return to your wallet and try again.';
       return;
@@ -66,11 +75,11 @@ class _WalletCheckoutScreenState extends State<WalletCheckoutScreen>
           if (['https', 'about'].contains(target.scheme)) {
             return NavigationDecision.navigate;
           }
-          if (request.isMainFrame) await _openPaymentApp(target);
+          await _openPaymentApp(target);
           return NavigationDecision.prevent;
         },
       ))
-      ..loadRequest(uri!);
+      ..loadRequest(uri);
     _timer =
         Timer.periodic(const Duration(seconds: 4), (_) => _verifyPayment());
   }
@@ -94,20 +103,8 @@ class _WalletCheckoutScreenState extends State<WalletCheckoutScreen>
   }
 
   Future<void> _openPaymentApp(Uri uri) async {
-    var target = uri;
-    if (uri.scheme == 'intent') {
-      final scheme = RegExp(r';scheme=([a-zA-Z0-9+.-]+);')
-          .firstMatch(uri.fragment)
-          ?.group(1);
-      if (scheme != null) {
-        target = Uri.parse(
-            '$scheme://${uri.authority}${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}');
-      }
-    }
-    if (!{'gcash', 'paymaya', 'maya', 'grab', 'grabpay', 'shopee', 'shopeepay'}
-        .contains(target.scheme)) {
-      return;
-    }
+    final target = paymentAppUri(uri);
+    if (target == null) return;
     try {
       final opened =
           await launchUrl(target, mode: LaunchMode.externalApplication);
@@ -155,8 +152,11 @@ class _WalletCheckoutScreenState extends State<WalletCheckoutScreen>
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-          title: Text(
-              widget.testMode ? 'Top up • Test checkout' : 'Top up wallet'),
+          title: Text(widget.providerAuthorization
+              ? 'Authorize with ${widget.providerLabel}'
+              : widget.testMode
+                  ? 'Top up • Test checkout'
+                  : 'Top up wallet'),
           leading: IconButton(
               tooltip: 'Back to wallet',
               icon: const Icon(Icons.close),

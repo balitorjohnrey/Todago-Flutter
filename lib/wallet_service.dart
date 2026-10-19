@@ -88,6 +88,7 @@ class WalletService {
             body: jsonEncode({
               'provider': provider,
               'amount': amount,
+              'checkoutExperience': 'native',
             }),
           )
           .timeout(const Duration(seconds: 20));

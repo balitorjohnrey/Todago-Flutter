@@ -25,6 +25,7 @@ import 'smart_ride_service.dart';
 import 'panabo_config.dart';
 import 'wallet_service.dart';
 import 'wallet_checkout_screen.dart';
+import 'wallet_payment_screen.dart';
 import 'wallet_return_links.dart';
 import 'payment_method_logo.dart';
 
@@ -504,6 +505,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     return {
       'id': raw['id'],
       'checkout_url': raw['checkout_url'],
+      'native_checkout': raw['native_checkout'] == true,
       'type': type,
       'status': status,
       'title': raw['title']?.toString() ?? 'Wallet transaction',
@@ -1749,7 +1751,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     final isSettled = t['status'] == 'completed';
     final canResume = t['type'] == 'topup' &&
         t['status'] == 'pending' &&
-        t['checkout_url'] != null &&
+        (t['checkout_url'] != null || t['native_checkout'] == true) &&
         t['id'] != null;
     final iconBg = t['type'] == 'topup'
         ? AppColors.success.withOpacity(0.1)
@@ -1764,7 +1766,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     return InkWell(
         onTap: canResume
             ? () => _openWalletCheckout(
-                t['checkout_url'].toString(), t['id'].toString())
+                t['checkout_url']?.toString(), t['id'].toString(),
+                native: t['native_checkout'] == true)
             : null,
         borderRadius: BorderRadius.circular(14),
         child: Container(
@@ -1966,17 +1969,32 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           AppColors.error);
       return;
     }
-    final methods = (result['methods'] as List? ?? [])
+    final availableMethods = (result['methods'] as List? ?? [])
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
-    if (methods.isEmpty) {
+    if (availableMethods.isEmpty) {
       _showSnack('Top-ups are temporarily unavailable. Please try again later.',
           AppColors.error);
       return;
     }
+    final methods = <Map<String, dynamic>>[
+      for (final core in const [
+        {'id': 'gcash', 'label': 'GCash'},
+        {'id': 'maya', 'label': 'Maya'},
+        {'id': 'qrph', 'label': 'QR Ph'}
+      ])
+        {
+          ...core,
+          'available':
+              availableMethods.any((method) => method['id'] == core['id'])
+        },
+      ...availableMethods
+          .where((method) => !['gcash', 'maya', 'qrph'].contains(method['id']))
+          .map((method) => {...method, 'available': true}),
+    ];
     int selectedAmount = 100;
-    String selectedProvider = methods.first['id'].toString();
+    String selectedProvider = availableMethods.first['id'].toString();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2038,6 +2056,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                                               method['id'].toString(),
                                               method['label'].toString(),
                                               selectedProvider == method['id'],
+                                              available:
+                                                  method['available'] == true,
                                               onTap: () => setSheetState(() =>
                                                   selectedProvider =
                                                       method['id'].toString())),
@@ -2046,7 +2066,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                               )),
                       const SizedBox(height: 12),
                       const Text(
-                          'Authorize your payment securely at checkout. No saved account is required.',
+                          'Authorize securely with your payment provider. Methods marked unavailable cannot accept payments yet.',
                           style: TextStyle(
                               fontSize: 12, color: AppColors.textHint)),
                       const SizedBox(height: 20),
@@ -2084,10 +2104,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     if (wallet is Map<String, dynamic>) await _loadWalletFromPayload(wallet);
     final checkoutUrl = result['checkoutUrl']?.toString();
     final transactionId = result['transactionId']?.toString();
+    final payment = result['payment'] is Map
+        ? Map<String, dynamic>.from(result['payment'] as Map)
+        : null;
     if (result['success'] == true &&
-        checkoutUrl != null &&
+        (checkoutUrl != null || payment != null) &&
         transactionId != null) {
       await _openWalletCheckout(checkoutUrl, transactionId,
+          native: payment != null,
+          payment: payment,
           testMode: result['testMode'] == true);
     } else {
       _showSnack(result['message']?.toString() ?? 'Could not start top-up.',
@@ -2095,13 +2120,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     }
   }
 
-  Future<void> _openWalletCheckout(String checkoutUrl, String transactionId,
-      {bool testMode = false}) async {
+  Future<void> _openWalletCheckout(String? checkoutUrl, String transactionId,
+      {bool testMode = false,
+      bool native = false,
+      Map<String, dynamic>? payment}) async {
     final status = await Navigator.of(context).push<String>(MaterialPageRoute(
-      builder: (_) => WalletCheckoutScreen(
-          checkoutUrl: checkoutUrl,
-          transactionId: transactionId,
-          testMode: testMode),
+      builder: (_) => native
+          ? WalletPaymentScreen(transactionId: transactionId, payment: payment)
+          : WalletCheckoutScreen(
+              checkoutUrl: checkoutUrl!,
+              transactionId: transactionId,
+              testMode: testMode),
     ));
     if (!mounted) return;
     setState(() => _selectedTab = 2);
@@ -2120,15 +2149,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       _showSnack(
           confirmation['status'] == 'cancelled'
               ? 'This checkout has expired.'
-              : 'Payment is not confirmed yet. Your wallet will update once it is received.',
+              : confirmation['status'] == 'failed'
+                  ? 'Payment failed. No money was added to your wallet. You can start a new top-up.'
+                  : 'Payment is not confirmed yet. Your wallet will update once it is received.',
           AppColors.textHint);
     }
   }
 
   Widget _payOpt(String provider, String label, bool selected,
-          {required VoidCallback onTap}) =>
+          {required VoidCallback onTap, bool available = true}) =>
       InkWell(
-          onTap: onTap,
+          onTap: available ? onTap : null,
           borderRadius: BorderRadius.circular(12),
           child: Container(
             constraints: const BoxConstraints(minHeight: 64),
@@ -2145,9 +2176,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
               PaymentMethodLogo(provider: provider, width: 44),
               const SizedBox(width: 6),
               Flexible(
-                  child: Text(label,
-                      style: GoogleFonts.poppins(
-                          fontSize: 12, fontWeight: FontWeight.w600))),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Text(label,
+                        style: GoogleFonts.poppins(
+                            fontSize: 12, fontWeight: FontWeight.w600)),
+                    if (!available)
+                      const Text('Unavailable',
+                          style: TextStyle(
+                              fontSize: 10, color: AppColors.textHint)),
+                  ])),
             ]),
           ));
 
