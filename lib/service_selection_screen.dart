@@ -7,8 +7,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'fare_settings_service.dart';
 import 'finding_driver_screen.dart';
+import 'dropoff_picker_sheet.dart';
 import 'live_map_screen.dart';
-import 'map_service.dart';
 import 'panabo_config.dart';
 import 'trip_service.dart';
 
@@ -462,13 +462,17 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   }
 
   Future<void> _pickSharedDropoff(int index) async {
-    final selected = await showModalBottomSheet<_DropoffSelection>(
+    final selected = await showModalBottomSheet<DropoffSelection>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _DropoffPickerSheet(
+      builder: (_) => DropoffPickerSheet(
         title: 'Passenger ${index + 1} Drop-off',
         locationBias: widget.destinationLatLng ?? widget.pickupLatLng,
+        initialSelection: _dropoffPoints[index] == null
+            ? null
+            : DropoffSelection(
+                name: _dropoffNames[index], point: _dropoffPoints[index]!),
       ),
     );
     if (selected == null || !mounted) return;
@@ -1314,213 +1318,6 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
                       selected ? AppColors.backgroundDark : AppColors.textHint,
                 )),
           ]),
-        ),
-      ),
-    );
-  }
-}
-
-class _DropoffSelection {
-  final String name;
-  final LatLng point;
-
-  const _DropoffSelection({
-    required this.name,
-    required this.point,
-  });
-}
-
-class _DropoffPickerSheet extends StatefulWidget {
-  final String title;
-  final LatLng? locationBias;
-
-  const _DropoffPickerSheet({
-    required this.title,
-    this.locationBias,
-  });
-
-  @override
-  State<_DropoffPickerSheet> createState() => _DropoffPickerSheetState();
-}
-
-class _DropoffPickerSheetState extends State<_DropoffPickerSheet> {
-  final TextEditingController _controller = TextEditingController();
-  List<PlaceSuggestion> _suggestions = [];
-  bool _isSearching = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _search() async {
-    final query = _controller.text.trim();
-    if (query.length < 2 || _isSearching) return;
-    setState(() => _isSearching = true);
-    final suggestions = await MapService.searchPlaces(
-      query,
-      locationBias: widget.locationBias ?? PanaboConfig.cityCenter,
-    );
-    if (!mounted) return;
-    setState(() {
-      _suggestions = suggestions;
-      _isSearching = false;
-    });
-  }
-
-  Future<void> _select(PlaceSuggestion suggestion) async {
-    setState(() => _isSearching = true);
-    final point = await MapService.getPlaceLatLng(suggestion.placeId);
-    if (!mounted) return;
-    setState(() => _isSearching = false);
-    if (point == null) return;
-    final fullText = suggestion.fullText.trim();
-    final fallbackText = [
-      suggestion.mainText.trim(),
-      suggestion.secondaryText.trim(),
-    ].where((part) => part.isNotEmpty).join(', ');
-    Navigator.of(context).pop(
-      _DropoffSelection(
-        name: fullText.isNotEmpty ? fullText : fallbackText,
-        point: point,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-    return AnimatedPadding(
-      duration: const Duration(milliseconds: 180),
-      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: Material(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          clipBehavior: Clip.antiAlias,
-          child: SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 22),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 38,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[300],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                Row(children: [
-                  Expanded(
-                    child: Text(widget.title,
-                        style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.backgroundDark,
-                        )),
-                  ),
-                ]),
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      textInputAction: TextInputAction.search,
-                      onSubmitted: (_) => _search(),
-                      decoration: InputDecoration(
-                        hintText: 'Search drop-off location',
-                        filled: true,
-                        fillColor: const Color(0xFFF5F6FA),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                      ),
-                      style: GoogleFonts.poppins(fontSize: 13),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 46,
-                    child: ElevatedButton(
-                      onPressed: _isSearching ? null : _search,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.backgroundDark,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: _isSearching
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Icon(Icons.search_rounded),
-                    ),
-                  ),
-                ]),
-                const SizedBox(height: 10),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: media.size.height * 0.38,
-                  ),
-                  child: _suggestions.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 18),
-                          child: Text('Search and choose a pinned location.',
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: AppColors.textHint,
-                              )),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: _suggestions.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, index) {
-                            final suggestion = _suggestions[index];
-                            return ListTile(
-                              onTap: () => _select(suggestion),
-                              leading: const Icon(
-                                Icons.location_on_rounded,
-                                color: AppColors.primary,
-                              ),
-                              title: Text(
-                                suggestion.mainText,
-                                style: GoogleFonts.poppins(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              subtitle: suggestion.secondaryText.isEmpty
-                                  ? null
-                                  : Text(
-                                      suggestion.secondaryText,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: GoogleFonts.poppins(fontSize: 11),
-                                    ),
-                            );
-                          },
-                        ),
-                ),
-              ]),
-            ),
-          ),
         ),
       ),
     );

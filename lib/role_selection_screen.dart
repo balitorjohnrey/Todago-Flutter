@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'admin_login_screen.dart';
 import 'app_theme.dart';
 import 'driver_login_screen.dart';
 import 'login_screen.dart';
@@ -185,7 +186,19 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
               ),
             ).animate().fadeIn(delay: 600.ms),
 
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const AdminLoginScreen(),
+              )),
+              icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
+              label: const Text('Admin Login'),
+              style: TextButton.styleFrom(
+                foregroundColor: AppColors.primary,
+                minimumSize: const Size(48, 48),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             Column(children: [
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
