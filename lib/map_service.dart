@@ -95,6 +95,7 @@ class MapService {
   static Future<List<PlaceSuggestion>> searchPlaces(
     String query, {
     LatLng? locationBias,
+    bool restrictToPhilippines = true,
   }) async {
     final trimmed = query.trim();
     if (trimmed.length < 2) return [];
@@ -109,7 +110,7 @@ class MapService {
         '?input=${Uri.encodeComponent(trimmed)}'
         '&key=$_key'
         '&language=en'
-        '&components=country:ph'
+        '${restrictToPhilippines ? '&components=country:ph' : ''}'
         '&location=${bias.latitude},${bias.longitude}'
         '&radius=${PanaboConfig.searchRadiusMeters.round()}',
       );
@@ -162,12 +163,13 @@ class MapService {
 
     // ── 2nd: Photon geocoder (OSM-based, free, no key required) ──────────
     _log('Photon', 'Falling back to Photon for "$trimmed"');
-    return _searchPhoton(trimmed, bias);
+    return _searchPhoton(trimmed, bias,
+        restrictToPhilippines: restrictToPhilippines);
   }
 
   // ── Photon search ─────────────────────────────────────────────────────────
-  static Future<List<PlaceSuggestion>> _searchPhoton(
-      String query, LatLng bias) async {
+  static Future<List<PlaceSuggestion>> _searchPhoton(String query, LatLng bias,
+      {required bool restrictToPhilippines}) async {
     try {
       final uri = Uri.parse(
         'https://photon.komoot.io/api/'
@@ -199,9 +201,11 @@ class MapService {
       for (final f in features) {
         final props = f['properties'] as Map<String, dynamic>? ?? {};
 
-        // ── FIX: accept any Philippines variant or blank country ──────────
-        final country = (props['country'] as String? ?? '').toLowerCase();
-        if (country.isNotEmpty &&
+        // Ride searches stay local; the public explorer can search worldwide.
+        final countryName = props['country'] as String? ?? '';
+        final country = countryName.toLowerCase();
+        if (restrictToPhilippines &&
+            country.isNotEmpty &&
             !country.contains('philippine') &&
             !country.contains('pilipinas') &&
             !country.contains('philippines')) {
@@ -249,7 +253,11 @@ class MapService {
         if (district.isNotEmpty && mainText != district)
           secondaryParts.add(district);
         if (state.isNotEmpty) secondaryParts.add(state);
-        secondaryParts.add('Philippines');
+        if (restrictToPhilippines) {
+          secondaryParts.add('Philippines');
+        } else if (countryName.isNotEmpty) {
+          secondaryParts.add(countryName);
+        }
 
         final secondary = secondaryParts.join(', ');
 

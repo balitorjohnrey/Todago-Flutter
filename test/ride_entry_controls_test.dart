@@ -15,6 +15,8 @@ import 'package:http/testing.dart';
 import 'package:todago/admin_login_screen.dart';
 import 'package:todago/app_theme.dart';
 import 'package:todago/dropoff_picker_sheet.dart';
+import 'package:todago/live_map_screen.dart';
+import 'package:todago/map_service.dart';
 import 'package:todago/role_selection_screen.dart';
 import 'package:todago/smart_ride_sheet.dart';
 
@@ -56,6 +58,7 @@ Future<void> _prepareFonts() async {
 // Keep the real map controller and event channels; replace only the native view.
 class _TestMaps extends MethodChannelGoogleMapsFlutter {
   final _created = <int>{};
+  final calls = <MethodCall>[];
 
   @override
   Future<void> updateGroundOverlays(
@@ -75,13 +78,37 @@ class _TestMaps extends MethodChannelGoogleMapsFlutter {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
         MethodChannel('plugins.flutter.io/google_maps_$creationId'),
-        (_) async => null,
+        (call) async {
+          calls.add(call);
+          return null;
+        },
       );
       WidgetsBinding.instance
           .addPostFrameCallback((_) => onPlatformViewCreated(creationId));
     }
     return const SizedBox.expand();
   }
+}
+
+_TestMaps _installTestMaps() {
+  final previous = GoogleMapsFlutterPlatform.instance;
+  final maps = _TestMaps();
+  GoogleMapsFlutterPlatform.instance = maps;
+  addTearDown(() => GoogleMapsFlutterPlatform.instance = previous);
+  return maps;
+}
+
+Future<_TestMaps> _openExplorer(WidgetTester tester) async {
+  final maps = _installTestMaps();
+  tester.view.physicalSize = const Size(360, 780);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(MaterialApp(
+    theme: AppTheme.theme,
+    home: const LiveMapScreen(),
+  ));
+  await tester.pumpAndSettle();
+  return maps;
 }
 
 Future<void> _openSheet(
@@ -155,6 +182,250 @@ void main() {
     expect(find.byType(AdminLoginScreen), findsOneWidget);
     expect(find.text('Admin Secret'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'a visible map icon opens the explorer without choosing an account',
+      (tester) async {
+    _installTestMaps();
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.theme,
+      home: const RoleSelectionScreen(successMessage: ''),
+    ));
+    await tester.pumpAndSettle();
+    final shortcut = find.byTooltip('Explore map without an account');
+    expect(shortcut.hitTestable(), findsOneWidget);
+    await tester.tap(shortcut);
+    await tester.pumpAndSettle();
+    expect(find.byType(LiveMapScreen), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(tester.widget<GoogleMap>(find.byType(GoogleMap)).myLocationEnabled,
+        isFalse);
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    expect(find.text('Choose Your Account'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+      'map search selects a place and opens directions for its coordinates',
+      (tester) async {
+    Uri? directions;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(
+      const MethodChannel('plugins.flutter.io/url_launcher'),
+      (call) async {
+        directions = Uri.parse(call.arguments['url'] as String);
+        return true;
+      },
+    );
+    addTearDown(() => messenger.setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/url_launcher'), null));
+    await http.runWithClient(() async {
+      final maps = await _openExplorer(tester);
+      await tester.enterText(find.byType(TextField), 'Gaisano');
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.widgetWithText(ListTile, 'Gaisano'));
+      tester.view.viewInsets = FakeViewPadding.zero;
+      await tester.pumpAndSettle();
+      final map = tester.widget<GoogleMap>(find.byType(GoogleMap));
+      expect(map.markers.single.position, const LatLng(7.3, 125.68));
+      expect(
+          maps.calls
+              .lastWhere((call) => call.method == 'camera#animate')
+              .arguments['cameraUpdate'],
+          [
+            'newLatLngZoom',
+            [7.3, 125.68],
+            16.0
+          ]);
+      expect(find.text('Panabo City'), findsOneWidget);
+      expect(find.byType(ListTile), findsNothing);
+      await tester.tap(find.text('Directions'));
+      await tester.pumpAndSettle();
+      expect(directions?.host, 'www.google.com');
+      expect(directions?.queryParameters['destination'], '7.3,125.68');
+      expect(directions?.queryParameters['api'], '1');
+      expect(tester.takeException(), isNull);
+    },
+        () => MockClient((request) async {
+              expect(request.url.queryParameters.containsKey('components'),
+                  isFalse);
+              return _placeResponse('Gaisano');
+            }));
+  });
+
+  testWidgets('map search ignores old responses and clears results',
+      (tester) async {
+    final oldSearch = Completer<http.Response>();
+    final newSearch = Completer<http.Response>();
+    await http.runWithClient(() async {
+      await _openExplorer(tester);
+      await tester.enterText(find.byType(TextField), 'Old place');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.enterText(find.byType(TextField), 'New place');
+      await tester.pump(const Duration(milliseconds: 400));
+      newSearch.complete(_placeResponse('New result'));
+      await tester.pumpAndSettle();
+      oldSearch.complete(_placeResponse('Old result'));
+      await tester.pumpAndSettle();
+      expect(find.text('New result'), findsOneWidget);
+      expect(find.text('Old result'), findsNothing);
+      await tester.tap(find.byTooltip('Clear search'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ListTile), findsNothing);
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+        () => MockClient((request) =>
+            request.url.queryParameters['input'] == 'Old place'
+                ? oldSearch.future
+                : newSearch.future));
+  });
+
+  testWidgets('failed map lookup keeps the explorer open and allows pinning',
+      (tester) async {
+    await http.runWithClient(() async {
+      await _openExplorer(tester);
+      await tester.enterText(find.byType(TextField), 'Unknown');
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Unknown place'));
+      await tester.pumpAndSettle();
+      expect(
+          find.textContaining('Could not locate this place'), findsOneWidget);
+      tester
+          .widget<GoogleMap>(find.byType(GoogleMap))
+          .onTap!(const LatLng(7.31234, 125.69123));
+      await tester.pumpAndSettle();
+      expect(find.text('Dropped pin'), findsOneWidget);
+      expect(find.text('7.31234, 125.69123'), findsOneWidget);
+      expect(
+          tester
+              .widget<GoogleMap>(find.byType(GoogleMap))
+              .markers
+              .single
+              .position,
+          const LatLng(7.31234, 125.69123));
+      expect(tester.takeException(), isNull);
+    },
+        () => MockClient((request) async =>
+            request.url.path.contains('autocomplete')
+                ? _placeResponse('Unknown place', id: 'missing')
+                : http.Response('{"status":"NOT_FOUND"}', 200)));
+  });
+
+  testWidgets('a slow address lookup cannot overwrite a newer map pin',
+      (tester) async {
+    final oldAddress = Completer<http.Response>();
+    final newAddress = Completer<http.Response>();
+    await http.runWithClient(() async {
+      await _openExplorer(tester);
+      tester
+          .widget<GoogleMap>(find.byType(GoogleMap))
+          .onTap!(const LatLng(7.31, 125.69));
+      await tester.pump();
+      tester
+          .widget<GoogleMap>(find.byType(GoogleMap))
+          .onLongPress!(const LatLng(7.32, 125.70));
+      await tester.pump();
+      newAddress.complete(http.Response(
+          '{"results":[{"formatted_address":"New address"}]}', 200));
+      await tester.pumpAndSettle();
+      oldAddress.complete(http.Response(
+          '{"results":[{"formatted_address":"Old address"}]}', 200));
+      await tester.pumpAndSettle();
+      expect(find.text('New address'), findsOneWidget);
+      expect(find.text('Old address'), findsNothing);
+      await tester.tap(find.byTooltip('Close place'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<GoogleMap>(find.byType(GoogleMap)).markers, isEmpty);
+    },
+        () => MockClient((request) =>
+            request.url.queryParameters['latlng'] == '7.31,125.69'
+                ? oldAddress.future
+                : newAddress.future));
+  });
+
+  testWidgets(
+      'location denial leaves map browsing available with no initial prompt',
+      (tester) async {
+    final gpsCalls = <String>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const channel = MethodChannel('flutter.baseflow.com/geolocator');
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      gpsCalls.add(call.method);
+      return call.method == 'isLocationServiceEnabled' ? true : 0;
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+    await _openExplorer(tester);
+    expect(gpsCalls, isEmpty);
+    await tester.tap(find.byTooltip('My location'));
+    await tester.pumpAndSettle();
+    expect(gpsCalls, contains('requestPermission'));
+    expect(find.textContaining('Your location is unavailable'), findsOneWidget);
+    expect(tester.widget<GoogleMap>(find.byType(GoogleMap)).myLocationEnabled,
+        isFalse);
+    expect(find.byType(TextField), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('map layers and traffic can be changed while browsing',
+      (tester) async {
+    await _openExplorer(tester);
+    await tester.tap(find.byTooltip('Hide traffic'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<GoogleMap>(find.byType(GoogleMap)).trafficEnabled,
+        isFalse);
+    await tester.tap(find.byTooltip('Map layers'));
+    await tester.pumpAndSettle();
+    await tester
+        .tap(find.widgetWithText(CheckedPopupMenuItem<MapType>, 'Satellite'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<GoogleMap>(find.byType(GoogleMap)).mapType,
+        MapType.hybrid);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('global fallback includes international places; ride search stays local',
+      () async {
+    await http.runWithClient(() async {
+      final global = await MapService.searchPlaces('Singapore',
+          restrictToPhilippines: false);
+      expect(global.single.mainText, 'Singapore');
+      expect(global.single.secondaryText, 'Singapore');
+      expect(await MapService.getPlaceLatLng(global.single.placeId),
+          const LatLng(1.28, 103.85));
+      expect(await MapService.searchPlaces('Singapore'), isEmpty);
+    },
+        () => MockClient((request) async {
+              if (request.url.host == 'maps.googleapis.com') {
+                return http.Response('{"status":"ZERO_RESULTS"}', 200);
+              }
+              return http.Response(
+                  jsonEncode({
+                    'features': [
+                      {
+                        'properties': {
+                          'name': 'Singapore',
+                          'country': 'Singapore'
+                        },
+                        'geometry': {
+                          'coordinates': [103.85, 1.28]
+                        },
+                      }
+                    ],
+                  }),
+                  200);
+            }));
   });
 
   testWidgets('Smart Ride can close with the keyboard visible', (tester) async {

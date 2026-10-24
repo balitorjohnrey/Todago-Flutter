@@ -5,6 +5,7 @@ import 'admin_login_screen.dart';
 import 'app_theme.dart';
 import 'driver_login_screen.dart';
 import 'login_screen.dart';
+import 'live_map_screen.dart';
 import 'operator_login_screen.dart';
 
 class RoleSelectionScreen extends StatefulWidget {
@@ -118,13 +119,40 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
           child: Column(children: [
             const SizedBox(height: 40),
 
-            // Logo
-            ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: Image.asset('assets/logo.png', width: 64, height: 64, fit: BoxFit.cover),
-            ).animate().fadeIn(duration: 400.ms).scale(
-                  begin: const Offset(0.8, 0.8), end: const Offset(1.0, 1.0),
-                  duration: 500.ms, curve: Curves.elasticOut),
+            Row(children: [
+              const SizedBox(width: 72),
+              Expanded(
+                child: Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: Image.asset('assets/logo.png', width: 64, height: 64, fit: BoxFit.cover),
+                  ).animate().fadeIn(duration: 400.ms).scale(
+                        begin: const Offset(0.8, 0.8), end: const Offset(1.0, 1.0),
+                        duration: 500.ms, curve: Curves.elasticOut),
+                ),
+              ),
+              SizedBox(
+                width: 72,
+                child: Column(children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Explore map without an account',
+                    onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const LiveMapScreen(),
+                    )),
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.surface,
+                      foregroundColor: AppColors.primary,
+                      minimumSize: const Size(48, 48),
+                    ),
+                    icon: const Icon(Icons.map_outlined),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Map', style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 12,
+                  )),
+                ]),
+              ),
+            ]),
 
             const SizedBox(height: 20),
 
@@ -205,9 +233,10 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                 const Icon(Icons.location_on_rounded,
                     color: AppColors.primary, size: 14),
                 const SizedBox(width: 4),
-                Text('LTFRB Compliant Transport Service',
+                Flexible(child: Text('LTFRB Compliant Transport Service',
+                    textAlign: TextAlign.center,
                     style: GoogleFonts.poppins(
-                        fontSize: 11, color: AppColors.textHint)),
+                        fontSize: 11, color: AppColors.textHint))),
               ]),
               const SizedBox(height: 4),
               Text('TodaGo v1.0.0 • Serving Local Communities',
