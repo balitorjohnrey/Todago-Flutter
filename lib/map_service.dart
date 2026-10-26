@@ -4,6 +4,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'panabo_config.dart';
+import 'map_place.dart';
 
 const String _key = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
 const String _placesBase = 'https://maps.googleapis.com/maps/api/place';
@@ -27,6 +28,7 @@ class MapRoute {
   final int etaMinutes;
   final String distanceText;
   final String durationText;
+  final double destinationOffsetMeters;
 
   MapRoute({
     required this.points,
@@ -34,6 +36,7 @@ class MapRoute {
     required this.etaMinutes,
     this.distanceText = '',
     this.durationText = '',
+    this.destinationOffsetMeters = 0,
   });
 }
 
@@ -52,6 +55,42 @@ class PlaceSuggestion {
 }
 
 class MapService {
+  /// Request display data only when opening a place, rather than for every
+  /// autocomplete prediction or ride coordinate lookup.
+  static Future<MapPlace?> getPlaceDetails(String placeId) async {
+    if (placeId.startsWith('coord:')) return null;
+    try {
+      final uri = Uri.parse('$_placesBase/details/json').replace(
+        queryParameters: {
+          'place_id': placeId,
+          'fields': 'place_id,name,geometry,formatted_address,rating,'
+              'user_ratings_total,types,opening_hours,photos,'
+              'formatted_phone_number,website,wheelchair_accessible_entrance',
+          'language': 'en',
+          'key': _key,
+        },
+      );
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['status'] != 'OK' || data['result'] == null) return null;
+      final result = Map<String, dynamic>.from(data['result'] as Map);
+      result['place_id'] ??= placeId;
+      result['html_attributions'] = data['html_attributions'];
+      return MapPlace.fromGoogle(result);
+    } catch (error) {
+      _log('PlaceDetails', 'Metadata unavailable: ${error.runtimeType}');
+      return null;
+    }
+  }
+
+  static String placePhotoUrl(PlacePhoto photo) =>
+      Uri.parse('$_placesBase/photo').replace(queryParameters: {
+        'maxwidth': '800',
+        'photo_reference': photo.reference,
+        'key': _key,
+      }).toString();
+
   // ── GPS location ──────────────────────────────────────────────────────────
   static Future<LatLng?> getCurrentLocation() async {
     try {
@@ -70,8 +109,10 @@ class MapService {
         return null;
       }
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
       );
       _log('GPS', 'Got location: ${pos.latitude}, ${pos.longitude}');
       return LatLng(pos.latitude, pos.longitude);
@@ -250,8 +291,9 @@ class MapService {
         final secondaryParts = <String>[];
         if (street.isNotEmpty && mainText != street) secondaryParts.add(street);
         if (city.isNotEmpty && mainText != city) secondaryParts.add(city);
-        if (district.isNotEmpty && mainText != district)
+        if (district.isNotEmpty && mainText != district) {
           secondaryParts.add(district);
+        }
         if (state.isNotEmpty) secondaryParts.add(state);
         if (restrictToPhilippines) {
           secondaryParts.add('Philippines');
@@ -357,7 +399,12 @@ class MapService {
   }
 
   // ── Road-following route (Google traffic → OSRM fallback) ────────────────
-  static Future<MapRoute?> fetchRoute(LatLng from, LatLng to) async {
+  static Future<MapRoute?> fetchRoute(
+    LatLng from,
+    LatLng to, {
+    String? destinationPlaceId,
+    bool allowEstimate = true,
+  }) async {
     _log(
         'Route',
         'Fetching route from ${from.latitude},${from.longitude} '
@@ -368,7 +415,7 @@ class MapService {
         final uri = Uri.parse(
           '$_directionsBase'
           '?origin=${from.latitude},${from.longitude}'
-          '&destination=${to.latitude},${to.longitude}'
+          '&destination=${Uri.encodeComponent(destinationPlaceId == null ? '${to.latitude},${to.longitude}' : 'place_id:$destinationPlaceId')}'
           '&mode=driving'
           '&departure_time=now'
           '&traffic_model=best_guess'
@@ -404,12 +451,21 @@ class MapService {
                 trafficMultiplier: trafficFactor,
               );
               final encoded = route['overview_polyline']['points'] as String;
+              final points = _decodePolyline(encoded);
+              if (points.length < 2) {
+                throw const FormatException('Route has no road geometry');
+              }
               _log(
                   'Directions',
                   'Route OK - ${distanceKm.toStringAsFixed(1)} km, '
                       '$etaMinutes min tricycle ETA');
               return MapRoute(
-                points: _decodePolyline(encoded),
+                points: points,
+                destinationOffsetMeters: Geolocator.distanceBetween(
+                    points.last.latitude,
+                    points.last.longitude,
+                    to.latitude,
+                    to.longitude),
                 distanceKm: distanceKm,
                 etaMinutes: etaMinutes,
                 distanceText: leg['distance']['text'] as String? ?? '',
@@ -454,12 +510,20 @@ class MapService {
                     (c[0] as num).toDouble(),
                   ))
               .toList();
+          if (coords.length < 2) {
+            throw const FormatException('Route has no road geometry');
+          }
           _log(
               'OSRM',
               'Route OK — ${(distM / 1000).toStringAsFixed(1)} km, '
                   '$etaMinutes min, ${coords.length} points');
           return MapRoute(
             points: coords,
+            destinationOffsetMeters: Geolocator.distanceBetween(
+                coords.last.latitude,
+                coords.last.longitude,
+                to.latitude,
+                to.longitude),
             distanceKm: distanceKm,
             etaMinutes: etaMinutes,
             distanceText: '${distanceKm.toStringAsFixed(1)} km',
@@ -470,6 +534,9 @@ class MapService {
     } catch (e) {
       _log('OSRM', 'Exception: $e');
     }
+
+    // A directions preview must never present a straight line as a road route.
+    if (!allowEstimate) return null;
 
     // ── Last resort: straight-line estimate ───────────────────────────────
     _log('Route', 'All routing failed — using straight-line fallback');
@@ -544,7 +611,9 @@ class MapService {
   static double _sqrt(double x) {
     if (x <= 0) return 0;
     double r = x;
-    for (int i = 0; i < 20; i++) r = (r + x / r) / 2;
+    for (int i = 0; i < 20; i++) {
+      r = (r + x / r) / 2;
+    }
     return r;
   }
 }

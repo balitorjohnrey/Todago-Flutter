@@ -1,12 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
+import 'map_place.dart';
+import 'map_place_taps.dart';
+import 'place_details_card.dart';
 
 /// Public map explorer, also available before choosing an account.
 class LiveMapScreen extends StatefulWidget {
@@ -26,6 +29,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   LatLng? _selectedPoint;
   String _placeName = '';
   String _placeAddress = '';
+  MapPlace? _place;
+  MapPlaceTaps? _placeTaps;
+  bool _detailsUnavailable = false;
+  MapRoute? _route;
+  LatLng? _routeOrigin;
+  bool _routeRequested = false;
+  bool _routing = false;
+  String? _routeError;
+  int _routeRequest = 0;
   List<PlaceSuggestion> _suggestions = [];
   String? _searchMessage;
   bool _searching = false;
@@ -47,6 +59,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   void dispose() {
     _debounce?.cancel();
     _searchController.dispose();
+    _placeTaps?.dispose();
     _mapController?.dispose();
     super.dispose();
   }
@@ -61,6 +74,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _searching = false;
       _selecting = false;
       _selectedPoint = null;
+      _place = null;
+      _clearRoute();
     });
     if (value.trim().length >= 2) {
       _debounce = Timer(const Duration(milliseconds: 350), _search);
@@ -104,8 +119,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   Future<void> _selectPlace(PlaceSuggestion place) async {
     _dismissSearch();
     final request = ++_selectionRequest;
-    setState(() => _selecting = true);
-    final point = await MapService.getPlaceLatLng(place.placeId);
+    setState(() {
+      _selecting = true;
+      _selectedPoint = null;
+      _place = null;
+      _clearRoute();
+    });
+    final details = await MapService.getPlaceDetails(place.placeId);
+    if (!mounted || request != _selectionRequest) return;
+    final point =
+        details?.point ?? await MapService.getPlaceLatLng(place.placeId);
     if (!mounted || request != _selectionRequest) return;
     setState(() {
       _selecting = false;
@@ -117,9 +140,47 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         _placeName = place.mainText;
         _placeAddress = place.secondaryText;
         _searchController.text = place.mainText;
+        _place = details ??
+            MapPlace(
+              placeId:
+                  place.placeId.startsWith('coord:') ? null : place.placeId,
+              point: point,
+              name: place.mainText,
+              address: place.secondaryText,
+            );
+        _detailsUnavailable =
+            details == null && !place.placeId.startsWith('coord:');
       }
     });
     if (point != null) await _moveCamera(point);
+  }
+
+  Future<void> _selectMapPlace(MapPlace place) async {
+    _dismissSearch();
+    final request = ++_selectionRequest;
+    setState(() {
+      _clearRoute();
+      _selectedPoint = place.point;
+      _place = place;
+      _placeName = place.name;
+      _placeAddress = place.address;
+      _searchController.text = place.name;
+      _selecting = true;
+      _detailsUnavailable = false;
+    });
+    final details = await MapService.getPlaceDetails(place.placeId!);
+    if (!mounted || request != _selectionRequest) return;
+    setState(() {
+      _selecting = false;
+      _detailsUnavailable = details == null;
+      if (details != null) {
+        _place = details;
+        _selectedPoint = details.point;
+        _placeName = details.name;
+        _placeAddress = details.address;
+      }
+    });
+    await _moveCamera(_selectedPoint!);
   }
 
   Future<void> _dropPin(LatLng point) async {
@@ -132,6 +193,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _placeAddress = '${point.latitude.toStringAsFixed(5)}, '
           '${point.longitude.toStringAsFixed(5)}';
       _searchController.clear();
+      _place = null;
+      _detailsUnavailable = false;
+      _clearRoute();
     });
     final address = await MapService.reverseGeocode(point);
     if (!mounted || request != _selectionRequest) return;
@@ -167,22 +231,66 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     await _moveCamera(point);
   }
 
+  void _clearRoute() {
+    ++_routeRequest;
+    _route = null;
+    _routeOrigin = null;
+    _routeRequested = false;
+    _routing = false;
+    _routeError = null;
+  }
+
   Future<void> _openDirections() async {
-    final point = _selectedPoint;
-    if (point == null) return;
-    final uri = Uri.https('www.google.com', '/maps/dir/', {
-      'api': '1',
-      'destination': '${point.latitude},${point.longitude}',
-      'travelmode': 'driving',
+    final destination = _selectedPoint;
+    final placeId = _place?.placeId;
+    if (destination == null || _routing) return;
+    final request = ++_routeRequest;
+    setState(() {
+      _routeRequested = true;
+      _routing = true;
+      _route = null;
+      _routeError = null;
     });
-    try {
-      final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-      if (!opened && mounted) {
-        _showMessage('Could not open directions. Please try again.');
-      }
-    } catch (_) {
-      if (mounted) _showMessage('Could not open directions. Please try again.');
+    final origin = await MapService.getCurrentLocation();
+    if (!mounted || request != _routeRequest) return;
+    if (origin == null) {
+      setState(() {
+        _routing = false;
+        _routeError = 'Your location is unavailable. Enable location services '
+            'and allow location access, then retry directions.';
+      });
+      return;
     }
+    setState(() {
+      _routeOrigin = origin;
+      _locationEnabled = true;
+    });
+    final route = await MapService.fetchRoute(origin, destination,
+        destinationPlaceId: placeId, allowEstimate: false);
+    if (!mounted || request != _routeRequest) return;
+    setState(() {
+      _routing = false;
+      _route = route;
+      _routeError = route == null
+          ? 'No road route is available. Check your connection and retry directions.'
+          : null;
+    });
+    if (route != null) await _fitRoute();
+  }
+
+  Future<void> _fitRoute() async {
+    final route = _route;
+    if (route == null || _mapController == null) return;
+    final points = [...route.points, _routeOrigin!, _selectedPoint!];
+    final south = points.map((p) => p.latitude).reduce(math.min);
+    final north = points.map((p) => p.latitude).reduce(math.max);
+    final west = points.map((p) => p.longitude).reduce(math.min);
+    final east = points.map((p) => p.longitude).reduce(math.max);
+    await _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
+        LatLngBounds(
+            southwest: LatLng(south - 0.0001, west - 0.0001),
+            northeast: LatLng(north + 0.0001, east + 0.0001)),
+        40));
   }
 
   Widget _searchPanel(double maxHeight) {
@@ -249,6 +357,17 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   }
 
   Widget _placeCard() {
+    final place = _place;
+    if (place != null) {
+      return PlaceDetailsCard(
+        place: place,
+        loading: _selecting,
+        detailsUnavailable: _detailsUnavailable,
+        onDirections: _openDirections,
+        onClose: _closePlace,
+        onRetry: () => _selectMapPlace(place),
+      );
+    }
     return Card(
       margin: EdgeInsets.zero,
       child: Padding(
@@ -264,10 +383,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             ),
             IconButton(
               tooltip: 'Close place',
-              onPressed: () {
-                ++_selectionRequest;
-                setState(() => _selectedPoint = null);
-              },
+              onPressed: _closePlace,
               icon: const Icon(Icons.close),
             ),
           ]),
@@ -282,13 +398,79 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             child: FilledButton.icon(
               onPressed: _openDirections,
               icon: const Icon(Icons.directions_outlined),
-              label: const Text('Directions'),
+              label: const Text('Get Directions'),
             ),
           ),
         ]),
       ),
     );
   }
+
+  void _closePlace() {
+    ++_selectionRequest;
+    setState(() {
+      _selectedPoint = null;
+      _place = null;
+      _selecting = false;
+      _clearRoute();
+    });
+  }
+
+  Widget _directionsCard() => Card(
+        margin: EdgeInsets.zero,
+        child: SingleChildScrollView(
+            child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(children: [
+              const Icon(Icons.directions, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Expanded(
+                  child: Text('Directions',
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w700))),
+              IconButton(
+                  tooltip: 'Close directions',
+                  onPressed: () => setState(_clearRoute),
+                  icon: const Icon(Icons.close)),
+            ]),
+            const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('From: Your location')),
+            Align(
+                alignment: Alignment.centerLeft,
+                child: Text('To: $_placeName',
+                    maxLines: 2, overflow: TextOverflow.ellipsis)),
+            const SizedBox(height: 12),
+            if (_routing) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              const Text('Finding a road route…'),
+            ],
+            if (_route != null)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    '${_route!.distanceText} · ${_route!.durationText} '
+                    '(estimated tricycle travel time)',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            if ((_route?.destinationOffsetMeters ?? 0) > 50)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text('The road route ends about '
+                    '${_route!.destinationOffsetMeters.round()} m from your '
+                    'selected destination. Check the entrance and final access.'),
+              ),
+            if (_routeError != null) ...[
+              Text(_routeError!),
+              TextButton(
+                  onPressed: _openDirections,
+                  child: const Text('Retry directions')),
+            ],
+          ]),
+        )),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -333,13 +515,27 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             ),
             onMapCreated: (controller) {
               _mapController = controller;
+              _placeTaps = MapPlaceTaps(
+                  mapId: controller.mapId,
+                  onSelected: (place) {
+                    if (mounted) _selectMapPlace(place);
+                  });
+              unawaited(_placeTaps!.attach());
               // A search can finish while the native map is still loading.
               controller.moveCamera(CameraUpdate.newLatLng(_cameraTarget));
+              if (_route != null) unawaited(_fitRoute());
             },
             onCameraMove: (position) => _cameraTarget = position.target,
             onTap: _dropPin,
             onLongPress: _dropPin,
             markers: {
+              if (_routeOrigin != null)
+                Marker(
+                    markerId: const MarkerId('explore-origin'),
+                    position: _routeOrigin!,
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                        BitmapDescriptor.hueAzure),
+                    infoWindow: const InfoWindow(title: 'Your location')),
               if (_selectedPoint != null)
                 Marker(
                   markerId: const MarkerId('explore-place'),
@@ -347,9 +543,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   infoWindow: InfoWindow(title: _placeName),
                 ),
             },
+            polylines: {
+              if (_route != null)
+                Polyline(
+                    polylineId: const PolylineId('explore-route'),
+                    points: _route!.points,
+                    color: const Color(0xFF1A73E8),
+                    width: 6,
+                    jointType: JointType.round),
+            },
             padding: EdgeInsets.only(
               top: 80,
-              bottom: !keyboardVisible && _selectedPoint != null ? 210 : 24,
+              bottom: !keyboardVisible && _selectedPoint != null
+                  ? math.min(constraints.maxHeight * 0.48, 380.0) + 24
+                  : 24,
             ),
             mapType: _mapType,
             myLocationEnabled: _locationEnabled,
@@ -385,7 +592,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   ),
                   const SizedBox(height: 12),
                   if (_selectedPoint != null)
-                    _placeCard()
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                          maxHeight:
+                              math.min(constraints.maxHeight * 0.48, 380.0)),
+                      child: _routeRequested ? _directionsCard() : _placeCard(),
+                    )
                   else
                     const Card(
                       margin: EdgeInsets.zero,
