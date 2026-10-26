@@ -13,6 +13,7 @@ import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platf
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:todago/admin_login_screen.dart';
+import 'package:todago/ai_chat_screen.dart';
 import 'package:todago/app_theme.dart';
 import 'package:todago/dropoff_picker_sheet.dart';
 import 'package:todago/live_map_screen.dart';
@@ -214,6 +215,53 @@ http.Response _roadRoute({bool stopsAtRoad = false}) => http.Response(
     }),
     200);
 
+http.Response _googleRoute({
+  String points = r'atpk@}fb~Veb@dj@cy@~\',
+  int distanceMeters = 4200,
+}) =>
+    http.Response(
+        jsonEncode({
+          'status': 'OK',
+          'routes': [
+            {
+              'overview_polyline': {'points': points},
+              'legs': [
+                {
+                  'distance': {
+                    'value': distanceMeters,
+                    'text': '${distanceMeters / 1000} km'
+                  },
+                  'duration': {'value': 720},
+                }
+              ],
+            }
+          ],
+        }),
+        200);
+
+http.Response _threeGoogleRoutes() => http.Response(
+    jsonEncode({
+      'status': 'OK',
+      'routes': [
+        for (final option in [
+          (r'atpk@}fb~Vm@tDoAfE', 450, 'First road'),
+          (r'atpk@}fb~VuAdGg@vB', 550, 'Second road'),
+          (r'atpk@}fb~VeDpAf@jH', 650, 'Third road'),
+        ])
+          {
+            'overview_polyline': {'points': option.$1},
+            'summary': option.$3,
+            'legs': [
+              {
+                'distance': {'value': option.$2, 'text': '${option.$2} m'},
+                'duration': {'value': 120},
+              }
+            ],
+          }
+      ],
+    }),
+    200);
+
 void _mockLocation({bool denied = false}) {
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -311,6 +359,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('the account chooser opens FAQs and directions as a guest',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.theme,
+      home: const RoleSelectionScreen(successMessage: ''),
+    ));
+    await tester.pumpAndSettle();
+    final shortcut = find.byTooltip('Open chatbot and FAQs');
+    expect(shortcut.hitTestable(), findsOneWidget);
+    await tester.tap(shortcut);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.byType(AIChatScreen), findsOneWidget);
+    expect(find.textContaining('TodaGo FAQs and find routes'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byIcon(Icons.arrow_back_ios_rounded));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('map search selects a place and keeps directions inside Todago',
       (tester) async {
     Uri? directions;
@@ -337,26 +407,25 @@ void main() {
       tester.view.viewInsets = FakeViewPadding.zero;
       await tester.pumpAndSettle();
       final map = tester.widget<GoogleMap>(find.byType(GoogleMap));
-      expect(map.markers.single.position, const LatLng(7.3, 125.68));
+      expect(
+          map.markers
+              .firstWhere((m) => m.markerId.value == 'explore-place')
+              .position,
+          const LatLng(7.3, 125.68));
       expect(
           maps.calls
               .lastWhere((call) => call.method == 'camera#animate')
-              .arguments['cameraUpdate'],
-          [
-            'newLatLngZoom',
-            [7.3, 125.68],
-            16.0
-          ]);
-      expect(find.text('Panabo City'), findsOneWidget);
+              .arguments['cameraUpdate'][0],
+          'newLatLngBounds');
+      expect(find.text('To: Gaisano'), findsOneWidget);
       expect(find.byType(ListTile), findsNothing);
-      await tester.tap(find.text('Get Directions'));
-      await tester.pumpAndSettle();
       expect(directions, isNull);
       expect(find.byType(LiveMapScreen), findsOneWidget);
       expect(find.text('From: Your location'), findsOneWidget);
       expect(find.text('To: Gaisano'), findsOneWidget);
       final routedMap = tester.widget<GoogleMap>(find.byType(GoogleMap));
-      expect(routedMap.polylines.single.points.length, 3);
+      expect(routedMap.polylines, hasLength(3));
+      expect(find.textContaining('3 road routes available'), findsOneWidget);
       expect(
           routedMap.markers
               .firstWhere((m) => m.markerId.value == 'explore-origin')
@@ -365,15 +434,13 @@ void main() {
       expect(tester.takeException(), isNull);
     },
         () => MockClient((request) async {
-              if (request.url.host == 'router.project-osrm.org') {
-                return _roadRoute();
-              }
               if (request.url.path.contains('/directions/')) {
                 expect(
                     request.url.queryParameters['destination'], '7.3,125.68');
                 expect(
                     request.url.queryParameters['origin'], '7.29937,125.68191');
-                return http.Response('{"status":"REQUEST_DENIED"}', 200);
+                expect(request.url.queryParameters['alternatives'], 'true');
+                return _threeGoogleRoutes();
               }
               expect(request.url.queryParameters.containsKey('components'),
                   isFalse);
@@ -420,7 +487,6 @@ void main() {
       (tester) async {
     _mockLocation();
     Uri? routeRequest;
-    Uri? fallbackRequest;
     await http.runWithClient(() async {
       final maps = await _openExplorer(tester);
       await _tapCollege(tester, maps);
@@ -429,8 +495,7 @@ void main() {
       expect(
           routeRequest?.queryParameters['destination'], 'place_id:$_collegeId');
       expect(routeRequest?.queryParameters['origin'], '7.29937,125.68191');
-      expect(
-          fallbackRequest?.path, contains('125.68191,7.29937;125.6702,7.3143'));
+      expect(routeRequest?.queryParameters['alternatives'], 'true');
       final map = tester.widget<GoogleMap>(find.byType(GoogleMap));
       expect(map.polylines.single.points.last, _collegePoint);
       expect(
@@ -439,7 +504,7 @@ void main() {
               .position,
           _collegePoint);
       expect(find.text('To: $_collegeName'), findsOneWidget);
-      expect(find.textContaining('4.2 km'), findsOneWidget);
+      expect(find.textContaining('4.2 km'), findsWidgets);
       expect(
           maps.calls
               .lastWhere((c) => c.method == 'camera#animate')
@@ -459,12 +524,8 @@ void main() {
               if (request.url.path.contains('/details/')) {
                 return _collegeDetails();
               }
-              if (request.url.host == 'router.project-osrm.org') {
-                fallbackRequest = request.url;
-                return _roadRoute();
-              }
               routeRequest = request.url;
-              return http.Response('{"status":"REQUEST_DENIED"}', 200);
+              return _googleRoute();
             }));
   });
 
@@ -483,7 +544,7 @@ void main() {
               .position,
           _collegePoint);
       expect(
-          map.polylines.single.points.last, const LatLng(7.312683, 125.67020));
+          map.polylines.single.points.last, const LatLng(7.31268, 125.67020));
       expect(find.textContaining('Check the entrance and final access'),
           findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -492,10 +553,7 @@ void main() {
               if (request.url.path.contains('/details/')) {
                 return _collegeDetails();
               }
-              if (request.url.host == 'router.project-osrm.org') {
-                return _roadRoute(stopsAtRoad: true);
-              }
-              return http.Response('{"status":"REQUEST_DENIED"}', 200);
+              return _googleRoute(points: r'atpk@}fb~Veb@dj@_o@~\');
             }));
   });
 

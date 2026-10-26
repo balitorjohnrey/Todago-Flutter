@@ -9,6 +9,7 @@ import 'trip_service.dart';
 import 'active_trip_driver_screen.dart';
 import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
+import 'route_display.dart';
 
 class NavigationPickupScreen extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -164,10 +165,12 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     if (_isFetchingRoute) return;
     _isFetchingRoute = true;
     try {
-      final route = await MapService.fetchRoute(from, to);
-      if (mounted && route != null) {
-        setState(() => _route = route);
-        _updatePolyline(route.points);
+      final routes = await MapService.fetchRoutes(from, to);
+      if (mounted) {
+        setState(() {
+          _route = routes.isEmpty ? null : routes.first;
+          _polylines = RouteDisplay.polylines(routes);
+        });
       }
     } finally {
       _isFetchingRoute = false;
@@ -206,23 +209,6 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
           icon:
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow: const InfoWindow(title: 'You (Driver)'),
-        ),
-      };
-    });
-  }
-
-  // ── Blue road-following polyline ─────────────────────────────────────────
-  void _updatePolyline(List<LatLng> pts) {
-    setState(() {
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: pts,
-          color: const Color(0xFF1A73E8), // same blue as destination_picker
-          width: 5,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
         ),
       };
     });

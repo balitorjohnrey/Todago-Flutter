@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'panabo_config.dart';
 import 'map_place.dart';
+import 'route_web_stub.dart' if (dart.library.js_interop) 'route_web.dart'
+    as web_routes;
 
 const String _key = 'AIzaSyCh0c5-2IrNkOJPXa9POuiZF8WrkGMmT5Y';
 const String _placesBase = 'https://maps.googleapis.com/maps/api/place';
@@ -29,6 +31,7 @@ class MapRoute {
   final String distanceText;
   final String durationText;
   final double destinationOffsetMeters;
+  final String summary;
 
   MapRoute({
     required this.points,
@@ -37,6 +40,7 @@ class MapRoute {
     this.distanceText = '',
     this.durationText = '',
     this.destinationOffsetMeters = 0,
+    this.summary = '',
   });
 }
 
@@ -396,6 +400,95 @@ class MapService {
       _log('Geocode', 'Exception: $e');
     }
     return 'Your Location';
+  }
+
+  /// Up to three distinct road routes from the configured Directions service.
+  /// Some journeys have fewer alternatives; never repeat a route to fill three.
+  static Future<List<MapRoute>> fetchRoutes(
+    LatLng from,
+    LatLng to, {
+    String? destinationPlaceId,
+  }) async {
+    if (kIsWeb) {
+      try {
+        return await web_routes.fetchWebRoutes(from, to);
+      } catch (error) {
+        _log(
+            'Directions', 'Web alternatives unavailable: ${error.runtimeType}');
+        return [];
+      }
+    }
+    try {
+      final uri = Uri.parse(_directionsBase).replace(queryParameters: {
+        'origin': '${from.latitude},${from.longitude}',
+        'destination': destinationPlaceId == null
+            ? '${to.latitude},${to.longitude}'
+            : 'place_id:$destinationPlaceId',
+        'mode': 'driving',
+        'alternatives': 'true',
+        'departure_time': 'now',
+        'traffic_model': 'best_guess',
+        'language': 'en',
+        'key': _key,
+      });
+      final response = await http.get(uri).timeout(const Duration(seconds: 7));
+      if (response.statusCode != 200) return [];
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (data['status'] != 'OK') return [];
+      return routesFromDirectionsResponse(data, to);
+    } catch (error) {
+      _log('Directions', 'Alternatives unavailable: ${error.runtimeType}');
+      return [];
+    }
+  }
+
+  static List<MapRoute> routesFromDirectionsResponse(
+      Map<String, dynamic> data, LatLng destination) {
+    final routes = <MapRoute>[];
+    for (final raw in data['routes'] as List? ?? []) {
+      try {
+        final route = raw as Map<String, dynamic>;
+        final leg = (route['legs'] as List).first as Map<String, dynamic>;
+        final distanceKm = (leg['distance']['value'] as num).toDouble() / 1000;
+        final normalSeconds = (leg['duration']['value'] as num).toDouble();
+        final trafficSeconds =
+            (leg['duration_in_traffic']?['value'] as num?)?.toDouble();
+        final trafficMultiplier = trafficSeconds == null
+            ? 1.0
+            : PanaboFarePolicy.trafficMultiplier(
+                normalDurationSeconds: normalSeconds,
+                trafficDurationSeconds: trafficSeconds);
+        final eta = PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm,
+            trafficMultiplier: trafficMultiplier);
+        final points =
+            _decodePolyline(route['overview_polyline']['points'] as String);
+        if (points.length < 2 ||
+            routes.any((existing) => listEquals(existing.points, points))) {
+          continue;
+        }
+        routes.add(MapRoute(
+          points: points,
+          distanceKm: distanceKm,
+          etaMinutes: eta,
+          distanceText: leg['distance']['text'] as String? ??
+              '${distanceKm.toStringAsFixed(1)} km',
+          durationText: '$eta min',
+          summary: route['summary'] as String? ?? '',
+          destinationOffsetMeters: Geolocator.distanceBetween(
+              points.last.latitude,
+              points.last.longitude,
+              destination.latitude,
+              destination.longitude),
+        ));
+      } catch (error) {
+        _log('Directions', 'Skipped invalid alternative: ${error.runtimeType}');
+      }
+    }
+    routes.sort((a, b) {
+      final byEta = a.etaMinutes.compareTo(b.etaMinutes);
+      return byEta != 0 ? byEta : a.distanceKm.compareTo(b.distanceKm);
+    });
+    return routes.take(3).toList();
   }
 
   // ── Road-following route (Google traffic → OSRM fallback) ────────────────

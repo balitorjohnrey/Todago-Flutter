@@ -10,12 +10,18 @@ import 'panabo_config.dart';
 import 'map_place.dart';
 import 'map_place_taps.dart';
 import 'place_details_card.dart';
+import 'route_display.dart';
 
 /// Public map explorer, also available before choosing an account.
 class LiveMapScreen extends StatefulWidget {
   final LatLng? initialLocation;
+  final String? initialDestinationQuery;
 
-  const LiveMapScreen({super.key, this.initialLocation});
+  const LiveMapScreen({
+    super.key,
+    this.initialLocation,
+    this.initialDestinationQuery,
+  });
 
   @override
   State<LiveMapScreen> createState() => _LiveMapScreenState();
@@ -33,6 +39,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   MapPlaceTaps? _placeTaps;
   bool _detailsUnavailable = false;
   MapRoute? _route;
+  List<MapRoute> _routes = [];
+  int _selectedRouteIndex = 0;
   LatLng? _routeOrigin;
   bool _routeRequested = false;
   bool _routing = false;
@@ -53,6 +61,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   void initState() {
     super.initState();
     _cameraTarget = widget.initialLocation ?? PanaboConfig.cityCenter;
+    if (widget.initialDestinationQuery?.trim().isNotEmpty == true) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        _searchController.text = widget.initialDestinationQuery!.trim();
+        await _search();
+        if (mounted && _suggestions.isNotEmpty) {
+          await _selectPlace(_suggestions.first);
+        }
+      });
+    }
   }
 
   @override
@@ -152,7 +169,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             details == null && !place.placeId.startsWith('coord:');
       }
     });
-    if (point != null) await _moveCamera(point);
+    if (point != null) {
+      await _moveCamera(point);
+      if (mounted) await _openDirections();
+    }
   }
 
   Future<void> _selectMapPlace(MapPlace place) async {
@@ -234,6 +254,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   void _clearRoute() {
     ++_routeRequest;
     _route = null;
+    _routes = [];
+    _selectedRouteIndex = 0;
     _routeOrigin = null;
     _routeRequested = false;
     _routing = false;
@@ -249,6 +271,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _routeRequested = true;
       _routing = true;
       _route = null;
+      _routes = [];
+      _selectedRouteIndex = 0;
       _routeError = null;
     });
     final origin = await MapService.getCurrentLocation();
@@ -265,23 +289,36 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
       _routeOrigin = origin;
       _locationEnabled = true;
     });
-    final route = await MapService.fetchRoute(origin, destination,
-        destinationPlaceId: placeId, allowEstimate: false);
+    final routes = await MapService.fetchRoutes(origin, destination,
+        destinationPlaceId: placeId);
     if (!mounted || request != _routeRequest) return;
     setState(() {
       _routing = false;
-      _route = route;
-      _routeError = route == null
+      _routes = routes;
+      _route = routes.isEmpty ? null : routes.first;
+      _routeError = routes.isEmpty
           ? 'No road route is available. Check your connection and retry directions.'
           : null;
     });
-    if (route != null) await _fitRoute();
+    if (routes.isNotEmpty) await _fitRoute();
+  }
+
+  void _selectRoute(int index) {
+    if (index < 0 || index >= _routes.length) return;
+    setState(() {
+      _selectedRouteIndex = index;
+      _route = _routes[index];
+    });
   }
 
   Future<void> _fitRoute() async {
     final route = _route;
     if (route == null || _mapController == null) return;
-    final points = [...route.points, _routeOrigin!, _selectedPoint!];
+    final points = [
+      for (final option in _routes) ...option.points,
+      _routeOrigin!,
+      _selectedPoint!,
+    ];
     final south = points.map((p) => p.latitude).reduce(math.min);
     final north = points.map((p) => p.latitude).reduce(math.max);
     final west = points.map((p) => p.longitude).reduce(math.min);
@@ -448,6 +485,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               const Text('Finding a road route…'),
             ],
             if (_route != null)
+              RouteChoices(
+                routes: _routes,
+                selectedIndex: _selectedRouteIndex,
+                onSelected: _selectRoute,
+              ),
+            if (_route != null)
               Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -543,15 +586,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   infoWindow: InfoWindow(title: _placeName),
                 ),
             },
-            polylines: {
-              if (_route != null)
-                Polyline(
-                    polylineId: const PolylineId('explore-route'),
-                    points: _route!.points,
-                    color: const Color(0xFF1A73E8),
-                    width: 6,
-                    jointType: JointType.round),
-            },
+            polylines: RouteDisplay.polylines(_routes,
+                selectedIndex: _selectedRouteIndex, onSelected: _selectRoute),
             padding: EdgeInsets.only(
               top: 80,
               bottom: !keyboardVisible && _selectedPoint != null

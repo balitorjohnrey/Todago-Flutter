@@ -7,6 +7,7 @@ import 'trip_service.dart';
 import 'live_trip_tracking_screen.dart';
 import 'passenger_home_screen.dart';
 import 'map_service.dart';
+import 'route_display.dart';
 
 class PassengerWaitingScreen extends StatefulWidget {
   final String tripId;
@@ -130,10 +131,12 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
     if (_isFetchingRoute) return;
     _isFetchingRoute = true;
     try {
-      final route = await MapService.fetchRoute(from, to);
-      if (mounted && route != null) {
-        setState(() => _route = route);
-        _updatePolyline(route.points);
+      final routes = await MapService.fetchRoutes(from, to);
+      if (mounted) {
+        setState(() {
+          _route = routes.isEmpty ? null : routes.first;
+          _polylines = RouteDisplay.polylines(routes);
+        });
       }
     } finally {
       _isFetchingRoute = false;
@@ -188,22 +191,6 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
           infoWindow:
               InfoWindow(title: widget.driverName, snippet: 'Coming to you'),
-        ),
-      };
-    });
-  }
-
-  void _updatePolyline(List<LatLng> pts) {
-    setState(() {
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: pts,
-          color: const Color(0xFF1A73E8),
-          width: 5,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
         ),
       };
     });

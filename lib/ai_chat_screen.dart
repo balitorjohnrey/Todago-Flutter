@@ -6,6 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'app_theme.dart';
+import 'live_map_screen.dart';
+import 'location_query.dart';
+import 'map_service.dart';
 
 class _Msg {
   final String id;
@@ -13,12 +16,14 @@ class _Msg {
   final bool isUser;
   final bool isTyping;
   final DateTime time;
+  final String? routeQuery;
 
   _Msg({
     required this.id,
     required this.text,
     required this.isUser,
     this.isTyping = false,
+    this.routeQuery,
     DateTime? time,
   }) : time = time ?? DateTime.now();
 }
@@ -157,6 +162,7 @@ class _AIChatScreenState extends State<AIChatScreen>
 
   List<_FaqItem> get _roleFaqs {
     final role = widget.userType.toLowerCase();
+    if (role != 'passenger' && role != 'driver') return _faqs;
     return _faqs.where((faq) => faq.roles.contains(role)).toList();
   }
 
@@ -173,12 +179,13 @@ class _AIChatScreenState extends State<AIChatScreen>
 
   void _addGreeting() {
     final firstName = widget.userName.trim().split(' ').first;
-    final roleText = widget.userType == 'driver' ? 'driver' : 'passenger';
+    final role = widget.userType.toLowerCase();
+    final roleText = role == 'driver' || role == 'passenger' ? '$role ' : '';
     setState(() {
       _messages.add(_Msg(
         id: 'greeting',
         text:
-            'Hi $firstName! I am the TodaGo Chatbot. I answer TodaGo $roleText FAQs only. Choose a quick question or type a TodaGo question.',
+            'Hi $firstName! I can answer TodaGo ${roleText}FAQs and find routes to places. Ask for directions or choose a quick question.',
         isUser: false,
       ));
     });
@@ -230,19 +237,69 @@ class _AIChatScreenState extends State<AIChatScreen>
     await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
 
-    final response = _answerFaq(text);
+    final explicitLocation = locationQueryFromMessage(text);
+    final faqAnswer = explicitLocation == null ? _answerFaq(text) : null;
+    final location = explicitLocation ??
+        (faqAnswer == _fallbackAnswer() && looksLikeStandalonePlace(text)
+            ? text
+            : null);
+    final response = location == null
+        ? _Msg(id: UniqueKey().toString(), text: faqAnswer!, isUser: false)
+        : await _routeReply(location);
+    if (!mounted) return;
     setState(() {
       final idx = _messages.lastIndexWhere((msg) => msg.isTyping);
       if (idx != -1) {
-        _messages[idx] = _Msg(
-          id: UniqueKey().toString(),
-          text: response,
-          isUser: false,
-        );
+        _messages[idx] = response;
       }
       _sending = false;
     });
     _scrollToBottom();
+  }
+
+  Future<_Msg> _routeReply(String query) async {
+    _Msg reply(String text, {String? routeQuery}) => _Msg(
+          id: UniqueKey().toString(),
+          text: text,
+          isUser: false,
+          routeQuery: routeQuery,
+        );
+
+    final places =
+        await MapService.searchPlaces(query, restrictToPhilippines: false);
+    if (places.isEmpty) {
+      return reply(
+          'I could not find "$query". Try a more specific place name.');
+    }
+    final place = places.first;
+    final destination = await MapService.getPlaceLatLng(place.placeId);
+    if (destination == null) {
+      return reply(
+          'I found ${place.mainText}, but its location is unavailable.');
+    }
+    final origin = await MapService.getCurrentLocation();
+    if (origin == null) {
+      return reply('I found ${place.mainText}. Enable location access so I can '
+          'find routes from where you are.');
+    }
+    final routes = await MapService.fetchRoutes(origin, destination,
+        destinationPlaceId:
+            place.placeId.startsWith('coord:') ? null : place.placeId);
+    if (routes.isEmpty) {
+      return reply('I found ${place.mainText}, but no road route is available '
+          'right now. Check your connection or try another destination.');
+    }
+    final lines = <String>[
+      '${routes.length} road route${routes.length == 1 ? '' : 's'} to '
+          '${place.mainText} from your location:',
+      for (var i = 0; i < routes.length; i++)
+        '${i == 0 ? 'Suggested' : 'Route ${i + 1}'}: '
+            '${routes[i].etaMinutes} min, '
+            '${routes[i].distanceKm.toStringAsFixed(1)} km'
+            '${routes[i].summary.isEmpty ? '' : ' via ${routes[i].summary}'}',
+      'View the routes on the map to compare them.',
+    ];
+    return reply(lines.join('\n'), routeQuery: place.fullText);
   }
 
   String _answerFaq(String question) {
@@ -392,11 +449,15 @@ class _AIChatScreenState extends State<AIChatScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(children: [
-                    Text('TodaGo Chatbot',
-                        style: GoogleFonts.poppins(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white)),
+                    Flexible(
+                      child: Text('TodaGo Chatbot',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.poppins(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white)),
+                    ),
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -426,7 +487,7 @@ class _AIChatScreenState extends State<AIChatScreen>
                     ),
                   ]),
                   Text(
-                    'TodaGo FAQs only',
+                    'FAQs and directions',
                     style: GoogleFonts.poppins(
                         fontSize: 11, color: Colors.white54),
                   ),
@@ -503,13 +564,33 @@ class _AIChatScreenState extends State<AIChatScreen>
                       ),
                     ],
                   ),
-                  child: Text(
-                    msg.text,
-                    style: GoogleFonts.poppins(
-                      fontSize: 13.5,
-                      color: isUser ? Colors.white : const Color(0xFF1A1A2E),
-                      height: 1.45,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        msg.text,
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.5,
+                          color:
+                              isUser ? Colors.white : const Color(0xFF1A1A2E),
+                          height: 1.45,
+                        ),
+                      ),
+                      if (msg.routeQuery != null) ...[
+                        const SizedBox(height: 8),
+                        TextButton.icon(
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => LiveMapScreen(
+                                  initialDestinationQuery: msg.routeQuery),
+                            ),
+                          ),
+                          icon: const Icon(Icons.map_outlined),
+                          label: const Text('View routes on map'),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),

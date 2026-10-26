@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'admin_login_screen.dart';
+import 'ai_chat_screen.dart';
 import 'app_theme.dart';
 import 'driver_login_screen.dart';
 import 'login_screen.dart';
@@ -120,7 +121,32 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
             const SizedBox(height: 40),
 
             Row(children: [
-              const SizedBox(width: 72),
+              SizedBox(
+                width: 72,
+                child: Column(children: [
+                  IconButton.filledTonal(
+                    tooltip: 'Open chatbot and FAQs',
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => AIChatScreen(
+                          userType: _selectedRole ?? 'guest',
+                          userName: 'Guest',
+                        ),
+                      ),
+                    ),
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.surface,
+                      foregroundColor: AppColors.primary,
+                      minimumSize: const Size(48, 48),
+                    ),
+                    icon: const Icon(Icons.question_answer_outlined),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Chatbot', style: TextStyle(
+                    color: AppColors.textPrimary, fontSize: 12,
+                  )),
+                ]),
+              ),
               Expanded(
                 child: Center(
                   child: ClipRRect(

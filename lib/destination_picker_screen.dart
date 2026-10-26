@@ -9,6 +9,7 @@ import 'service_selection_screen.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
 import 'fare_settings_service.dart';
+import 'route_display.dart';
 
 class DestinationPickerScreen extends StatefulWidget {
   final String? initialServiceType;
@@ -31,6 +32,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
   String _pickupName = 'Your Location';
   String _destName = '';
   MapRoute? _route;
+  List<MapRoute> _routes = [];
+  int _selectedRouteIndex = 0;
   Set<Marker> _markers = {};
   Set<Polyline> _polylines = {};
 
@@ -182,14 +185,17 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     _lastRouteRefresh = now;
 
     setState(() => _isRouting = true);
-    final route = await MapService.fetchRoute(pickup, destination);
-    if (!mounted) return;
+    final routes = await MapService.fetchRoutes(pickup, destination);
+    if (!mounted || _destination != destination) return;
     setState(() {
-      _route = route;
+      _routes = routes;
+      _selectedRouteIndex = 0;
+      _route = routes.isEmpty ? null : routes.first;
       _isRouting = false;
+      _polylines = RouteDisplay.polylines(routes,
+          selectedIndex: 0, onSelected: _selectRoute);
     });
-    if (route != null) {
-      _setPolyline(route.points);
+    if (routes.isNotEmpty) {
       if (force) _fitBounds(pickup, destination);
     }
   }
@@ -249,19 +255,13 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     });
   }
 
-  void _setPolyline(List<LatLng> pts) {
+  void _selectRoute(int index) {
+    if (index < 0 || index >= _routes.length) return;
     setState(() {
-      _polylines = {
-        Polyline(
-          polylineId: const PolylineId('route'),
-          points: pts,
-          color: const Color(0xFF1A73E8),
-          width: 5,
-          jointType: JointType.round,
-          startCap: Cap.roundCap,
-          endCap: Cap.roundCap,
-        ),
-      };
+      _selectedRouteIndex = index;
+      _route = _routes[index];
+      _polylines = RouteDisplay.polylines(_routes,
+          selectedIndex: index, onSelected: _selectRoute);
     });
   }
 
@@ -315,6 +315,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       _destination = coords;
       _destName = destinationName;
       _route = null;
+      _routes = [];
+      _selectedRouteIndex = 0;
       _polylines = {};
       _isRouting = true;
       _showSugg = false;
@@ -333,15 +335,18 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     }
 
     if (fitBounds) _fitBounds(pickup, coords);
-    final route = await MapService.fetchRoute(pickup, coords);
+    final routes = await MapService.fetchRoutes(pickup, coords);
     if (!mounted) return;
     if (requestId != null && requestId != _destinationRequestId) return;
 
     setState(() {
-      _route = route;
+      _routes = routes;
+      _selectedRouteIndex = 0;
+      _route = routes.isEmpty ? null : routes.first;
+      _polylines = RouteDisplay.polylines(routes,
+          selectedIndex: 0, onSelected: _selectRoute);
       _isRouting = false;
     });
-    if (route != null) _setPolyline(route.points);
   }
 
   // ── Text search ───────────────────────────────────────────────────────────
@@ -398,6 +403,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       _isResolvingMapTap = false;
       _destination = null;
       _route = null;
+      _routes = [];
+      _selectedRouteIndex = 0;
       _polylines = {};
       _markers =
           _markers.where((m) => m.markerId.value != 'destination').toSet();
@@ -435,6 +442,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
       _destination = coords;
       _destName = initialName;
       _route = null;
+      _routes = [];
+      _selectedRouteIndex = 0;
       _polylines = {};
       _setSearchText(initialName);
     });
@@ -781,6 +790,8 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
                                     _isResolvingMapTap = false;
                                     _destination = null;
                                     _route = null;
+                                    _routes = [];
+                                    _selectedRouteIndex = 0;
                                     _polylines = {};
                                     _markers = _markers
                                         .where((m) =>
@@ -1202,6 +1213,16 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
                     ]),
                   ),
                   const SizedBox(height: 12),
+
+                  if (_routes.isNotEmpty)
+                    RouteChoices(
+                      routes: _routes,
+                      selectedIndex: _selectedRouteIndex,
+                      onSelected: _selectRoute,
+                    )
+                  else if (!_isRouting && _myLocation != null)
+                    const Text(
+                        'No road route is available for this destination.'),
 
                   // Stats row
                   if (_route != null)
