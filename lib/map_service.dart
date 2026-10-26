@@ -402,44 +402,158 @@ class MapService {
     return 'Your Location';
   }
 
-  /// Up to three distinct road routes from the configured Directions service.
+  /// Up to three distinct road routes from Google and, when needed, OSRM.
   /// Some journeys have fewer alternatives; never repeat a route to fill three.
   static Future<List<MapRoute>> fetchRoutes(
     LatLng from,
     LatLng to, {
     String? destinationPlaceId,
   }) async {
+    var googleRoutes = <MapRoute>[];
     if (kIsWeb) {
       try {
-        return await web_routes.fetchWebRoutes(from, to);
+        googleRoutes = await web_routes.fetchWebRoutes(from, to);
       } catch (error) {
         _log(
             'Directions', 'Web alternatives unavailable: ${error.runtimeType}');
-        return [];
+      }
+    } else {
+      try {
+        final uri = Uri.parse(_directionsBase).replace(queryParameters: {
+          'origin': '${from.latitude},${from.longitude}',
+          'destination': destinationPlaceId == null
+              ? '${to.latitude},${to.longitude}'
+              : 'place_id:$destinationPlaceId',
+          'mode': 'driving',
+          'alternatives': 'true',
+          'departure_time': 'now',
+          'traffic_model': 'best_guess',
+          'language': 'en',
+          'key': _key,
+        });
+        final response =
+            await http.get(uri).timeout(const Duration(seconds: 7));
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          if (data['status'] == 'OK') {
+            googleRoutes = routesFromDirectionsResponse(data, to);
+          }
+        }
+      } catch (error) {
+        _log('Directions', 'Alternatives unavailable: ${error.runtimeType}');
       }
     }
+
+    if (googleRoutes.length >= 3) return googleRoutes;
+
+    final routes = [...googleRoutes];
+    for (final alternative in await _fetchOsrmRoutes(from, to)) {
+      if (!routes.any((existing) => _sameRoad(existing, alternative))) {
+        routes.add(alternative);
+      }
+    }
+    routes.sort((a, b) {
+      final byEta = a.etaMinutes.compareTo(b.etaMinutes);
+      return byEta != 0 ? byEta : a.distanceKm.compareTo(b.distanceKm);
+    });
+    return routes.take(3).toList();
+  }
+
+  static Future<List<MapRoute>> _fetchOsrmRoutes(LatLng from, LatLng to) async {
     try {
-      final uri = Uri.parse(_directionsBase).replace(queryParameters: {
-        'origin': '${from.latitude},${from.longitude}',
-        'destination': destinationPlaceId == null
-            ? '${to.latitude},${to.longitude}'
-            : 'place_id:$destinationPlaceId',
-        'mode': 'driving',
-        'alternatives': 'true',
-        'departure_time': 'now',
-        'traffic_model': 'best_guess',
-        'language': 'en',
-        'key': _key,
-      });
-      final response = await http.get(uri).timeout(const Duration(seconds: 7));
+      final uri = Uri.parse(
+        'https://router.project-osrm.org/route/v1/driving'
+        '/${from.longitude},${from.latitude}'
+        ';${to.longitude},${to.latitude}'
+        '?alternatives=3&overview=full&geometries=geojson&steps=false',
+      );
+      final response = await http
+          .get(uri, headers: _jsonHeaders())
+          .timeout(const Duration(seconds: 6));
       if (response.statusCode != 200) return [];
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      if (data['status'] != 'OK') return [];
-      return routesFromDirectionsResponse(data, to);
+      if (data['code'] != 'Ok') return [];
+      final routes = <MapRoute>[];
+      for (final raw in data['routes'] as List? ?? []) {
+        try {
+          final route = raw as Map<String, dynamic>;
+          final distanceKm = (route['distance'] as num).toDouble() / 1000;
+          final points = (route['geometry']['coordinates'] as List)
+              .map((coordinate) => LatLng((coordinate[1] as num).toDouble(),
+                  (coordinate[0] as num).toDouble()))
+              .toList();
+          if (points.length < 2) continue;
+          final eta = PanaboFarePolicy.etaMinutesForDistanceKm(distanceKm);
+          routes.add(MapRoute(
+            points: points,
+            distanceKm: distanceKm,
+            etaMinutes: eta,
+            distanceText: '${distanceKm.toStringAsFixed(1)} km',
+            durationText: '$eta min',
+            destinationOffsetMeters: Geolocator.distanceBetween(
+                points.last.latitude,
+                points.last.longitude,
+                to.latitude,
+                to.longitude),
+          ));
+        } catch (error) {
+          _log('OSRM', 'Skipped invalid alternative: ${error.runtimeType}');
+        }
+      }
+      return routes;
     } catch (error) {
-      _log('Directions', 'Alternatives unavailable: ${error.runtimeType}');
+      _log('OSRM', 'Alternatives unavailable: ${error.runtimeType}');
       return [];
     }
+  }
+
+  static bool _sameRoad(MapRoute a, MapRoute b) {
+    if (listEquals(a.points, b.points)) return true;
+    // Providers use different point spacing and may report slightly different
+    // distances for the same road, so compare the path itself.
+    final first = _sampleRoad(a.points);
+    final second = _sampleRoad(b.points);
+    var matching = 0;
+    for (var i = 0; i < first.length; i++) {
+      if (Geolocator.distanceBetween(first[i].latitude, first[i].longitude,
+              second[i].latitude, second[i].longitude) <
+          40) {
+        matching++;
+      }
+    }
+    return matching >= first.length - 1;
+  }
+
+  static List<LatLng> _sampleRoad(List<LatLng> points) {
+    final distances = <double>[0];
+    for (var i = 1; i < points.length; i++) {
+      distances.add(distances.last +
+          Geolocator.distanceBetween(
+              points[i - 1].latitude,
+              points[i - 1].longitude,
+              points[i].latitude,
+              points[i].longitude));
+    }
+    final total = distances.last;
+    if (total == 0) return List.filled(21, points.first);
+    var segment = 0;
+    return List.generate(21, (index) {
+      final target = total * index / 20;
+      while (segment < points.length - 2 && distances[segment + 1] < target) {
+        segment++;
+      }
+      final length = distances[segment + 1] - distances[segment];
+      final progress =
+          length == 0 ? 0.0 : (target - distances[segment]) / length;
+      return LatLng(
+        points[segment].latitude +
+            (points[segment + 1].latitude - points[segment].latitude) *
+                progress,
+        points[segment].longitude +
+            (points[segment + 1].longitude - points[segment].longitude) *
+                progress,
+      );
+    });
   }
 
   static List<MapRoute> routesFromDirectionsResponse(

@@ -524,6 +524,9 @@ void main() {
               if (request.url.path.contains('/details/')) {
                 return _collegeDetails();
               }
+              if (request.url.host == 'router.project-osrm.org') {
+                return _roadRoute();
+              }
               routeRequest = request.url;
               return _googleRoute();
             }));

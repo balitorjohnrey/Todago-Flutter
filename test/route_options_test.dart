@@ -45,6 +45,7 @@ void main() {
     );
 
     expect(requested?.queryParameters['alternatives'], 'true');
+    expect(requested?.host, 'maps.googleapis.com');
     expect(routes, hasLength(3));
     expect(routes.map((option) => option.summary),
         ['Second Road', 'Main Road', 'Third Road']);
@@ -64,6 +65,104 @@ void main() {
             .where((line) => line.polylineId.value != 'route-0')
             .every((line) => line.color == RouteDisplay.alternativeColor),
         isTrue);
+  });
+
+  test('OSRM fills missing options and removes a duplicate Google road',
+      () async {
+    final requests = <Uri>[];
+    final routes = await http.runWithClient(
+      () => MapService.fetchRoutes(origin, destination),
+      () => MockClient((request) async {
+        requests.add(request.url);
+        if (request.url.host == 'router.project-osrm.org') {
+          return http.Response(
+              jsonEncode({
+                'code': 'Ok',
+                'routes': [
+                  {
+                    'distance': 4210,
+                    'geometry': {
+                      'coordinates': [
+                        [125.68191, 7.29937],
+                        [125.678455, 7.302185],
+                        [125.675, 7.305],
+                        [125.6726, 7.30965],
+                        [125.67020, 7.31430],
+                      ]
+                    },
+                  },
+                  {
+                    'distance': 3600,
+                    'geometry': {
+                      'coordinates': [
+                        [125.68191, 7.29937],
+                        [125.678, 7.307],
+                        [125.67020, 7.31430],
+                      ]
+                    },
+                  },
+                  {
+                    'distance': 5300,
+                    'geometry': {
+                      'coordinates': [
+                        [125.68191, 7.29937],
+                        [125.671, 7.309],
+                        [125.67020, 7.31430],
+                      ]
+                    },
+                  },
+                ],
+              }),
+              200);
+        }
+        return http.Response(
+            jsonEncode({
+              'status': 'OK',
+              'routes': [route(r'atpk@}fb~Veb@dj@cy@~\', 4200, 'Main Road')],
+            }),
+            200);
+      }),
+    );
+
+    expect(requests, hasLength(2));
+    expect(requests.last.host, 'router.project-osrm.org');
+    expect(requests.last.queryParameters['alternatives'], '3');
+    expect(requests.last.queryParameters['geometries'], 'geojson');
+    expect(routes, hasLength(3));
+    expect(routes.map((option) => option.distanceKm), [3.6, 4.2, 5.3]);
+    expect(
+        routes.where((option) => option.summary == 'Main Road'), hasLength(1));
+  });
+
+  test('OSRM fallback shows only real routes when Google is unavailable',
+      () async {
+    final routes = await http.runWithClient(
+      () => MapService.fetchRoutes(origin, destination),
+      () => MockClient((request) async {
+        if (request.url.host == 'maps.googleapis.com') {
+          return http.Response('{"status":"REQUEST_DENIED"}', 200);
+        }
+        return http.Response(
+            jsonEncode({
+              'code': 'Ok',
+              'routes': [
+                {
+                  'distance': 4200,
+                  'geometry': {
+                    'coordinates': [
+                      [125.68191, 7.29937],
+                      [125.675, 7.305],
+                      [125.67020, 7.31430],
+                    ]
+                  },
+                },
+              ],
+            }),
+            200);
+      }),
+    );
+    expect(routes, hasLength(1));
+    expect(routes.single.points.last, destination);
   });
 
   test('chat recognizes location requests without swallowing FAQs', () {
