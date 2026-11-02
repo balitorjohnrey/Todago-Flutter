@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'admin_auth_service.dart';
 import 'admin_dashboard_screen.dart';
+import 'admin_cashouts_screen.dart';
 import 'app_theme.dart';
 
 class AdminLoginScreen extends StatefulWidget {
@@ -46,7 +47,9 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
 
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => const AdminDashboardScreen(),
+        pageBuilder: (_, __, ___) => result.admin?['role'] == 'payout_admin'
+            ? const AdminCashoutsScreen()
+            : const AdminDashboardScreen(),
         transitionDuration: const Duration(milliseconds: 450),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
@@ -98,7 +101,7 @@ class _AdminLoginScreenState extends State<AdminLoginScreen> {
                   color: Colors.white,
                 )).animate().fadeIn(delay: 100.ms),
             const SizedBox(height: 8),
-            Text('Approve independent driver applications',
+            Text('Use your admin or payout-admin secret to sign in',
                 style: GoogleFonts.poppins(
                     fontSize: 14, color: AppColors.textSecondary)),
             const SizedBox(height: 28),

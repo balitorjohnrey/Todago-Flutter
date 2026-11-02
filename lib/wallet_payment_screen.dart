@@ -5,6 +5,7 @@ import 'app_theme.dart';
 import 'payment_method_logo.dart';
 import 'wallet_checkout_screen.dart';
 import 'wallet_service.dart';
+import 'qr_ph_wallets.dart';
 
 /// TodaGo's Payment API checkout. Provider authorization pages stay in a WebView.
 class WalletPaymentScreen extends StatefulWidget {
@@ -226,6 +227,10 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                         ],
                         const SizedBox(height: 20),
                       ],
+                      if (_provider == 'qrph') ...[
+                        const QrPhWallets(),
+                        const SizedBox(height: 16),
+                      ],
                       if (_provider == 'qrph' && !_testMode) ...[
                         const Text('Pay using QR Ph',
                             textAlign: TextAlign.center,
@@ -233,7 +238,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                                 fontSize: 18, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
                         const Text(
-                            'Use a participating bank or e-wallet to pay this QR code.',
+                            'Pay with GCash, Maya or a QR Ph bank. On the same phone, take a screenshot and use your payment app’s scan/upload option if supported.',
                             textAlign: TextAlign.center),
                         const SizedBox(height: 20),
                         if (_hasAction && _payment?['qrImageUrl'] is String)

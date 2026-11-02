@@ -16,6 +16,7 @@ import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
 import 'report_issue_dialog.dart';
+import 'driver_wallet_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -497,6 +498,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ),
               const Spacer(),
               _iconBox(Icons.report_problem_outlined, _openReportIssue),
+              const SizedBox(width: 8),
+              _iconBox(
+                  Icons.account_balance_wallet_outlined,
+                  () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const DriverWalletScreen()))),
               const SizedBox(width: 8),
               _iconBox(Icons.settings_outlined, _logout),
             ]).animate().fadeIn(duration: 400.ms),

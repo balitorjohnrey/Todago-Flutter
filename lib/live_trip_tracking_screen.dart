@@ -80,21 +80,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       'icon': Icons.payments_rounded,
     },
     {
-      'value': 'gcash',
-      'label': 'GCash',
-      'subtitle': 'Pay through PayMongo checkout',
-      'icon': Icons.account_balance_wallet_rounded,
-    },
-    {
-      'value': 'maya',
-      'label': 'Maya',
-      'subtitle': 'Pay through PayMongo checkout',
-      'icon': Icons.phone_iphone_rounded,
-    },
-    {
       'value': 'wallet',
-      'label': 'TodaGo Payment',
-      'subtitle': 'Keep payment inside TodaGo',
+      'label': 'TodaGo Wallet',
+      'subtitle': 'Top up via QR Ph using GCash or Maya',
       'icon': Icons.verified_rounded,
     },
   ];

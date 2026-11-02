@@ -47,10 +47,13 @@ class AdminAuthService {
           data['success'] == true &&
           token is String &&
           token.isNotEmpty) {
-        await _storage.write(key: _adminTokenKey, value: token);
+        final payoutAdmin = data['admin']?['role'] == 'payout_admin';
+        await _storage.write(
+            key: payoutAdmin ? 'payout_admin_auth_token' : _adminTokenKey,
+            value: token);
         if (data['admin'] != null) {
           await _storage.write(
-            key: _adminDataKey,
+            key: payoutAdmin ? 'payout_admin_data' : _adminDataKey,
             value: jsonEncode(data['admin']),
           );
         }
@@ -76,6 +79,8 @@ class AdminAuthService {
   }
 
   static Future<String?> getToken() => _storage.read(key: _adminTokenKey);
+  static Future<String?> getPayoutToken() =>
+      _storage.read(key: 'payout_admin_auth_token');
 
   static Future<Map<String, String>> _headers() async {
     final token = await getToken();
@@ -306,5 +311,7 @@ class AdminAuthService {
   static Future<void> logout() async {
     await _storage.delete(key: _adminTokenKey);
     await _storage.delete(key: _adminDataKey);
+    await _storage.delete(key: 'payout_admin_auth_token');
+    await _storage.delete(key: 'payout_admin_data');
   }
 }

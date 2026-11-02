@@ -28,6 +28,7 @@ import 'wallet_checkout_screen.dart';
 import 'wallet_payment_screen.dart';
 import 'wallet_return_links.dart';
 import 'payment_method_logo.dart';
+import 'qr_ph_wallets.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -67,7 +68,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   StreamSubscription<Uri>? _walletReturnSubscription;
   Timer? _walletTimer;
   List<Map<String, dynamic>> _transactions = [];
-  Map<String, Map<String, dynamic>> _linkedAccounts = {};
 
   double get _balance => _walletBalance;
 
@@ -180,19 +180,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       }
 
       final stats = wallet['stats'] as Map<String, dynamic>? ?? {};
-      final rawAccounts = wallet['linked_accounts'];
-      final accounts = <String, Map<String, dynamic>>{};
-      if (rawAccounts is List) {
-        for (final account in rawAccounts) {
-          if (account is! Map) continue;
-          final data = Map<String, dynamic>.from(account);
-          final provider = data['provider']?.toString();
-          if (provider != null && provider.isNotEmpty) {
-            accounts[provider] = data;
-          }
-        }
-      }
-
       final rawTransactions = wallet['transactions'];
       final transactions = <Map<String, dynamic>>[];
       if (rawTransactions is List) {
@@ -209,7 +196,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
         _walletTotalSpent = _asDouble(stats['total_spent']);
         _walletRewards = _asDouble(stats['rewards']);
         _walletTrips = _asInt(stats['completed_trips']);
-        _linkedAccounts = accounts;
+
         _transactions = transactions;
         _loadingWallet = false;
       });
@@ -221,19 +208,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   Future<void> _loadWalletFromPayload(Map<String, dynamic> wallet) async {
     if (!mounted) return;
     final stats = wallet['stats'] as Map<String, dynamic>? ?? {};
-    final rawAccounts = wallet['linked_accounts'];
-    final accounts = <String, Map<String, dynamic>>{};
-    if (rawAccounts is List) {
-      for (final account in rawAccounts) {
-        if (account is! Map) continue;
-        final data = Map<String, dynamic>.from(account);
-        final provider = data['provider']?.toString();
-        if (provider != null && provider.isNotEmpty) {
-          accounts[provider] = data;
-        }
-      }
-    }
-
     final rawTransactions = wallet['transactions'];
     final transactions = <Map<String, dynamic>>[];
     if (rawTransactions is List) {
@@ -250,7 +224,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       _walletTotalSpent = _asDouble(stats['total_spent']);
       _walletRewards = _asDouble(stats['rewards']);
       _walletTrips = _asInt(stats['completed_trips']);
-      _linkedAccounts = accounts;
+
       _transactions = transactions;
       _loadingWallet = false;
     });
@@ -517,18 +491,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       'amount': _asDouble(raw['amount']),
       'icon': _walletTxIcon(type),
     };
-  }
-
-  bool _isProviderLinked(String provider) {
-    return _linkedAccounts[provider]?['connected'] == true;
-  }
-
-  String _linkedAccountDetail(String provider) {
-    final account = _linkedAccounts[provider];
-    if (account?['connected'] != true) return 'Not saved';
-    return account?['masked_number']?.toString() ??
-        account?['account_name']?.toString() ??
-        'Saved';
   }
 
   void _showSnack(String message, Color color) {
@@ -1573,39 +1535,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       )),
       SliverToBoxAdapter(
           child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Saved Accounts',
-              style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.backgroundDark)),
-          const SizedBox(height: 12),
-          _linkedAcc(
-            'gcash',
-            'GCash',
-            _linkedAccountDetail('gcash'),
-            _isProviderLinked('gcash') ? 'Saved' : 'Save',
-            _isProviderLinked('gcash'),
-            onTap: () => _isProviderLinked('gcash')
-                ? _confirmUnlinkAccount('gcash')
-                : _showLinkAccountDialog('gcash'),
-          ),
-          const SizedBox(height: 10),
-          _linkedAcc(
-            'maya',
-            'Maya',
-            _linkedAccountDetail('maya'),
-            _isProviderLinked('maya') ? 'Saved' : 'Save',
-            _isProviderLinked('maya'),
-            onTap: () => _isProviderLinked('maya')
-                ? _confirmUnlinkAccount('maya')
-                : _showLinkAccountDialog('maya'),
-          ),
-        ]),
-      )),
-      SliverToBoxAdapter(
-          child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('Transaction History',
@@ -1676,52 +1605,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             style:
                 GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
       ]));
-
-  Widget _linkedAcc(String provider, String name, String detail, String action,
-          bool connected,
-          {required VoidCallback onTap}) =>
-      GestureDetector(
-          onTap: onTap,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFEEEEEE))),
-            child: Row(children: [
-              PaymentMethodLogo(provider: provider),
-              const SizedBox(width: 14),
-              Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(name,
-                        style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.backgroundDark)),
-                    Text(detail,
-                        style: GoogleFonts.poppins(
-                            fontSize: 12, color: AppColors.textHint)),
-                  ])),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: connected
-                      ? AppColors.success.withOpacity(0.1)
-                      : AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(action,
-                    style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color:
-                            connected ? AppColors.success : AppColors.primary)),
-              ),
-            ]),
-          ));
 
   Widget _wFilterTab(String label, int idx) {
     final sel = _walletTab == idx;
@@ -1843,120 +1726,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
         ),
       );
 
-  Future<void> _showLinkAccountDialog(String provider) async {
-    final accountController =
-        TextEditingController(text: _user?['phone']?.toString() ?? '');
-    final nameController =
-        TextEditingController(text: _user?['full_name']?.toString() ?? '');
-    final label = provider == 'maya' ? 'Maya' : 'GCash';
-
-    try {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text('Link $label',
-              style: GoogleFonts.poppins(
-                  fontSize: 18, fontWeight: FontWeight.w800)),
-          content: Column(mainAxisSize: MainAxisSize.min, children: [
-            TextField(
-              controller: accountController,
-              keyboardType: TextInputType.phone,
-              decoration: InputDecoration(
-                labelText: '$label account number',
-                labelStyle: GoogleFonts.poppins(fontSize: 12),
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: nameController,
-              textCapitalization: TextCapitalization.words,
-              decoration: InputDecoration(
-                labelText: 'Account name',
-                labelStyle: GoogleFonts.poppins(fontSize: 12),
-              ),
-            ),
-          ]),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('Cancel', style: GoogleFonts.poppins()),
-            ),
-            ElevatedButton(
-              onPressed: () async {
-                final accountNumber = accountController.text.trim();
-                if (accountNumber.length < 4) {
-                  _showSnack(
-                      'Enter a valid $label account number.', AppColors.error);
-                  return;
-                }
-                Navigator.pop(dialogContext);
-                final result = await WalletService.linkAccount(
-                  provider: provider,
-                  accountNumber: accountNumber,
-                  accountName: nameController.text,
-                );
-                if (!mounted) return;
-                final wallet = result['wallet'];
-                if (result['success'] == true &&
-                    wallet is Map<String, dynamic>) {
-                  await _loadWalletFromPayload(wallet);
-                  _showSnack('$label linked.', AppColors.success);
-                } else {
-                  _showSnack(
-                      result['message']?.toString() ?? 'Could not link $label.',
-                      AppColors.error);
-                }
-              },
-              child: Text('Link',
-                  style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      accountController.dispose();
-      nameController.dispose();
-    }
-  }
-
-  Future<void> _confirmUnlinkAccount(String provider) async {
-    final label = provider == 'maya' ? 'Maya' : 'GCash';
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Unlink $label',
-            style:
-                GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w800)),
-        content: Text('Remove this linked $label account from your wallet?',
-            style: GoogleFonts.poppins(fontSize: 13)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: Text('Cancel', style: GoogleFonts.poppins()),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text('Unlink',
-                style: GoogleFonts.poppins(
-                    color: AppColors.error, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final result = await WalletService.unlinkAccount(provider);
-    if (!mounted) return;
-    final wallet = result['wallet'];
-    if (result['success'] == true && wallet is Map<String, dynamic>) {
-      await _loadWalletFromPayload(wallet);
-      _showSnack('$label unlinked.', AppColors.success);
-    } else {
-      _showSnack(result['message']?.toString() ?? 'Could not unlink $label.',
-          AppColors.error);
-    }
-  }
-
   Future<void> _showTopUpSheet() async {
     if (_loadingPaymentMethods || _startingTopUp) return;
     setState(() => _loadingPaymentMethods = true);
@@ -1978,23 +1747,17 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           AppColors.error);
       return;
     }
-    final methods = <Map<String, dynamic>>[
-      for (final core in const [
-        {'id': 'gcash', 'label': 'GCash'},
-        {'id': 'maya', 'label': 'Maya'},
-        {'id': 'qrph', 'label': 'QR Ph'}
-      ])
-        {
-          ...core,
-          'available':
-              availableMethods.any((method) => method['id'] == core['id'])
-        },
-      ...availableMethods
-          .where((method) => !['gcash', 'maya', 'qrph'].contains(method['id']))
-          .map((method) => {...method, 'available': true}),
-    ];
-    int selectedAmount = 100;
-    String selectedProvider = availableMethods.first['id'].toString();
+    final methods = availableMethods
+        .where((method) => method['id'] == 'qrph')
+        .map((method) => {...method, 'available': true})
+        .toList();
+    if (methods.isEmpty) {
+      _showSnack('QR Ph is temporarily unavailable. Please try again later.',
+          AppColors.error);
+      return;
+    }
+    int selectedAmount = 20;
+    String selectedProvider = 'qrph';
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -2023,14 +1786,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                       Text(
                           result['testMode'] == true
                               ? 'Test checkout'
-                              : 'Select an amount and payment method',
+                              : 'Minimum top-up: ₱20',
                           style: GoogleFonts.poppins(
                               fontSize: 13, color: AppColors.textHint)),
                       const SizedBox(height: 20),
                       Wrap(
                           spacing: 10,
                           runSpacing: 10,
-                          children: [50, 100, 200, 300, 500, 1000]
+                          children: [20, 50, 100, 200, 500, 1000]
                               .map(
                                 (amount) => ChoiceChip(
                                     label: Text('₱$amount'),
@@ -2065,8 +1828,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                                     .toList(),
                               )),
                       const SizedBox(height: 12),
+                      const QrPhWallets(),
+                      const SizedBox(height: 12),
                       const Text(
-                          'Authorize securely with your payment provider. Methods marked unavailable cannot accept payments yet.',
+                          'Pay through QR Ph using GCash, Maya or a supported bank. No account linking needed.',
                           style: TextStyle(
                               fontSize: 12, color: AppColors.textHint)),
                       const SizedBox(height: 20),
