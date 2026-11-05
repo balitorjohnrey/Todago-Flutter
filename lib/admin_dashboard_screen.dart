@@ -7,6 +7,7 @@ import 'admin_auth_service.dart';
 import 'app_theme.dart';
 import 'fare_settings_service.dart';
 import 'panabo_config.dart';
+import 'report_review_dialog.dart';
 import 'splash_screen.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
@@ -25,6 +26,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _routePerformance = [];
   List<Map<String, dynamic>> _peakHours = [];
   List<Map<String, dynamic>> _reports = [];
+  final Set<String> _updatingReports = {};
   FareSettings _fareSettings = const FareSettings();
 
   late final TextEditingController _fuelPriceController;
@@ -195,11 +197,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   ) async {
     final issueId = report['issue_id']?.toString();
     if (issueId == null || issueId.isEmpty) return;
+    if (_updatingReports.contains(issueId)) return;
+    setState(() => _updatingReports.add(issueId));
+    ReportReviewDecision? decision;
+    if (status == 'validated') {
+      decision = await showDialog<ReportReviewDecision>(
+        context: context,
+        builder: (_) => ReportReviewDialog(report: report),
+      );
+      if (!mounted) return;
+      if (decision == null) {
+        setState(() => _updatingReports.remove(issueId));
+        return;
+      }
+    }
     final result = await AdminAuthService.updateReportStatus(
       issueId: issueId,
       status: status,
+      penaltySeverity: decision?.severity,
+      adminNotes: decision?.notes,
     );
     if (!mounted) return;
+    setState(() => _updatingReports.remove(issueId));
     _showSnack(
       result.message ?? 'Report updated.',
       result.success ? AppColors.success : AppColors.error,
@@ -463,7 +482,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           )
         else
           ...List.generate(
-            _reports.length > 5 ? 5 : _reports.length,
+            _reports.length,
             (index) => _reportRow(_reports[index], index),
           ),
       ]),
@@ -471,6 +490,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _reportRow(Map<String, dynamic> report, int index) {
+    final isUpdating =
+        _updatingReports.contains(report['issue_id']?.toString());
     final priority = report['priority']?.toString() ?? 'normal';
     final priorityColor = priority == 'urgent' || priority == 'high'
         ? AppColors.error
@@ -519,7 +540,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () => _setReportStatus(report, 'rejected'),
+              onPressed: isUpdating
+                  ? null
+                  : () => _setReportStatus(report, 'rejected'),
               icon: const Icon(Icons.close_rounded, size: 18),
               label: const Text('Reject'),
               style: OutlinedButton.styleFrom(
@@ -531,7 +554,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: ElevatedButton.icon(
-              onPressed: () => _setReportStatus(report, 'validated'),
+              onPressed: isUpdating
+                  ? null
+                  : () => _setReportStatus(report, 'validated'),
               icon: const Icon(Icons.check_rounded, size: 18),
               label: const Text('Validate'),
               style: ElevatedButton.styleFrom(

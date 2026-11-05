@@ -200,7 +200,8 @@ class TripService {
   }
 
   // ── Driver: accept trip ───────────────────────────────────────────────────
-  static Future<bool> acceptTrip(String tripId) async {
+  static Future<bool> acceptTrip(String tripId,
+      {void Function(String)? onError}) async {
     try {
       final token = await _getDriverToken();
       final response = await http
@@ -210,6 +211,10 @@ class TripService {
           )
           .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
+      if (data['success'] != true) {
+        onError?.call(
+            data['message']?.toString() ?? 'Unable to accept this ride.');
+      }
       return data['success'] == true;
     } catch (e) {
       return false;
@@ -391,6 +396,7 @@ class TripService {
   static Future<bool> updateDriverStatus(
     String status, {
     LatLng? location,
+    void Function(String)? onError,
   }) async {
     try {
       final token = await _getDriverToken();
@@ -407,6 +413,10 @@ class TripService {
           )
           .timeout(const Duration(seconds: 10));
       final data = jsonDecode(response.body);
+      if (data['success'] != true) {
+        onError?.call(
+            data['message']?.toString() ?? 'Unable to update driver status.');
+      }
       return data['success'] == true;
     } catch (e) {
       return false;

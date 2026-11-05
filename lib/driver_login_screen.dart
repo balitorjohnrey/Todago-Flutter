@@ -85,12 +85,16 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
         (_) => false,
       );
     } else {
-      final openedPersona =
-          await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      final verificationPassed = await PersonaVerificationLauncher.open(
+        context,
+        result.personaVerificationUrl,
+        statusToken: result.verificationStatusToken,
+        callbackUrl: result.verificationCallbackUrl,
+      );
       await DriverAuthService.clearSession();
       if (!mounted) return;
-      setState(() => _errorMessage = openedPersona
-          ? 'Complete valid ID and face verification, then log in again.'
+      setState(() => _errorMessage = verificationPassed
+          ? 'Identity verification passed. You can log in again.'
           : result.message);
     }
   }

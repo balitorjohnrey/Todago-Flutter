@@ -1,17 +1,31 @@
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/material.dart';
+import 'identity_verification_screen.dart';
 
 class PersonaVerificationLauncher {
-  static Future<bool> open(String? verificationUrl) async {
+  /// True only after server-confirmed approval and the user taps Back to TodaGo.
+  static Future<bool> open(
+    BuildContext context,
+    String? verificationUrl, {
+    String? statusToken,
+    String? callbackUrl,
+  }) async {
     final url = verificationUrl?.trim();
     if (url == null || url.isEmpty) return false;
 
     final uri = Uri.tryParse(url);
-    if (uri == null) return false;
-
-    if (await canLaunchUrl(uri)) {
-      return launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (uri == null ||
+        uri.scheme != 'https' ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      return false;
     }
-
-    return launchUrl(uri, mode: LaunchMode.platformDefault);
+    return await Navigator.of(context).push<bool>(MaterialPageRoute(
+          builder: (_) => IdentityVerificationScreen(
+            verificationUrl: uri,
+            statusToken: statusToken,
+            callbackUrl: callbackUrl,
+          ),
+        )) ??
+        false;
   }
 }

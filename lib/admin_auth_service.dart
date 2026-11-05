@@ -230,6 +230,7 @@ class AdminAuthService {
     required String issueId,
     required String status,
     String? adminNotes,
+    String? penaltySeverity,
   }) async {
     try {
       final response = await http
@@ -238,6 +239,7 @@ class AdminAuthService {
             headers: await _headers(),
             body: jsonEncode({
               'status': status,
+              if (penaltySeverity != null) 'penaltySeverity': penaltySeverity,
               if (adminNotes != null && adminNotes.isNotEmpty)
                 'adminNotes': adminNotes,
             }),

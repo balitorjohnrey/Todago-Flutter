@@ -54,7 +54,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final hasFreshToken = result.token != null && result.token!.isNotEmpty;
     if (result.success && hasFreshToken) {
-      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      await PersonaVerificationLauncher.open(
+        context,
+        result.personaVerificationUrl,
+        statusToken: result.verificationStatusToken,
+        callbackUrl: result.verificationCallbackUrl,
+      );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(

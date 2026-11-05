@@ -8,6 +8,8 @@ class OperatorAuthResponse {
   final String? token;
   final Map<String, dynamic>? operator;
   final String? personaVerificationUrl;
+  final String? verificationStatusToken;
+  final String? verificationCallbackUrl;
 
   OperatorAuthResponse({
     required this.success,
@@ -15,6 +17,8 @@ class OperatorAuthResponse {
     this.token,
     this.operator,
     this.personaVerificationUrl,
+    this.verificationStatusToken,
+    this.verificationCallbackUrl,
   });
 }
 
@@ -89,6 +93,8 @@ class OperatorAuthService {
           token: data['token'],
           operator: data['operator'],
           personaVerificationUrl: personaVerificationUrl,
+          verificationStatusToken: data['kyc']?['statusToken'] as String?,
+          verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
         );
       }
 
@@ -148,6 +154,8 @@ class OperatorAuthService {
         success: false,
         message: data['message'] ?? 'Invalid credentials',
         personaVerificationUrl: personaVerificationUrl,
+        verificationStatusToken: data['kyc']?['statusToken'] as String?,
+        verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
       );
     } catch (e) {
       await _clearSession();

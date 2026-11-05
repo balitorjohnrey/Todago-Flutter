@@ -105,9 +105,10 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
           ),
           ReportIssueOption(
             type: 'blacklist_passenger',
-            label: 'Blacklist Request',
-            title: 'Blacklist passenger request',
-            hint: 'Tell admin why this passenger should be blacklisted.',
+            label: 'Cooldown Request',
+            title: 'Passenger booking cooldown request',
+            hint:
+                'Tell admin why this passenger should receive a booking cooldown.',
             icon: Icons.block_rounded,
             priority: 'high',
           ),

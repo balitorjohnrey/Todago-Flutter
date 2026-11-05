@@ -59,7 +59,7 @@ class PersonaVerificationNotice extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Valid ID and face verification open securely after signup.',
+                  'Verify your ID and face securely inside TodaGo after signup.',
                   style: GoogleFonts.poppins(
                     fontSize: 12,
                     height: 1.35,

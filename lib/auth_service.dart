@@ -8,6 +8,8 @@ class AuthResponse {
   final String? token;
   final Map<String, dynamic>? user;
   final String? personaVerificationUrl;
+  final String? verificationStatusToken;
+  final String? verificationCallbackUrl;
 
   AuthResponse({
     required this.success,
@@ -15,6 +17,8 @@ class AuthResponse {
     this.token,
     this.user,
     this.personaVerificationUrl,
+    this.verificationStatusToken,
+    this.verificationCallbackUrl,
   });
 }
 
@@ -80,6 +84,8 @@ class AuthService {
           token: token,
           user: data['user'],
           personaVerificationUrl: personaVerificationUrl,
+          verificationStatusToken: data['kyc']?['statusToken'] as String?,
+          verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
         );
       }
       return AuthResponse(
@@ -126,6 +132,8 @@ class AuthService {
           token: token,
           user: data['user'],
           personaVerificationUrl: personaVerificationUrl,
+          verificationStatusToken: data['kyc']?['statusToken'] as String?,
+          verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
         );
       }
       await _clearSession();

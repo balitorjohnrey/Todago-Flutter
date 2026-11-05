@@ -170,7 +170,12 @@ class _OperatorRegistrationScreenState
     setState(() => _isLoading = false);
 
     if (result.success) {
-      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      final verificationPassed = await PersonaVerificationLauncher.open(
+        context,
+        result.personaVerificationUrl,
+        statusToken: result.verificationStatusToken,
+        callbackUrl: result.verificationCallbackUrl,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Row(children: [
@@ -178,7 +183,9 @@ class _OperatorRegistrationScreenState
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              result.message ?? 'Registration submitted!',
+              verificationPassed
+                  ? 'Identity verification passed. You can log in.'
+                  : result.message ?? 'Registration submitted!',
               style: GoogleFonts.poppins(
                   fontSize: 13, fontWeight: FontWeight.w500),
             ),

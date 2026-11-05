@@ -33,6 +33,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>TodaGo uses your camera to verify your ID and take a selfie securely in the app.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>TodaGo uses your microphone for voice commands and identity verification when required.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

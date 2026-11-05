@@ -8,6 +8,8 @@ class DriverAuthResponse {
   final String? token;
   final Map<String, dynamic>? driver;
   final String? personaVerificationUrl;
+  final String? verificationStatusToken;
+  final String? verificationCallbackUrl;
 
   DriverAuthResponse({
     required this.success,
@@ -15,6 +17,8 @@ class DriverAuthResponse {
     this.token,
     this.driver,
     this.personaVerificationUrl,
+    this.verificationStatusToken,
+    this.verificationCallbackUrl,
   });
 }
 
@@ -89,6 +93,8 @@ class DriverAuthService {
           token: data['token'],
           driver: data['driver'],
           personaVerificationUrl: personaVerificationUrl,
+          verificationStatusToken: data['kyc']?['statusToken'] as String?,
+          verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
         );
       }
 
@@ -153,6 +159,8 @@ class DriverAuthService {
         success: false,
         message: data['message'] ?? 'Invalid credentials',
         personaVerificationUrl: personaVerificationUrl,
+        verificationStatusToken: data['kyc']?['statusToken'] as String?,
+        verificationCallbackUrl: data['kyc']?['callbackUrl'] as String?,
       );
     } catch (e) {
       await _clearSession();

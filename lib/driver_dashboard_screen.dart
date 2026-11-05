@@ -35,6 +35,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   String _todaBody = '';
   String? _driverPhotoPath;
   Map<String, dynamic>? _driverProfile;
+  Map<String, dynamic>? _rideRestriction;
+
+  bool get _isSuspended {
+    final until = DateTime.tryParse(
+        _rideRestriction?['restrictedUntil']?.toString() ?? '');
+    return until != null && until.isAfter(DateTime.now());
+  }
+
   double _avgRating = 0.0;
   int _totalTrips = 0;
   int _tripsToday = 0;
@@ -78,6 +86,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       final serverPhoto = _profilePhotoSource(d);
       setState(() {
         _driverProfile = d;
+        _rideRestriction = d['ride_restriction'] as Map<String, dynamic>?;
         _driverName = d['driver_name']?.toString() ?? 'Driver';
         _todaBody = d['toda_body_number']?.toString() ?? '';
         _driverPhotoPath = serverPhoto ?? photoPath;
@@ -104,12 +113,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   // ── Online / Offline toggle ───────────────────────────────────────────────
   Future<void> _toggleOnline() async {
     if (_isUpdating) return;
+    if (!_isOnline && _isSuspended) {
+      _snack(_rideRestriction!['message'].toString(), AppColors.error);
+      return;
+    }
     setState(() => _isUpdating = true);
     final newStatus = _isOnline ? 'offline' : 'online';
     final onlineLocation =
         newStatus == 'online' ? await MapService.getCurrentLocation() : null;
+    String? statusError;
     final ok = await TripService.updateDriverStatus(newStatus,
-        location: onlineLocation);
+        location: onlineLocation, onError: (message) => statusError = message);
     if (!mounted) return;
     setState(() => _isUpdating = false);
     if (ok) {
@@ -125,8 +139,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _snack('You are now OFFLINE', Colors.grey[700]!);
       }
     } else {
-      _snack(
-          'Could not update status. Check your connection.', AppColors.error);
+      _snack(statusError ?? 'Could not update status. Check your connection.',
+          AppColors.error);
     }
   }
 
@@ -204,7 +218,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   Future<void> _checkForRide() async {
-    if (_isShowingPopup) return;
+    if (_isShowingPopup || _isSuspended) return;
     final trip = await TripService.fetchPendingTrip();
     if (trip == null || !mounted) return;
     if (trip['trip_type']?.toString() == 'scheduled') {
@@ -223,8 +237,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       builder: (_) => RideRequestScreen(
         trip: trip,
         onAccept: () async {
-          acceptedOk =
-              await TripService.acceptTrip(trip['trip_id']?.toString() ?? '');
+          acceptedOk = await TripService.acceptTrip(
+              trip['trip_id']?.toString() ?? '', onError: (message) {
+            if (mounted) _snack(message, AppColors.error);
+          });
         },
         onDecline: () async {
           await TripService.declineTrip(trip['trip_id']?.toString() ?? '');
@@ -279,6 +295,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     final stats = await DriverAuthService.fetchTodayStats();
     if (stats == null || !mounted) return;
     setState(() {
+      _rideRestriction = stats['ride_restriction'] as Map<String, dynamic>?;
       _tripsToday = _asInt(stats['trips_today']);
       _onlineSecondsToday = _asInt(stats['online_seconds_today']);
       _earningsToday = _asDouble(
@@ -489,7 +506,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text(_isOnline ? 'ONLINE' : 'OFFLINE',
+                  Text(
+                      _isSuspended
+                          ? 'SUSPENDED'
+                          : (_isOnline ? 'ONLINE' : 'OFFLINE'),
                       style: GoogleFonts.poppins(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -538,6 +558,17 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ]),
             ),
           ).animate().fadeIn(delay: 100.ms),
+
+          if (_isSuspended)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+              child: Text(
+                'Ride suspension ends ${DateTime.parse(_rideRestriction!['restrictedUntil'].toString()).toLocal().toString().split('.').first}. You cannot accept new rides until then.',
+                style:
+                    const TextStyle(color: Colors.orangeAccent, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ),
 
           // ── GO ONLINE button ──────────────────────────────────────────────
           Expanded(

@@ -946,7 +946,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                   Expanded(
                     child: _actionBtn(
                       Icons.block_rounded,
-                      'Blacklist',
+                      'Cooldown',
                       AppColors.error,
                       () => _reportPassenger(
                         initialType: 'blacklist_passenger',

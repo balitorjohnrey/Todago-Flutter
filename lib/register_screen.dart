@@ -104,7 +104,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = false);
 
     if (result.success) {
-      await PersonaVerificationLauncher.open(result.personaVerificationUrl);
+      await PersonaVerificationLauncher.open(
+        context,
+        result.personaVerificationUrl,
+        statusToken: result.verificationStatusToken,
+        callbackUrl: result.verificationCallbackUrl,
+      );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
