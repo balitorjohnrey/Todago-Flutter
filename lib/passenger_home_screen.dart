@@ -1786,7 +1786,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                       Text(
                           result['testMode'] == true
                               ? 'Test checkout'
-                              : 'Minimum top-up: ₱20',
+                              : result['qrMode'] == 'passenger_static'
+                                  ? 'Your personal QR Ph · Choose the amount to enter in your payment app'
+                                  : 'Minimum top-up: ₱20',
                           style: GoogleFonts.poppins(
                               fontSize: 13, color: AppColors.textHint)),
                       const SizedBox(height: 20),
@@ -1830,9 +1832,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                       const SizedBox(height: 12),
                       const QrPhWallets(),
                       const SizedBox(height: 12),
-                      const Text(
-                          'Pay through QR Ph using GCash, Maya or a supported bank. No account linking needed.',
-                          style: TextStyle(
+                      Text(
+                          result['qrMode'] == 'passenger_static'
+                              ? 'Pay with GCash, Maya or a supported bank using the QR assigned to your TodaGo wallet. Enter the selected amount in your payment app.'
+                              : 'Pay through QR Ph using GCash, Maya or a supported bank. No account linking needed.',
+                          style: const TextStyle(
                               fontSize: 12, color: AppColors.textHint)),
                       const SizedBox(height: 20),
                       SizedBox(

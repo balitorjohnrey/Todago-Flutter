@@ -27,6 +27,45 @@ Map<String, dynamic> liveQrPayment() => {
 
 void main() {
   testWidgets(
+      'personal static QR explains manual amount entry and waits for backend confirmation',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 568);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    var checks = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: WalletPaymentScreen(
+      transactionId: 'personal-topup',
+      payment: {
+        ...liveQrPayment(),
+        'kind': 'static_qr',
+        'qrCodeId': 'code_passenger'
+      },
+      checkPayment: (_) async {
+        checks++;
+        return {'success': true, 'status': 'pending'};
+      },
+    )));
+    await tester.pumpAndSettle();
+    expect(
+        find.textContaining('assigned to your TodaGo wallet'), findsOneWidget);
+    expect(find.textContaining('amount actually paid'), findsOneWidget);
+    await tester.ensureVisible(find.text('Proceed to Top Up'));
+    await tester.tap(find.text('Proceed to Top Up'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('enter ₱100.00 in GCash'), findsOneWidget);
+    expect(find.byKey(const ValueKey('qrph-payment-code')), findsOneWidget);
+    expect(find.text('I have paid'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(seconds: 4));
+    await tester.pumpAndSettle();
+    expect(checks, greaterThan(0));
+    expect(find.byType(WalletPaymentScreen), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
       'test QR checkout clearly shows simulation and hides the payable QR',
       (tester) async {
     await tester.pumpWidget(MaterialApp(

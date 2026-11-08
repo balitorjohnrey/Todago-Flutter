@@ -147,6 +147,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
   // Only an explicitly live response may expose a payable QR code.
   bool get _testMode => _payment?['testMode'] != false;
   bool get _hasAction => _payment?['status'] == 'awaiting_next_action';
+  bool get _staticQr => _payment?['kind'] == 'static_qr';
   String get _formattedAmount =>
       '₱${(num.tryParse('${_payment?['amount']}') ?? 0).toStringAsFixed(2)}';
   bool get _liveQrAvailable {
@@ -249,9 +250,15 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                         if (!_testMode) ...[
                           const SizedBox(height: 8),
                           const Text(
-                              'Your payment app will deduct this amount when you approve the payment.',
+                              'Your payment app deducts real money when you approve the payment.',
                               textAlign: TextAlign.center,
                               style: TextStyle(fontSize: 12)),
+                        ],
+                        if (_staticQr) ...[
+                          const SizedBox(height: 12),
+                          const Text(
+                              'This reusable QR is assigned to your TodaGo wallet. Enter the amount yourself in GCash, Maya or your bank app. Your wallet receives the amount actually paid.',
+                              textAlign: TextAlign.center),
                         ],
                         if (_provider == 'qrph') ...[
                           const SizedBox(height: 20),
@@ -294,9 +301,18 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
-                        const Text(
-                            'Scan this QR with GCash, Maya or a QR Ph bank app and approve the payment.',
+                        Text(
+                            _staticQr
+                                ? 'Scan your QR, enter $_formattedAmount in GCash, Maya or your bank app, and approve the payment.'
+                                : 'Scan this QR with GCash, Maya or a QR Ph bank app and approve the payment.',
                             textAlign: TextAlign.center),
+                        if (_staticQr) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                              'Payments to this QR are credited to your TodaGo wallet. The confirmed amount will appear in your transaction history.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12)),
+                        ],
                         const SizedBox(height: 20),
                         if (_liveQrAvailable)
                           Center(
