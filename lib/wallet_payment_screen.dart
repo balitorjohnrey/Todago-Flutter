@@ -26,10 +26,17 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
     with WidgetsBindingObserver {
   Map<String, dynamic>? _payment;
   Timer? _timer;
+  final ScrollController _scrollController = ScrollController();
   bool _checking = false;
   bool _opening = false;
+  bool _showLiveQr = false;
   bool _finished = false;
   String? _error;
+
+  void _changeQrView(bool visible) {
+    setState(() => _showLiveQr = visible);
+    if (_scrollController.hasClients) _scrollController.jumpTo(0);
+  }
 
   @override
   void initState() {
@@ -61,6 +68,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
         setState(() {
           if (result['payment'] is Map) {
             _payment = Map<String, dynamic>.from(result['payment'] as Map);
+            if (_testMode || _provider != 'qrph') _showLiveQr = false;
           }
           _error = null;
         });
@@ -139,6 +147,16 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
   // Only an explicitly live response may expose a payable QR code.
   bool get _testMode => _payment?['testMode'] != false;
   bool get _hasAction => _payment?['status'] == 'awaiting_next_action';
+  String get _formattedAmount =>
+      '₱${(num.tryParse('${_payment?['amount']}') ?? 0).toStringAsFixed(2)}';
+  bool get _liveQrAvailable {
+    if (_testMode || !_hasAction || _provider != 'qrph') return false;
+    final source = _payment?['qrImageUrl'];
+    return source is String &&
+        (source.startsWith('data:image/png;base64,') ||
+            source.startsWith('data:image/jpeg;base64,') ||
+            Uri.tryParse(source)?.scheme == 'https');
+  }
 
   Widget _qrImage(String source) {
     if (source.startsWith('data:image/png;base64,') ||
@@ -170,6 +188,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
   @override
   void dispose() {
     _timer?.cancel();
+    _scrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -177,11 +196,22 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
   @override
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
-            title: const Text('Top up wallet'),
+            title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_showLiveQr ? 'Scan QR Ph' : 'Top up wallet'),
+                  if (_payment != null)
+                    Text(_testMode ? 'Sandbox' : 'Live payment',
+                        style: const TextStyle(
+                            fontSize: 11, color: AppColors.primary)),
+                ]),
             leading: IconButton(
-                tooltip: 'Back to wallet',
-                icon: const Icon(Icons.close),
-                onPressed: () => _finish('pending')),
+                tooltip: _showLiveQr ? 'Back to top-up' : 'Back to wallet',
+                icon: Icon(_showLiveQr ? Icons.arrow_back : Icons.close),
+                onPressed: _showLiveQr
+                    ? () => _changeQrView(false)
+                    : () => _finish('pending')),
             actions: [
               IconButton(
                   tooltip: 'Check payment',
@@ -191,6 +221,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
         body: _payment == null && _error == null
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
+                controller: _scrollController,
                 padding: const EdgeInsets.all(24),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -206,36 +237,34 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                               fontSize: 22, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 12),
                       if (_payment != null)
-                        Text(
-                            '₱${(num.tryParse('${_payment!['amount']}') ?? 0).toStringAsFixed(2)}',
+                        Text(_formattedAmount,
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                                 fontSize: 36, fontWeight: FontWeight.w800)),
                       const SizedBox(height: 24),
-                      if (_payment != null && !_testMode) ...[
-                        const Text('LIVE PAYMENT • Uses real money',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 16),
-                      ],
-                      if (_testMode) ...[
-                        const Icon(Icons.science_outlined, size: 40),
-                        const SizedBox(height: 12),
-                        const Text('TEST PAYMENT',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(fontWeight: FontWeight.w800)),
-                        const SizedBox(height: 8),
-                        const Text(
-                            'Authorize a test payment with PayMongo. Do not scan or pay a QR code with real money.',
+                      if (_payment != null && !_showLiveQr) ...[
+                        Text(
+                            'You are about to top up $_formattedAmount to your TodaGo wallet.',
                             textAlign: TextAlign.center),
+                        if (!_testMode) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                              'Your payment app will deduct this amount when you approve the payment.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: 12)),
+                        ],
                         if (_provider == 'qrph') ...[
                           const SizedBox(height: 20),
                           FilledButton.icon(
                               onPressed: _opening ||
                                       !_hasAction ||
-                                      _testAuthorizationUri == null
+                                      (_testMode
+                                          ? _testAuthorizationUri == null
+                                          : !_liveQrAvailable)
                                   ? null
-                                  : () => _authorize(testPayment: true),
+                                  : _testMode
+                                      ? () => _authorize(testPayment: true)
+                                      : () => _changeQrView(true),
                               icon: _opening
                                   ? const SizedBox(
                                       width: 18,
@@ -246,41 +275,56 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                               label: const Text('Proceed to Top Up')),
                           if (!_hasAction)
                             const Text(
-                                'This test payment is no longer available. Start a new top-up.',
+                                'This top-up is no longer available. Return to your wallet and start a new top-up.',
                                 textAlign: TextAlign.center)
-                          else if (_testAuthorizationUri == null)
+                          else if (_testMode && _testAuthorizationUri == null)
                             const Text(
                                 'Test authorization is unavailable. Refresh to check again.',
+                                textAlign: TextAlign.center)
+                          else if (!_testMode && !_liveQrAvailable)
+                            const Text(
+                                'The QR code is not ready. Refresh to check again.',
                                 textAlign: TextAlign.center),
                         ],
                         const SizedBox(height: 20),
                       ],
-                      if (_provider == 'qrph' && !_testMode) ...[
-                        const QrPhWallets(),
-                        const SizedBox(height: 16),
-                      ],
-                      if (_provider == 'qrph' && !_testMode) ...[
-                        const Text('Pay using QR Ph',
+                      if (_provider == 'qrph' && !_testMode && _showLiveQr) ...[
+                        const Text('Scan to top up',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
                         const Text(
-                            'Pay with GCash, Maya or a QR Ph bank. On the same phone, take a screenshot and use your payment app’s scan/upload option if supported.',
+                            'Scan this QR with GCash, Maya or a QR Ph bank app and approve the payment.',
                             textAlign: TextAlign.center),
                         const SizedBox(height: 20),
-                        if (_hasAction && _payment?['qrImageUrl'] is String)
-                          Container(
-                              padding: const EdgeInsets.all(16),
-                              color: Colors.white,
-                              child: AspectRatio(
+                        if (_liveQrAvailable)
+                          Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 320),
+                              child: Container(
+                                key: const ValueKey('qrph-payment-code'),
+                                padding: const EdgeInsets.all(16),
+                                color: Colors.white,
+                                child: AspectRatio(
                                   aspectRatio: 1,
                                   child: _qrImage(
-                                      _payment!['qrImageUrl'] as String)))
+                                      _payment!['qrImageUrl'] as String),
+                                ),
+                              ),
+                            ),
+                          )
                         else
                           const Text(
                               'This QR code is no longer available. Return to your wallet and start a new top-up.',
                               textAlign: TextAlign.center),
+                        const SizedBox(height: 20),
+                        const QrPhWallets(),
+                        const SizedBox(height: 12),
+                        const Text(
+                            'On the same phone, take a screenshot and use your payment app\'s scan/upload option if supported.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 12)),
                       ],
                       if (_provider == 'gcash' || _provider == 'maya') ...[
                         Center(
@@ -314,7 +358,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                                     const TextStyle(color: AppColors.error))),
                       const SizedBox(height: 24),
                       const Text(
-                          'Waiting for payment confirmation. Your wallet updates after payment is confirmed.',
+                          'Your wallet balance updates after payment is confirmed.',
                           textAlign: TextAlign.center),
                     ])),
         bottomNavigationBar: SafeArea(
