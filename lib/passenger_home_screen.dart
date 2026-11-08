@@ -27,8 +27,8 @@ import 'wallet_service.dart';
 import 'wallet_checkout_screen.dart';
 import 'wallet_payment_screen.dart';
 import 'wallet_return_links.dart';
-import 'payment_method_logo.dart';
-import 'qr_ph_wallets.dart';
+import 'merchant_qr_top_up_screen.dart';
+import 'demo_wallet_store.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -63,22 +63,27 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   double _walletRewards = 0;
   int _walletTrips = 0;
   bool _loadingWallet = false;
-  bool _startingTopUp = false;
-  bool _loadingPaymentMethods = false;
+  bool _showingMerchantQr = false;
+  DemoWalletSnapshot _demoWallet = const DemoWalletSnapshot();
   StreamSubscription<Uri>? _walletReturnSubscription;
   Timer? _walletTimer;
   List<Map<String, dynamic>> _transactions = [];
 
   double get _balance => _walletBalance;
+  double get _displayedWalletBalance =>
+      _demoWallet.active ? _demoWallet.balance : _walletBalance;
+  List<Map<String, dynamic>> get _displayedTransactions => _demoWallet.active
+      ? _demoWallet.transactions.map(_normalizeWalletTransaction).toList()
+      : _transactions;
 
   List<Map<String, dynamic>> get _filteredTx {
     if (_walletTab == 1) {
-      return _transactions.where((t) => t['type'] == 'topup').toList();
+      return _displayedTransactions.where((t) => t['type'] == 'topup').toList();
     }
     if (_walletTab == 2) {
-      return _transactions.where((t) => t['type'] == 'trip').toList();
+      return _displayedTransactions.where((t) => t['type'] == 'trip').toList();
     }
-    return _transactions;
+    return _displayedTransactions;
   }
 
   // ════════════════════════════════════════════════════════════════════════════
@@ -109,10 +114,20 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
 
   Future<void> _loadUser() async {
     final user = await AuthService.fetchProfile();
+    final passengerId = user?['id']?.toString();
+    DemoWalletSnapshot demo = const DemoWalletSnapshot();
+    if (passengerId != null && passengerId.isNotEmpty) {
+      try {
+        demo = await DemoWalletStore.load(passengerId);
+      } catch (_) {
+        // An unavailable local demo store must not hide a real account.
+      }
+    }
     final serverPhoto = _profilePhotoSource(user);
     if (mounted) {
       setState(() {
         _user = user;
+        _demoWallet = demo;
         if (serverPhoto != null) _passengerPhotoPath = serverPhoto;
       });
     }
@@ -482,6 +497,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       'native_checkout': raw['native_checkout'] == true,
       'type': type,
       'status': status,
+      'demo': raw['demo'] == true,
       'title': raw['title']?.toString() ?? 'Wallet transaction',
       'subtitle': status != 'completed'
           ? '$subtitle · ${status[0].toUpperCase()}${status.substring(1)}'
@@ -1463,7 +1479,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                             fontWeight: FontWeight.w800,
                             color: Colors.white)),
                     const SizedBox(height: 24),
-                    Text('TodaGo Wallet Balance',
+                    Text(
+                        _demoWallet.active
+                            ? 'Demo Wallet Balance'
+                            : 'TodaGo Wallet Balance',
                         style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: Colors.white54,
@@ -1472,13 +1491,21 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                     Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          Text(
-                            _balanceVisible ? _formatPeso(_balance) : '₱•••••',
-                            style: GoogleFonts.poppins(
-                                fontSize: 38,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                height: 1),
+                          Flexible(
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                _balanceVisible
+                                    ? _formatPeso(_displayedWalletBalance)
+                                    : '₱•••••',
+                                style: GoogleFonts.poppins(
+                                    fontSize: 38,
+                                    fontWeight: FontWeight.w900,
+                                    color: Colors.white,
+                                    height: 1),
+                              ),
+                            ),
                           ),
                           const SizedBox(width: 10),
                           GestureDetector(
@@ -1493,22 +1520,36 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                             ),
                           ),
                         ]),
+                    if (_demoWallet.active) ...[
+                      const SizedBox(height: 8),
+                      Text('Demo funds · no cash value',
+                          style: GoogleFonts.poppins(
+                              color: AppColors.primary, fontSize: 12)),
+                      TextButton(
+                        onPressed: _resetDemoWallet,
+                        child: const Text('Reset demo wallet'),
+                      ),
+                    ],
                     const SizedBox(height: 24),
                     Row(children: [
                       _walletActionBtn(Icons.add_rounded, 'Top Up',
                           AppColors.primary, AppColors.backgroundDark,
-                          onTap: _showTopUpSheet),
+                          onTap: _showMerchantQrTopUp),
                       const SizedBox(width: 12),
                       _walletActionBtn(Icons.arrow_upward_rounded, 'Cash Out',
                           Colors.white.withOpacity(0.12), Colors.white,
                           onTap: () => _showSnack(
-                              'Cash out requires a live payout provider.',
+                              _demoWallet.active
+                                  ? 'Demo funds cannot be cashed out.'
+                                  : 'Cash out requires a live payout provider.',
                               AppColors.error)),
                       const SizedBox(width: 12),
                       _walletActionBtn(Icons.send_rounded, 'Send',
                           Colors.white.withOpacity(0.12), Colors.white,
                           onTap: () => _showSnack(
-                              'Send requires a live recipient wallet.',
+                              _demoWallet.active
+                                  ? 'Demo funds cannot be transferred.'
+                                  : 'Send requires a live recipient wallet.',
                               AppColors.error)),
                     ]),
                   ]),
@@ -1523,12 +1564,18 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFEEEEEE))),
         child: Row(children: [
-          _wStat('Total Spent', _formatPeso(_walletTotalSpent, decimals: 0),
+          _wStat(
+              'Total Spent',
+              _formatPeso(_demoWallet.active ? 0 : _walletTotalSpent,
+                  decimals: 0),
               Icons.payments_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Trips', '$_walletTrips', Icons.electric_rickshaw_rounded),
+          _wStat('Trips', '${_demoWallet.active ? 0 : _walletTrips}',
+              Icons.electric_rickshaw_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Rewards', _formatPeso(_walletRewards, decimals: 0),
+          _wStat(
+              'Rewards',
+              _formatPeso(_demoWallet.active ? 0 : _walletRewards, decimals: 0),
               Icons.card_giftcard_rounded,
               color: AppColors.success),
         ]),
@@ -1537,7 +1584,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Transaction History',
+          Text(
+              _demoWallet.active
+                  ? 'Demo Transaction History'
+                  : 'Transaction History',
               style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1552,7 +1602,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           ]),
         ]),
       )),
-      if (_loadingWallet && _transactions.isEmpty)
+      if (_loadingWallet && !_demoWallet.active && _transactions.isEmpty)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 28),
@@ -1631,7 +1681,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   Widget _txCard(Map<String, dynamic> t) {
     final amount = t['amount'] as double;
     final isPos = amount > 0;
-    final isSettled = t['status'] == 'completed';
+    final isSettled = t['status'] == 'completed' || t['demo'] == true;
     final canResume = t['type'] == 'topup' &&
         t['status'] == 'pending' &&
         (t['checkout_url'] != null || t['native_checkout'] == true) &&
@@ -1726,165 +1776,57 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
         ),
       );
 
-  Future<void> _showTopUpSheet() async {
-    if (_loadingPaymentMethods || _startingTopUp) return;
-    setState(() => _loadingPaymentMethods = true);
-    final result = await WalletService.getPaymentMethods();
-    if (!mounted) return;
-    setState(() => _loadingPaymentMethods = false);
-    if (result['success'] != true) {
-      _showSnack(
-          result['message']?.toString() ?? 'Could not load payment methods.',
-          AppColors.error);
-      return;
+  Future<void> _showMerchantQrTopUp() async {
+    if (_showingMerchantQr) return;
+    setState(() => _showingMerchantQr = true);
+    try {
+      final amount = await Navigator.of(context).push<int>(MaterialPageRoute(
+        builder: (_) => const MerchantQrTopUpScreen(),
+      ));
+      if (amount != null && mounted) {
+        final passengerId = _user?['id']?.toString();
+        if (passengerId == null || passengerId.isEmpty) {
+          _showSnack(
+              'Please sign in before adding demo funds.', AppColors.error);
+          return;
+        }
+        try {
+          final snapshot = await DemoWalletStore.topUp(passengerId, amount);
+          if (!mounted || _user?['id']?.toString() != passengerId) return;
+          setState(() {
+            _demoWallet = snapshot;
+            _walletTab = 0;
+          });
+          _showSnack('Demo top-up added: ${_formatPeso(amount.toDouble())}',
+              AppColors.success);
+        } catch (_) {
+          _showSnack('Unable to save the demo top-up. Please try again.',
+              AppColors.error);
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _showingMerchantQr = false;
+          _selectedTab = 2;
+        });
+        // Refresh the confirmed balance separately. Demo funds never enter the
+        // backend ledger, trip payments, transfers or cash-outs.
+        await _loadWallet(silent: true);
+      }
     }
-    final availableMethods = (result['methods'] as List? ?? [])
-        .whereType<Map>()
-        .map((item) => Map<String, dynamic>.from(item))
-        .toList();
-    if (availableMethods.isEmpty) {
-      _showSnack('Top-ups are temporarily unavailable. Please try again later.',
-          AppColors.error);
-      return;
-    }
-    final methods = availableMethods
-        .where((method) => method['id'] == 'qrph')
-        .map((method) => {...method, 'available': true})
-        .toList();
-    if (methods.isEmpty) {
-      _showSnack('QR Ph is temporarily unavailable. Please try again later.',
-          AppColors.error);
-      return;
-    }
-    int selectedAmount = 20;
-    String selectedProvider = 'qrph';
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      showDragHandle: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-            top: false,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                  maxHeight: MediaQuery.sizeOf(context).height * 0.8),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('Top Up Wallet',
-                          style: GoogleFonts.poppins(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.backgroundDark)),
-                      const SizedBox(height: 6),
-                      Text(
-                          result['testMode'] == true
-                              ? 'Test checkout'
-                              : result['qrMode'] == 'passenger_static'
-                                  ? 'Your personal QR Ph · Choose the amount to enter in your payment app'
-                                  : 'Minimum top-up: ₱20',
-                          style: GoogleFonts.poppins(
-                              fontSize: 13, color: AppColors.textHint)),
-                      const SizedBox(height: 20),
-                      Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: [20, 50, 100, 200, 500, 1000]
-                              .map(
-                                (amount) => ChoiceChip(
-                                    label: Text('₱$amount'),
-                                    selected: selectedAmount == amount,
-                                    onSelected: (_) => setSheetState(
-                                        () => selectedAmount = amount)),
-                              )
-                              .toList()),
-                      const SizedBox(height: 20),
-                      Text('Pay with',
-                          style: GoogleFonts.poppins(
-                              fontSize: 14, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 12),
-                      LayoutBuilder(
-                          builder: (context, constraints) => Wrap(
-                                spacing: 10,
-                                runSpacing: 10,
-                                children: methods
-                                    .map((method) => SizedBox(
-                                          width:
-                                              (constraints.maxWidth - 10) / 2,
-                                          child: _payOpt(
-                                              method['id'].toString(),
-                                              method['label'].toString(),
-                                              selectedProvider == method['id'],
-                                              available:
-                                                  method['available'] == true,
-                                              onTap: () => setSheetState(() =>
-                                                  selectedProvider =
-                                                      method['id'].toString())),
-                                        ))
-                                    .toList(),
-                              )),
-                      const SizedBox(height: 12),
-                      const QrPhWallets(),
-                      const SizedBox(height: 12),
-                      Text(
-                          result['qrMode'] == 'passenger_static'
-                              ? 'Pay with GCash, Maya or a supported bank using the QR assigned to your TodaGo wallet. Enter the selected amount in your payment app.'
-                              : 'Pay through QR Ph using GCash, Maya or a supported bank. No account linking needed.',
-                          style: const TextStyle(
-                              fontSize: 12, color: AppColors.textHint)),
-                      const SizedBox(height: 20),
-                      SizedBox(
-                          width: double.infinity,
-                          height: 52,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.backgroundDark,
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(16))),
-                            onPressed: () {
-                              Navigator.pop(sheetContext);
-                              _startTopUp(
-                                  selectedProvider, selectedAmount.toDouble());
-                            },
-                            child: const Text('Proceed to Top Up'),
-                          )),
-                    ]),
-              ),
-            )),
-      ),
-    );
   }
 
-  Future<void> _startTopUp(String provider, double amount) async {
-    if (_startingTopUp) return;
-    setState(() => _startingTopUp = true);
-    final result = await WalletService.createTopUpCheckout(
-        provider: provider, amount: amount);
-    if (!mounted) return;
-    setState(() => _startingTopUp = false);
-    final wallet = result['wallet'];
-    if (wallet is Map<String, dynamic>) await _loadWalletFromPayload(wallet);
-    final checkoutUrl = result['checkoutUrl']?.toString();
-    final transactionId = result['transactionId']?.toString();
-    final payment = result['payment'] is Map
-        ? Map<String, dynamic>.from(result['payment'] as Map)
-        : null;
-    if (result['success'] == true &&
-        (checkoutUrl != null || payment != null) &&
-        transactionId != null) {
-      await _openWalletCheckout(checkoutUrl, transactionId,
-          native: payment != null,
-          payment: payment,
-          testMode: result['testMode'] == true);
-    } else {
-      _showSnack(result['message']?.toString() ?? 'Could not start top-up.',
+  Future<void> _resetDemoWallet() async {
+    final passengerId = _user?['id']?.toString();
+    if (passengerId == null || passengerId.isEmpty) return;
+    try {
+      await DemoWalletStore.reset(passengerId);
+      if (!mounted || _user?['id']?.toString() != passengerId) return;
+      setState(() => _demoWallet = const DemoWalletSnapshot());
+      _showSnack('Demo wallet reset.', AppColors.textHint);
+    } catch (_) {
+      _showSnack('Unable to reset the demo wallet. Please try again.',
           AppColors.error);
     }
   }
@@ -1924,40 +1866,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           AppColors.textHint);
     }
   }
-
-  Widget _payOpt(String provider, String label, bool selected,
-          {required VoidCallback onTap, bool available = true}) =>
-      InkWell(
-          onTap: available ? onTap : null,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            constraints: const BoxConstraints(minHeight: 64),
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-                color: selected
-                    ? const Color(0xFFFFF8DD)
-                    : const Color(0xFFF0F2F5),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: selected ? AppColors.primary : Colors.transparent,
-                    width: 2)),
-            child: Row(children: [
-              PaymentMethodLogo(provider: provider, width: 44),
-              const SizedBox(width: 6),
-              Flexible(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                    Text(label,
-                        style: GoogleFonts.poppins(
-                            fontSize: 12, fontWeight: FontWeight.w600)),
-                    if (!available)
-                      const Text('Unavailable',
-                          style: TextStyle(
-                              fontSize: 10, color: AppColors.textHint)),
-                  ])),
-            ]),
-          ));
 
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildEnhancedProfileTab() {
