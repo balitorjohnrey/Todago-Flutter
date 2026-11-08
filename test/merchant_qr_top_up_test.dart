@@ -1,222 +1,311 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:todago/demo_wallet_store.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
+import 'package:todago/merchant_qr_checkout_screen.dart';
+import 'package:todago/merchant_qr_checkout_session.dart';
 import 'package:todago/merchant_qr_top_up_screen.dart';
-import 'package:todago/wallet_checkout_screen.dart';
-import 'package:todago/wallet_payment_screen.dart';
+import 'package:todago/wallet_migration.dart';
+import 'support/fake_qr_webview.dart';
 
-class _NoNetwork extends HttpOverrides {
-  @override
-  HttpClient createHttpClient(SecurityContext? context) =>
-      throw StateError('The merchant QR/demo flow must not use the network.');
-}
+Map<String, dynamic> payment(
+        {double amount = 73.45,
+        String status = 'pending',
+        String? reference}) =>
+    {
+      'success': true,
+      'testMode': false,
+      'transactionId': 'request-one',
+      'status': status,
+      'payment': {
+        'kind': 'merchant_qr',
+        'provider': 'qrph',
+        'amount': amount,
+        'reference': reference
+      }
+    };
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  late FakeQrWebViewPlatform web;
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    WebViewPlatform.instance = web = FakeQrWebViewPlatform();
+  });
 
-  test('demo credits persist per passenger and never share balances or history',
+  test('clears only retired local preview wallets and preserves other settings',
       () async {
-    final alice = await DemoWalletStore.topUp('alice', 20);
-    expect(alice.balance, 20);
-    expect(alice.active, isTrue);
-    expect((await DemoWalletStore.load('alice')).balance, 20);
-    expect((await DemoWalletStore.load('bob')).active, isFalse);
-    final bob = await DemoWalletStore.topUp('bob', 50);
-    expect(bob.balance, 50);
-    expect((await DemoWalletStore.load('alice')).balance, 20);
-    expect(alice.transactions.single['demo'], isTrue);
-    expect(alice.transactions.single['status'], 'demo');
-    expect(alice.transactions.single['title'], 'Demo Top-up');
+    SharedPreferences.setMockInitialValues({
+      'todago_demo_wallet_v1_alice': 'old',
+      'todago_demo_wallet_v1_bob': 'old',
+      'auth_setting': 'keep',
+      'saved_ride': 'keep'
+    });
+    await WalletMigration.clearLocalPreviewBalances();
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.containsKey('todago_demo_wallet_v1_alice'), false);
+    expect(preferences.containsKey('todago_demo_wallet_v1_bob'), false);
+    expect(preferences.getString('auth_setting'), 'keep');
+    expect(preferences.getString('saved_ride'), 'keep');
   });
 
   test(
-      'concurrent demo actions preserve both credits and reset only the selected passenger',
-      () async {
-    await Future.wait([
-      DemoWalletStore.topUp('alice', 100),
-      DemoWalletStore.topUp('alice', 200),
-    ]);
-    final alice = await DemoWalletStore.load('alice');
-    expect(alice.balance, 300);
-    expect(alice.transactions.length, 2);
-    await DemoWalletStore.topUp('bob', 50);
-    await DemoWalletStore.reset('alice');
-    expect((await DemoWalletStore.load('alice')).active, isFalse);
-    expect((await DemoWalletStore.load('bob')).balance, 50);
-  });
-
-  test(
-      'demo store rejects anonymous or unsupported amounts without adding funds',
-      () async {
-    for (final amount in [0, -20, 19, 21, 1001]) {
-      await expectLater(
-          DemoWalletStore.topUp('alice', amount), throwsArgumentError);
+      'custom decimal amounts are supported and return links remain session-bound',
+      () {
+    final session = MerchantQrCheckoutSession(amount: 73.45);
+    expect(session.isCompletion(session.completionUri), true);
+    expect(session.isCompletion(session.completionUri.replace(scheme: 'http')),
+        false);
+    expect(
+        session
+            .isCompletion(session.completionUri.replace(query: 'session=old')),
+        false);
+    for (final amount in [0.0, 19.99, 50000.01, double.nan, double.infinity]) {
+      expect(
+          () => MerchantQrCheckoutSession(amount: amount), throwsArgumentError);
     }
-    await expectLater(DemoWalletStore.topUp('', 20), throwsArgumentError);
-    expect((await DemoWalletStore.load('alice')).balance, 0);
   });
 
   testWidgets(
-      'shows the supplied merchant image offline and returns the selected demo amount using Top-Up Now',
+      'custom amount replaces presets; Done only opens the reference screen',
       (tester) async {
-    final previous = HttpOverrides.current;
-    HttpOverrides.global = _NoNetwork();
-    addTearDown(() => HttpOverrides.global = previous);
-    int? selected;
-    await tester.pumpWidget(MaterialApp(
-        home: Builder(
-            builder: (context) => Scaffold(
-                body: TextButton(
-                    onPressed: () async {
-                      selected = await Navigator.of(context)
-                          .push<int>(MaterialPageRoute(
-                        builder: (_) => const MerchantQrTopUpScreen(),
-                      ));
-                    },
-                    child: const Text('Open top-up'))))));
-    await tester.tap(find.text('Open top-up'));
-    await tester.pumpAndSettle();
-    for (final amount in [20, 50, 100, 200, 500, 1000]) {
-      expect(find.widgetWithText(ChoiceChip, '₱$amount'), findsOneWidget);
-    }
-    await tester.tap(find.widgetWithText(ChoiceChip, '₱50'));
-    await tester.ensureVisible(find.text('Proceed to Top Up'));
-    await tester.tap(find.text('Proceed to Top Up'));
-    await tester.pumpAndSettle();
-    expect(find.image(const AssetImage(MerchantQrTopUpScreen.qrAsset)),
-        findsOneWidget);
-    expect(find.text('₱50.00'), findsOneWidget);
-    expect(find.textContaining('No real payment is required'), findsOneWidget);
-    expect(find.textContaining('uses real money'), findsOneWidget);
-    expect(find.byType(WalletCheckoutScreen), findsNothing);
-    expect(find.byType(WalletPaymentScreen), findsNothing);
-    expect(find.text('Simulate Top-Up'), findsNothing);
+    String? result;
+    double? requested;
+    await _open(
+        tester,
+        MerchantQrTopUpScreen(
+          loadConfiguration: () async => {'success': true, 'available': true},
+          createTopUp: (amount) async {
+            requested = amount;
+            return payment(amount: amount);
+          },
+          checkTopUp: (_) async => payment(),
+        ),
+        (value) => result = value);
+    expect(find.byType(ChoiceChip), findsNothing);
+    expect(
+        tester
+            .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Top-Up Now'))
+            .onPressed,
+        isNull);
+    await tester.enterText(
+        find.byKey(const ValueKey('top-up-amount')), '73.45');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Top-Up Now'));
     await tester.tap(find.text('Top-Up Now'));
     await tester.pumpAndSettle();
-    expect(selected, 50);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('viewing and closing the merchant QR never claims a demo credit',
-      (tester) async {
-    int? result;
-    await tester.pumpWidget(MaterialApp(
-        home: Builder(
-            builder: (context) => Scaffold(
-                body: TextButton(
-                    onPressed: () async {
-                      result = await Navigator.of(context)
-                          .push<int>(MaterialPageRoute(
-                        builder: (_) => const MerchantQrTopUpScreen(),
-                      ));
-                    },
-                    child: const Text('Open top-up'))))));
-    await tester.tap(find.text('Open top-up'));
+    expect(requested, 73.45);
+    expect(find.byType(MerchantQrCheckoutScreen), findsOneWidget);
+    expect(web.controller.loaded.host, 'todago-qrph.johnmejio11.chatgpt.site');
+    expect(web.controller.loaded.queryParameters.containsKey('amount'), false);
+    await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Proceed to Top Up'));
-    await tester.tap(find.text('Proceed to Top Up'));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('View full-size QR'));
-    await tester.tap(find.text('View full-size QR'));
-    await tester.pumpAndSettle();
-    expect(find.byType(InteractiveViewer), findsOneWidget);
-    await tester.pageBack();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Back to wallet'));
-    await tester.pumpAndSettle();
+    expect(find.text('Payment reference'), findsOneWidget);
+    expect(find.text('Pending payment confirmation'), findsOneWidget);
     expect(result, isNull);
-    expect((await DemoWalletStore.load('alice')).balance, 0);
-  });
-
-  testWidgets(
-      'returning to the QR preview or full-size view completes the demo only once',
-      (tester) async {
-    for (final fullSize in [false, true]) {
-      var completions = 0;
-      int? amount;
-      await tester.pumpWidget(MaterialApp(
-        key: ValueKey(fullSize),
-        home: Builder(
-            builder: (context) => Scaffold(
-                    body: TextButton(
-                  onPressed: () async {
-                    amount =
-                        await Navigator.of(context).push<int>(MaterialPageRoute(
-                      builder: (_) => const MerchantQrTopUpScreen(),
-                    ));
-                    if (amount != null) completions++;
-                  },
-                  child: const Text('Open top-up'),
-                ))),
-      ));
-      await tester.tap(find.text('Open top-up'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(ChoiceChip, '₱100'));
-      await tester.ensureVisible(find.text('Proceed to Top Up'));
-      await tester.tap(find.text('Proceed to Top Up'));
-      await tester.pumpAndSettle();
-      if (fullSize) {
-        await tester.ensureVisible(find.text('View full-size QR'));
-        await tester.tap(find.text('View full-size QR'));
-        await tester.pumpAndSettle();
-      }
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
-      expect(amount, 100);
-      expect(completions, 1);
-      expect(find.byType(MerchantQrTopUpScreen), findsNothing);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      await tester.pumpAndSettle();
-      expect(completions, 1);
-      expect(tester.takeException(), isNull);
-    }
-  });
-
-  testWidgets(
-      'selection, overlays and a disabled auto-finish switch do not credit on resume',
-      (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: MerchantQrTopUpScreen()));
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpAndSettle();
-    expect(find.byType(MerchantQrTopUpScreen), findsOneWidget);
-    await tester.ensureVisible(find.text('Proceed to Top Up'));
-    await tester.tap(find.text('Proceed to Top Up'));
-    await tester.pumpAndSettle();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpAndSettle();
-    expect(find.byType(MerchantQrTopUpScreen), findsOneWidget);
-    await tester.ensureVisible(find.byType(SwitchListTile));
-    await tester.tap(find.byType(SwitchListTile));
-    await tester.pumpAndSettle();
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-    await tester.pumpAndSettle();
-    expect(find.byType(MerchantQrTopUpScreen), findsOneWidget);
-    expect((await DemoWalletStore.load('alice')).balance, 0);
+    expect(find.textContaining('Preview credit'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('merchant QR and demo action fit a narrow phone', (tester) async {
+  testWidgets(
+      'submitting a reference stays pending; only server confirmation finishes',
+      (tester) async {
+    var confirmed = false;
+    String? result;
+    String? submitted;
+    await _open(
+        tester,
+        MerchantQrTopUpScreen(
+          transactionId: 'request-one',
+          loadConfiguration: () async => {'success': true, 'available': true},
+          checkTopUp: (_) async =>
+              payment(status: confirmed ? 'completed' : 'pending'),
+          submitReference: (id, reference) async {
+            submitted = reference;
+            return payment();
+          },
+        ),
+        (value) => result = value);
+    await tester.enterText(find.byType(TextField), 'INSTAPAY202611080001');
+    await tester.ensureVisible(find.text('Submit reference'));
+    await tester.tap(find.text('Submit reference'));
+    await tester.pumpAndSettle();
+    expect(submitted, 'INSTAPAY202611080001');
+    expect(result, isNull);
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(result, isNull);
+    confirmed = true;
+    await tester.tap(find.byTooltip('Check payment'));
+    await tester.pumpAndSettle();
+    expect(result, 'completed');
+  });
+
+  testWidgets(
+      'unconfigured server and failed creation cannot expose a payable QR',
+      (tester) async {
+    for (final available in [false, true]) {
+      await tester.pumpWidget(MaterialApp(
+          home: MerchantQrTopUpScreen(
+        key: ValueKey(available),
+        loadConfiguration: () async =>
+            {'success': true, 'available': available},
+        createTopUp: (_) async =>
+            {'success': false, 'message': 'Top-ups unavailable'},
+      )));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('top-up-amount')), '73.45');
+      await tester.pump();
+      await tester.ensureVisible(find.text('Top-Up Now'));
+      if (available) {
+        await tester.tap(find.text('Top-Up Now'));
+        await tester.pumpAndSettle();
+        expect(find.text('Top-ups unavailable'), findsOneWidget);
+      } else {
+        expect(
+            tester
+                .widget<FilledButton>(
+                    find.widgetWithText(FilledButton, 'Top-Up Now'))
+                .onPressed,
+            isNull);
+      }
+      expect(find.byType(MerchantQrCheckoutScreen), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  testWidgets('invalid custom amounts cannot start a top-up', (tester) async {
+    var created = 0;
+    await tester.pumpWidget(MaterialApp(
+        home: MerchantQrTopUpScreen(
+      loadConfiguration: () async => {'success': true, 'available': true},
+      createTopUp: (_) async {
+        created++;
+        return payment();
+      },
+    )));
+    await tester.pumpAndSettle();
+    for (final amount in ['', '0', '19.99', '50001']) {
+      await tester.enterText(
+          find.byKey(const ValueKey('top-up-amount')), amount);
+      await tester.pump();
+      expect(
+          tester
+              .widget<FilledButton>(
+                  find.widgetWithText(FilledButton, 'Top-Up Now'))
+              .onPressed,
+          isNull);
+    }
+    expect(created, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('Back and app resume do not finish an unpaid top-up',
+      (tester) async {
+    String? result;
+    await _open(
+        tester,
+        MerchantQrTopUpScreen(
+          loadConfiguration: () async => {'success': true, 'available': true},
+          createTopUp: (_) async => payment(),
+          checkTopUp: (_) async => payment(),
+        ),
+        (value) => result = value);
+    await tester.enterText(
+        find.byKey(const ValueKey('top-up-amount')), '73.45');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Top-Up Now'));
+    await tester.tap(find.text('Top-Up Now'));
+    await tester.pumpAndSettle();
+    for (final state in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed
+    ]) {
+      tester.binding.handleAppLifecycleStateChanged(state);
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(MerchantQrCheckoutScreen), findsOneWidget);
+    expect(result, isNull);
+    await tester.tap(find.byTooltip('Back to top-up'));
+    await tester.pumpAndSettle();
+    await web.controller.done();
+    await tester.pumpAndSettle();
+    expect(find.byType(MerchantQrTopUpScreen), findsOneWidget);
+    await tester.tap(find.text('Back to wallet'));
+    await tester.pumpAndSettle();
+    expect(result, 'pending');
+  });
+
+  testWidgets(
+      'wrong sessions, frames and external apps cannot finish the hosted QR page',
+      (tester) async {
+    await tester.pumpWidget(
+        const MaterialApp(home: MerchantQrCheckoutScreen(amount: 73.45)));
+    await tester.pumpAndSettle();
+    for (final uri in [
+      Uri.parse('gcash://pay'),
+      Uri.parse('https://example.com/'),
+      web.controller.completion.replace(query: 'session=old'),
+      web.controller.completion.replace(port: 444),
+      web.controller.completion
+          .replace(query: '${web.controller.completion.query}&amount=50000')
+    ]) {
+      expect(await web.controller.navigate(uri), NavigationDecision.prevent);
+    }
+    expect(
+        await web.controller
+            .navigate(web.controller.completion, mainFrame: false),
+        NavigationDecision.prevent);
+    expect(find.byType(MerchantQrCheckoutScreen), findsOneWidget);
+    web.controller.fail();
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Try again'));
+    await tester.pumpAndSettle();
+    expect(web.controller.loads, 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('custom amount and reference forms fit a narrow phone',
+      (tester) async {
     tester.view.physicalSize = const Size(320, 568);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(const MaterialApp(home: MerchantQrTopUpScreen()));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('Proceed to Top Up'));
-    await tester.tap(find.text('Proceed to Top Up'));
-    await tester.pumpAndSettle();
-    expect(find.text('Top-Up Now'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-    await tester.pumpWidget(const SizedBox());
+    for (final resumed in [false, true]) {
+      await tester.pumpWidget(MaterialApp(
+          home: MerchantQrTopUpScreen(
+        key: ValueKey(resumed),
+        transactionId: resumed ? 'request-one' : null,
+        loadConfiguration: () async => {'success': true, 'available': true},
+        checkTopUp: (_) async => payment(),
+      )));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(
+          find.text(resumed ? 'Submit reference' : 'Top-Up Now'));
+      expect(tester.takeException(), isNull);
+      expect(find.text('Back to wallet').hitTestable(), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    }
   });
+}
+
+Future<void> _open(WidgetTester tester, Widget screen,
+    void Function(String?) completed) async {
+  await tester.pumpWidget(MaterialApp(
+      home: Builder(
+          builder: (context) => Scaffold(
+                body: TextButton(
+                    onPressed: () async {
+                      completed(await Navigator.of(context).push<String>(
+                          MaterialPageRoute(builder: (_) => screen)));
+                    },
+                    child: const Text('Open top-up')),
+              ))));
+  await tester.tap(find.text('Open top-up'));
+  await tester.pumpAndSettle();
 }

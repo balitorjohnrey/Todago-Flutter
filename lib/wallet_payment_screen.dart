@@ -203,7 +203,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                 children: [
                   Text(_showLiveQr ? 'Scan QR Ph' : 'Top up wallet'),
                   if (_payment != null)
-                    Text(_testMode ? 'Sandbox' : 'Live payment',
+                    Text(_testMode ? 'Preview' : 'Live payment',
                         style: const TextStyle(
                             fontSize: 11, color: AppColors.primary)),
                 ]),
@@ -354,9 +354,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                             onPressed: _opening || !_hasAction
                                 ? null
                                 : () => _authorize(),
-                            child: Text(_testMode
-                                ? 'Continue to $_label test payment'
-                                : 'Continue to $_label')),
+                            child: Text('Continue to $_label')),
                         const SizedBox(height: 8),
                         Text(
                             _provider == 'gcash'

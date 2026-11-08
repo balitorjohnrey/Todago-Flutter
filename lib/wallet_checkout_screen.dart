@@ -153,12 +153,8 @@ class _WalletCheckoutScreenState extends State<WalletCheckoutScreen>
   Widget build(BuildContext context) => Scaffold(
         appBar: AppBar(
           title: Text(widget.providerAuthorization
-              ? widget.testMode
-                  ? '${widget.providerLabel} test payment'
-                  : 'Authorize with ${widget.providerLabel}'
-              : widget.testMode
-                  ? 'Top up • Test checkout'
-                  : 'Top up wallet'),
+              ? 'Authorize with ${widget.providerLabel}'
+              : 'Top up wallet'),
           leading: IconButton(
               tooltip: 'Back to wallet',
               icon: const Icon(Icons.close),

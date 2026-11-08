@@ -11,9 +11,11 @@ import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platf
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:todago/demo_wallet_store.dart';
+import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 import 'package:todago/merchant_qr_top_up_screen.dart';
 import 'package:todago/passenger_home_screen.dart';
+
+import 'support/fake_qr_webview.dart';
 
 class _NoMap extends MethodChannelGoogleMapsFlutter {
   @override
@@ -63,9 +65,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'Top-Up Now updates the actual passenger demo wallet without a payment request; refresh and reset preserve real funds',
+      'Done cannot add funds; only a confirmed server balance is shown and old local preview data is removed',
       (tester) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({
+      'todago_demo_wallet_v1_alice': jsonEncode({
+        'balanceCents': 999000,
+        'transactions': [
+          {'demo': true, 'title': 'Old preview'}
+        ]
+      })
+    });
+    WebViewPlatform.instance = FakeQrWebViewPlatform();
     await _prepareFonts();
     final previousMaps = GoogleMapsFlutterPlatform.instance;
     GoogleMapsFlutterPlatform.instance = _NoMap();
@@ -102,6 +112,8 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final requests = <http.Request>[];
+    var confirmed = false;
+    var hasReference = false;
     await http.runWithClient(() async {
       await tester.pumpWidget(const MaterialApp(home: PassengerHomeScreen()));
       await tester.pumpAndSettle();
@@ -112,41 +124,96 @@ void main() {
       await tester.tap(find.text('Top Up'));
       await tester.pumpAndSettle();
       expect(find.byType(MerchantQrTopUpScreen), findsOneWidget);
-      await tester.ensureVisible(find.text('Proceed to Top Up'));
-      await tester.tap(find.text('Proceed to Top Up'));
-      await tester.pumpAndSettle();
+      await tester.enterText(
+          find.byKey(const ValueKey('top-up-amount')), '73.45');
+      await tester.pump();
+      await tester.ensureVisible(find.text('Top-Up Now'));
       await tester.tap(find.text('Top-Up Now'));
       await tester.pumpAndSettle();
-      expect(find.text('Demo Wallet Balance'), findsOneWidget);
-      expect(find.text('₱20.00'), findsWidgets);
-      expect((await DemoWalletStore.load('alice')).balance, 20);
-      expect((await DemoWalletStore.load('bob')).balance, 0);
-      expect(requests.where((request) => request.method != 'GET'), isEmpty);
-      expect(
-          requests.where((request) =>
-              request.url.path.contains('payment-methods') ||
-              request.url.path.endsWith('/top-up')),
-          isEmpty);
-      await tester.pump(const Duration(seconds: 11));
+      await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      expect(find.text('Demo Wallet Balance'), findsOneWidget);
-      expect(find.text('₱20.00'), findsWidgets);
-      await tester.tap(find.text('Reset demo wallet'));
+      expect(find.text('Payment reference'), findsOneWidget);
+      expect(confirmed, false);
+      await tester.enterText(find.byType(TextField), 'INSTAPAY202611080001');
+      await tester.ensureVisible(find.text('Submit reference'));
+      await tester.tap(find.text('Submit reference'));
+      await tester.pumpAndSettle();
+      expect(find.text('Pending payment confirmation'), findsOneWidget);
+      await tester.tap(find.text('Back to wallet'));
+      await tester.pumpAndSettle();
+      expect(find.text('₱75.00'), findsWidgets);
+      await tester.ensureVisible(find.text('QR Ph Top-up'));
+      await tester.tap(find.text('QR Ph Top-up'));
+      await tester.pumpAndSettle();
+      expect(find.text('Payment reference'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          'INSTAPAY202611080001');
+      confirmed = true;
+      await tester.tap(find.byTooltip('Check payment'));
       await tester.pumpAndSettle();
       expect(find.text('TodaGo Wallet Balance'), findsOneWidget);
-      expect(find.text('₱75.00'), findsWidgets);
-      expect((await DemoWalletStore.load('alice')).active, isFalse);
+      expect(find.text('₱148.45'), findsWidgets);
+      expect(find.text('Reset preview balance'), findsNothing);
+      expect(
+          (await SharedPreferences.getInstance())
+              .containsKey('todago_demo_wallet_v1_alice'),
+          false);
+      expect(
+          requests.where((request) =>
+              request.url.host != 'todago-backend-production.up.railway.app'),
+          isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },
         () => MockClient((request) async {
               requests.add(request);
+              if (request.url.path.contains('/in-store-qr/')) {
+                if (request.method == 'POST' &&
+                    request.url.path.endsWith('/reference')) {
+                  hasReference = true;
+                }
+                return http.Response(
+                    jsonEncode(request.url.path.endsWith('/configuration')
+                        ? {'success': true, 'available': true}
+                        : {
+                            'success': true,
+                            'testMode': false,
+                            'transactionId': 'request-one',
+                            'status': confirmed ? 'completed' : 'pending',
+                            'payment': {
+                              'kind': 'merchant_qr',
+                              'amount': 73.45,
+                              'provider': 'qrph',
+                              'reference':
+                                  hasReference ? 'INSTAPAY202611080001' : null,
+                            }
+                          }),
+                    200,
+                    headers: {'content-type': 'application/json'});
+              }
               return http.Response(
                   jsonEncode({
                     'success': true,
                     'user': user,
                     'trips': [],
-                    'wallet': {'balance': 75, 'transactions': [], 'stats': {}},
+                    'wallet': {
+                      'balance': confirmed ? 148.45 : 75,
+                      'transactions': [
+                        {
+                          'id': 'request-one',
+                          'type': 'topup',
+                          'provider': 'qrph',
+                          'status': confirmed ? 'completed' : 'pending',
+                          'title': 'QR Ph Top-up',
+                          'subtitle': 'Awaiting payment confirmation',
+                          'amount': 73.45,
+                          'native_checkout': true,
+                          'merchant_checkout': true,
+                          'occurred_at': '2026-11-08T12:00:00Z',
+                        }
+                      ],
+                      'stats': {}
+                    },
                   }),
                   200,
                   headers: {'content-type': 'application/json'});

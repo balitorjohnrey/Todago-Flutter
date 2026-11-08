@@ -28,7 +28,7 @@ import 'wallet_checkout_screen.dart';
 import 'wallet_payment_screen.dart';
 import 'wallet_return_links.dart';
 import 'merchant_qr_top_up_screen.dart';
-import 'demo_wallet_store.dart';
+import 'wallet_migration.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
   const PassengerHomeScreen({super.key});
@@ -64,17 +64,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   int _walletTrips = 0;
   bool _loadingWallet = false;
   bool _showingMerchantQr = false;
-  DemoWalletSnapshot _demoWallet = const DemoWalletSnapshot();
   StreamSubscription<Uri>? _walletReturnSubscription;
   Timer? _walletTimer;
   List<Map<String, dynamic>> _transactions = [];
 
   double get _balance => _walletBalance;
-  double get _displayedWalletBalance =>
-      _demoWallet.active ? _demoWallet.balance : _walletBalance;
-  List<Map<String, dynamic>> get _displayedTransactions => _demoWallet.active
-      ? _demoWallet.transactions.map(_normalizeWalletTransaction).toList()
-      : _transactions;
+  double get _displayedWalletBalance => _walletBalance;
+  List<Map<String, dynamic>> get _displayedTransactions => _transactions;
 
   List<Map<String, dynamic>> get _filteredTx {
     if (_walletTab == 1) {
@@ -114,20 +110,15 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
 
   Future<void> _loadUser() async {
     final user = await AuthService.fetchProfile();
-    final passengerId = user?['id']?.toString();
-    DemoWalletSnapshot demo = const DemoWalletSnapshot();
-    if (passengerId != null && passengerId.isNotEmpty) {
-      try {
-        demo = await DemoWalletStore.load(passengerId);
-      } catch (_) {
-        // An unavailable local demo store must not hide a real account.
-      }
+    try {
+      await WalletMigration.clearLocalPreviewBalances();
+    } catch (_) {
+      // A local cleanup failure cannot replace or hide the confirmed balance.
     }
     final serverPhoto = _profilePhotoSource(user);
     if (mounted) {
       setState(() {
         _user = user;
-        _demoWallet = demo;
         if (serverPhoto != null) _passengerPhotoPath = serverPhoto;
       });
     }
@@ -495,9 +486,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
       'id': raw['id'],
       'checkout_url': raw['checkout_url'],
       'native_checkout': raw['native_checkout'] == true,
+      'merchant_checkout': raw['merchant_checkout'] == true,
       'type': type,
       'status': status,
-      'demo': raw['demo'] == true,
       'title': raw['title']?.toString() ?? 'Wallet transaction',
       'subtitle': status != 'completed'
           ? '$subtitle · ${status[0].toUpperCase()}${status.substring(1)}'
@@ -1479,10 +1470,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                             fontWeight: FontWeight.w800,
                             color: Colors.white)),
                     const SizedBox(height: 24),
-                    Text(
-                        _demoWallet.active
-                            ? 'Demo Wallet Balance'
-                            : 'TodaGo Wallet Balance',
+                    Text('TodaGo Wallet Balance',
                         style: GoogleFonts.poppins(
                             fontSize: 12,
                             color: Colors.white54,
@@ -1520,16 +1508,6 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                             ),
                           ),
                         ]),
-                    if (_demoWallet.active) ...[
-                      const SizedBox(height: 8),
-                      Text('Demo funds · no cash value',
-                          style: GoogleFonts.poppins(
-                              color: AppColors.primary, fontSize: 12)),
-                      TextButton(
-                        onPressed: _resetDemoWallet,
-                        child: const Text('Reset demo wallet'),
-                      ),
-                    ],
                     const SizedBox(height: 24),
                     Row(children: [
                       _walletActionBtn(Icons.add_rounded, 'Top Up',
@@ -1539,17 +1517,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                       _walletActionBtn(Icons.arrow_upward_rounded, 'Cash Out',
                           Colors.white.withOpacity(0.12), Colors.white,
                           onTap: () => _showSnack(
-                              _demoWallet.active
-                                  ? 'Demo funds cannot be cashed out.'
-                                  : 'Cash out requires a live payout provider.',
+                              'Cash out requires a live payout provider.',
                               AppColors.error)),
                       const SizedBox(width: 12),
                       _walletActionBtn(Icons.send_rounded, 'Send',
                           Colors.white.withOpacity(0.12), Colors.white,
                           onTap: () => _showSnack(
-                              _demoWallet.active
-                                  ? 'Demo funds cannot be transferred.'
-                                  : 'Send requires a live recipient wallet.',
+                              'Send requires a live recipient wallet.',
                               AppColors.error)),
                     ]),
                   ]),
@@ -1564,18 +1538,12 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             borderRadius: BorderRadius.circular(18),
             border: Border.all(color: const Color(0xFFEEEEEE))),
         child: Row(children: [
-          _wStat(
-              'Total Spent',
-              _formatPeso(_demoWallet.active ? 0 : _walletTotalSpent,
-                  decimals: 0),
+          _wStat('Total Spent', _formatPeso(_walletTotalSpent, decimals: 0),
               Icons.payments_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat('Trips', '${_demoWallet.active ? 0 : _walletTrips}',
-              Icons.electric_rickshaw_rounded),
+          _wStat('Trips', '$_walletTrips', Icons.electric_rickshaw_rounded),
           Container(width: 1, height: 44, color: const Color(0xFFF0F0F0)),
-          _wStat(
-              'Rewards',
-              _formatPeso(_demoWallet.active ? 0 : _walletRewards, decimals: 0),
+          _wStat('Rewards', _formatPeso(_walletRewards, decimals: 0),
               Icons.card_giftcard_rounded,
               color: AppColors.success),
         ]),
@@ -1584,10 +1552,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-              _demoWallet.active
-                  ? 'Demo Transaction History'
-                  : 'Transaction History',
+          Text('Transaction History',
               style: GoogleFonts.poppins(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
@@ -1602,7 +1567,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           ]),
         ]),
       )),
-      if (_loadingWallet && !_demoWallet.active && _transactions.isEmpty)
+      if (_loadingWallet && _transactions.isEmpty)
         const SliverToBoxAdapter(
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 28),
@@ -1681,7 +1646,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
   Widget _txCard(Map<String, dynamic> t) {
     final amount = t['amount'] as double;
     final isPos = amount > 0;
-    final isSettled = t['status'] == 'completed' || t['demo'] == true;
+    final isSettled = t['status'] == 'completed';
     final canResume = t['type'] == 'topup' &&
         t['status'] == 'pending' &&
         (t['checkout_url'] != null || t['native_checkout'] == true) &&
@@ -1698,9 +1663,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             : AppColors.backgroundDark;
     return InkWell(
         onTap: canResume
-            ? () => _openWalletCheckout(
-                t['checkout_url']?.toString(), t['id'].toString(),
-                native: t['native_checkout'] == true)
+            ? t['merchant_checkout'] == true
+                ? () => _showMerchantQrTopUp(transactionId: t['id'].toString())
+                : () => _openWalletCheckout(
+                    t['checkout_url']?.toString(), t['id'].toString(),
+                    native: t['native_checkout'] == true)
             : null,
         borderRadius: BorderRadius.circular(14),
         child: Container(
@@ -1776,33 +1743,24 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
         ),
       );
 
-  Future<void> _showMerchantQrTopUp() async {
+  Future<void> _showMerchantQrTopUp({String? transactionId}) async {
     if (_showingMerchantQr) return;
+    final passengerId = _user?['id']?.toString();
+    if (passengerId == null || passengerId.isEmpty) {
+      _showSnack('Please sign in before topping up.', AppColors.error);
+      return;
+    }
     setState(() => _showingMerchantQr = true);
     try {
-      final amount = await Navigator.of(context).push<int>(MaterialPageRoute(
-        builder: (_) => const MerchantQrTopUpScreen(),
+      final status = await Navigator.of(context).push<String>(MaterialPageRoute(
+        builder: (_) => MerchantQrTopUpScreen(transactionId: transactionId),
       ));
-      if (amount != null && mounted) {
-        final passengerId = _user?['id']?.toString();
-        if (passengerId == null || passengerId.isEmpty) {
-          _showSnack(
-              'Please sign in before adding demo funds.', AppColors.error);
-          return;
-        }
-        try {
-          final snapshot = await DemoWalletStore.topUp(passengerId, amount);
-          if (!mounted || _user?['id']?.toString() != passengerId) return;
-          setState(() {
-            _demoWallet = snapshot;
-            _walletTab = 0;
-          });
-          _showSnack('Demo top-up added: ${_formatPeso(amount.toDouble())}',
-              AppColors.success);
-        } catch (_) {
-          _showSnack('Unable to save the demo top-up. Please try again.',
-              AppColors.error);
-        }
+      if (status == 'completed' &&
+          mounted &&
+          _user?['id']?.toString() == passengerId) {
+        setState(() => _walletTab = 0);
+        _showSnack('Payment confirmed. Your wallet has been updated.',
+            AppColors.success);
       }
     } finally {
       if (mounted) {
@@ -1810,24 +1768,8 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           _showingMerchantQr = false;
           _selectedTab = 2;
         });
-        // Refresh the confirmed balance separately. Demo funds never enter the
-        // backend ledger, trip payments, transfers or cash-outs.
         await _loadWallet(silent: true);
       }
-    }
-  }
-
-  Future<void> _resetDemoWallet() async {
-    final passengerId = _user?['id']?.toString();
-    if (passengerId == null || passengerId.isEmpty) return;
-    try {
-      await DemoWalletStore.reset(passengerId);
-      if (!mounted || _user?['id']?.toString() != passengerId) return;
-      setState(() => _demoWallet = const DemoWalletSnapshot());
-      _showSnack('Demo wallet reset.', AppColors.textHint);
-    } catch (_) {
-      _showSnack('Unable to reset the demo wallet. Please try again.',
-          AppColors.error);
     }
   }
 

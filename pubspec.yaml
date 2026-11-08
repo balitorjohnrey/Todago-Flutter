@@ -2,7 +2,7 @@ name: todago
 description: TodaGo - Premium Tricycle Hailing App
 
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+3
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -40,6 +40,7 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^3.0.0
   google_maps_flutter_platform_interface: ^2.15.0
+  webview_flutter_platform_interface: ^2.14.0
 
 flutter:
   uses-material-design: true

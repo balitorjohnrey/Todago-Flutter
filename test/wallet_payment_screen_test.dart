@@ -75,7 +75,7 @@ void main() {
       checkPayment: (_) async => {'success': true, 'status': 'pending'},
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Sandbox'), findsOneWidget);
+    expect(find.text('Preview'), findsOneWidget);
     expect(find.text('TEST PAYMENT'), findsNothing);
     expect(find.byIcon(Icons.science_outlined), findsNothing);
     expect(find.text('You are about to top up ₱100.00 to your TodaGo wallet.'),
@@ -145,7 +145,7 @@ void main() {
       checkPayment: (_) async => {'success': true, 'status': 'pending'},
     )));
     await tester.pumpAndSettle();
-    expect(find.text('Sandbox'), findsOneWidget);
+    expect(find.text('Preview'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
     expect(find.text('Pay using QR Ph'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -174,7 +174,7 @@ void main() {
     expect(find.byType(PaymentMethodLogo), findsNWidgets(2));
     expect(find.byType(Image), findsNWidgets(4));
     expect(find.text('TEST PAYMENT'), findsNothing);
-    expect(find.text('Sandbox'), findsNothing);
+    expect(find.text('Preview'), findsNothing);
     expect(find.text('Proceed to Top Up'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('Back to top-up'));
@@ -302,7 +302,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(result, isNull);
       expect(
-          find.text(payment['testMode'] == true ? 'Sandbox' : 'Live payment'),
+          find.text(payment['testMode'] == true ? 'Preview' : 'Live payment'),
           findsOneWidget);
       confirmed = true;
       await tester.tap(find.byTooltip('Check payment'));

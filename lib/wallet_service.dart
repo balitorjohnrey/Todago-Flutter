@@ -102,6 +102,38 @@ class WalletService {
     return _getPaymentData('payment-methods');
   }
 
+  static Future<Map<String, dynamic>> getMerchantQrConfiguration() =>
+      _getPaymentData('in-store-qr/configuration');
+
+  static Future<Map<String, dynamic>> createMerchantQrTopUp(double amount) =>
+      _postPaymentData('in-store-qr/top-ups', {'amount': amount});
+
+  static Future<Map<String, dynamic>> submitMerchantQrReference(
+          String id, String reference) =>
+      _postPaymentData(
+          'in-store-qr/top-ups/${Uri.encodeComponent(id)}/reference',
+          {'reference': reference});
+
+  static Future<Map<String, dynamic>> checkMerchantQrTopUp(String id) =>
+      _getPaymentData('in-store-qr/top-ups/${Uri.encodeComponent(id)}');
+
+  static Future<Map<String, dynamic>> _postPaymentData(
+      String path, Map<String, dynamic> body) async {
+    try {
+      final token = await _getPassengerToken();
+      final response = await http
+          .post(Uri.parse('$_baseUrl/$path'),
+              headers: _headers(token), body: jsonEncode(body))
+          .timeout(const Duration(seconds: 20));
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (_) {
+      return {
+        'success': false,
+        'message': 'Unable to connect. Please try again.'
+      };
+    }
+  }
+
   static Future<Map<String, dynamic>> checkTopUp(String transactionId) async {
     return _getPaymentData('top-ups/${Uri.encodeComponent(transactionId)}');
   }
