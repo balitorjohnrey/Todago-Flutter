@@ -83,19 +83,31 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
     Navigator.of(context).pop(status);
   }
 
-  Future<void> _authorize({bool simulator = false}) async {
-    if (_opening) return;
-    final raw =
-        _payment?[simulator ? 'testUrl' : 'authorizationUrl']?.toString();
+  Uri? get _testAuthorizationUri {
+    final raw = _payment?['testUrl']?.toString();
     final uri = raw == null ? null : Uri.tryParse(raw);
     if (uri?.scheme != 'https' ||
         uri!.host.isEmpty ||
         uri.userInfo.isNotEmpty ||
-        (simulator &&
-            !(uri.host == 'paymongo.com' ||
-                uri.host.endsWith('.paymongo.com')))) {
-      setState(() => _error = simulator
-          ? 'The test simulator is not available for this payment yet. Refresh or create a new test top-up.'
+        !(uri.host == 'paymongo.com' || uri.host.endsWith('.paymongo.com'))) {
+      return null;
+    }
+    return uri;
+  }
+
+  Future<void> _authorize({bool testPayment = false}) async {
+    if (_opening) return;
+    final raw = _payment?['authorizationUrl']?.toString();
+    final uri = testPayment
+        ? _testAuthorizationUri
+        : raw == null
+            ? null
+            : Uri.tryParse(raw);
+    if (uri?.scheme != 'https' ||
+        uri!.host.isEmpty ||
+        uri.userInfo.isNotEmpty) {
+      setState(() => _error = testPayment
+          ? 'Test authorization is unavailable. Refresh or start a new test top-up.'
           : 'The authorization page is unavailable. Refresh or create a new top-up.');
       return;
     }
@@ -106,7 +118,7 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
           transactionId: widget.transactionId,
           testMode: _testMode,
           providerAuthorization: true,
-          providerLabel: simulator ? 'test simulator' : _label),
+          providerLabel: _label),
     ));
     if (!mounted) return;
     setState(() => _opening = false);
@@ -124,7 +136,8 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
         'qrph' => 'QR Ph',
         _ => 'payment provider'
       };
-  bool get _testMode => _payment?['testMode'] == true;
+  // Only an explicitly live response may expose a payable QR code.
+  bool get _testMode => _payment?['testMode'] != false;
   bool get _hasAction => _payment?['status'] == 'awaiting_next_action';
 
   Widget _qrImage(String source) {
@@ -184,9 +197,12 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                     children: [
                       Image.asset('assets/logo.png', height: 64),
                       const SizedBox(height: 16),
-                      const Text('TodaGo wallet top-up',
+                      Text(
+                          _provider == 'qrph'
+                              ? 'QR Ph'
+                              : 'TodaGo wallet top-up',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                               fontSize: 22, fontWeight: FontWeight.w700)),
                       const SizedBox(height: 12),
                       if (_payment != null)
@@ -210,24 +226,36 @@ class _WalletPaymentScreenState extends State<WalletPaymentScreen>
                             style: TextStyle(fontWeight: FontWeight.w800)),
                         const SizedBox(height: 8),
                         const Text(
-                            'Use the simulator to test payment. Do not send real money or pay a QR code.',
+                            'Authorize a test payment with PayMongo. Do not scan or pay a QR code with real money.',
                             textAlign: TextAlign.center),
                         if (_provider == 'qrph') ...[
                           const SizedBox(height: 20),
-                          FilledButton(
-                              onPressed:
-                                  _opening || _payment?['testUrl'] == null
-                                      ? null
-                                      : () => _authorize(simulator: true),
-                              child: const Text('Open test simulator')),
-                          if (_payment?['testUrl'] == null)
+                          FilledButton.icon(
+                              onPressed: _opening ||
+                                      !_hasAction ||
+                                      _testAuthorizationUri == null
+                                  ? null
+                                  : () => _authorize(testPayment: true),
+                              icon: _opening
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Icon(Icons.arrow_forward),
+                              label: const Text('Proceed to Top Up')),
+                          if (!_hasAction)
                             const Text(
-                                'Simulator link unavailable. Refresh to check again.',
+                                'This test payment is no longer available. Start a new top-up.',
+                                textAlign: TextAlign.center)
+                          else if (_testAuthorizationUri == null)
+                            const Text(
+                                'Test authorization is unavailable. Refresh to check again.',
                                 textAlign: TextAlign.center),
                         ],
                         const SizedBox(height: 20),
                       ],
-                      if (_provider == 'qrph') ...[
+                      if (_provider == 'qrph' && !_testMode) ...[
                         const QrPhWallets(),
                         const SizedBox(height: 16),
                       ],
