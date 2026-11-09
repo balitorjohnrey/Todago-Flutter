@@ -18,6 +18,9 @@ import 'reservation_notification_service.dart';
 import 'report_issue_dialog.dart';
 import 'driver_trip_history_screen.dart';
 import 'driver_wallet_screen.dart';
+import 'trip_analytics_chart.dart';
+
+enum _DriverSettingsAction { profile, history, help, logout }
 
 class DriverDashboardScreen extends StatefulWidget {
   const DriverDashboardScreen({super.key});
@@ -336,6 +339,80 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     );
   }
 
+  Future<void> _openSettings() async {
+    final action = await showModalBottomSheet<_DriverSettingsAction>(
+      context: context,
+      backgroundColor: const Color(0xFF252540),
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 12),
+            child: Text('Driver Settings',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white)),
+          ),
+          for (final entry in const [
+            (
+              _DriverSettingsAction.profile,
+              Icons.person_outline,
+              'Account profile'
+            ),
+            (
+              _DriverSettingsAction.history,
+              Icons.history_rounded,
+              'Trip history'
+            ),
+            (_DriverSettingsAction.help, Icons.help_outline, 'FAQ and support'),
+            (_DriverSettingsAction.logout, Icons.logout_rounded, 'Log out'),
+          ])
+            ListTile(
+              leading: Icon(entry.$2,
+                  color: entry.$1 == _DriverSettingsAction.logout
+                      ? AppColors.error
+                      : AppColors.primary),
+              title:
+                  Text(entry.$3, style: const TextStyle(color: Colors.white)),
+              onTap: () => Navigator.of(sheetContext).pop(entry.$1),
+            ),
+          const SizedBox(height: 12),
+        ]),
+      ),
+    );
+    if (!mounted) return;
+    switch (action) {
+      case _DriverSettingsAction.profile:
+        _openProfile();
+      case _DriverSettingsAction.history:
+        Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const DriverTripHistoryScreen()));
+      case _DriverSettingsAction.help:
+        _openChat();
+      case _DriverSettingsAction.logout:
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Log out?'),
+            content: const Text(
+                'You will go offline and return to the welcome screen.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Cancel')),
+              TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Log out')),
+            ],
+          ),
+        );
+        if (confirmed == true && mounted) await _logout();
+      case null:
+        break;
+    }
+  }
+
   void _snack(String msg, Color color) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -419,11 +496,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  String _money(dynamic value) {
-    final amount = _asDouble(value);
-    return 'PHP ${amount.toStringAsFixed(0)}';
-  }
-
   // ════════════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════════════
@@ -477,299 +549,322 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       ),
 
       body: SafeArea(
-        child: Column(children: [
-          // ── Top bar ───────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-            child: Row(children: [
-              _iconBox(Icons.person_rounded, _openProfile),
-              const Spacer(),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: (_isOnline ? Colors.green : Colors.grey)
-                      .withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _isOnline ? Colors.green : Colors.grey,
-                    width: 1.5,
-                  ),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: _isOnline ? Colors.green : Colors.grey,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                      _isSuspended
-                          ? 'SUSPENDED'
-                          : (_isOnline ? 'ONLINE' : 'OFFLINE'),
-                      style: GoogleFonts.poppins(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: _isOnline ? Colors.green : Colors.grey)),
-                ]),
-              ),
-              const Spacer(),
-              _iconBox(Icons.report_problem_outlined, _openReportIssue),
-              const SizedBox(width: 8),
-              _iconBox(
-                  Icons.account_balance_wallet_outlined,
-                  () => Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const DriverWalletScreen()))),
-              const SizedBox(width: 8),
-              _iconBox(Icons.settings_outlined, _logout),
-            ]).animate().fadeIn(duration: 400.ms),
-          ),
-
-          const SizedBox(height: 16),
-
-          // ── Stats bar ─────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF252540),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(children: [
-                _statItem(
-                  "Today's Earnings",
-                  'PHP ${_earningsToday.toStringAsFixed(2)}',
-                  _tripsToday > 0 ? '$_tripsToday trips today' : 'No trips yet',
-                  Icons.attach_money_rounded,
-                ),
-                Container(width: 1, height: 40, color: Colors.white12),
-                _statItem(
-                  'Trips Today',
-                  '$_tripsToday',
-                  _avgRating > 0
-                      ? '${_avgRating.toStringAsFixed(1)} ⭐'
-                      : '$_totalTrips total trips',
-                  Icons.trending_up_rounded,
-                ),
-              ]),
-            ),
-          ).animate().fadeIn(delay: 100.ms),
-
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const DriverTripHistoryScreen())),
-            icon: const Icon(Icons.history_rounded, color: Colors.white70),
-            label: const Text('Past Trips · Ratings & Reports',
-                style: TextStyle(color: Colors.white70)),
-          ),
-
-          if (_isSuspended)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              child: Text(
-                'Ride suspension ends ${DateTime.parse(_rideRestriction!['restrictedUntil'].toString()).toLocal().toString().split('.').first}. You cannot accept new rides until then.',
-                style:
-                    const TextStyle(color: Colors.orangeAccent, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-            ),
-
-          // ── GO ONLINE button ──────────────────────────────────────────────
-          Expanded(
-            child: Center(
-              child: GestureDetector(
-                onTap: _isUpdating ? null : _toggleOnline,
-                child: AnimatedBuilder(
-                  animation: _pulse,
-                  builder: (_, __) => Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      // Pulse ring when online
-                      if (_isOnline)
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 300),
-                          width: 220 + (_pulse.value * 30),
-                          height: 220 + (_pulse.value * 30),
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.green
-                                .withValues(alpha: 0.07 * (1 - _pulse.value)),
-                          ),
-                        ),
-                      // Main circle
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 400),
-                        width: 210,
-                        height: 210,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _isOnline ? Colors.green : AppColors.primary,
-                          boxShadow: [
-                            BoxShadow(
-                              color:
-                                  (_isOnline ? Colors.green : AppColors.primary)
-                                      .withValues(alpha: 0.4),
-                              blurRadius: 40,
-                              spreadRadius: 8,
-                            )
-                          ],
-                        ),
-                        child: _isUpdating
-                            ? const Center(
-                                child: SizedBox(
-                                width: 36,
-                                height: 36,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 3, color: Colors.white),
-                              ))
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (!_isOnline)
-                                    const Icon(Icons.location_on_rounded,
-                                        color: AppColors.backgroundDark,
-                                        size: 40)
-                                  else
-                                    SizedBox(
-                                      width: 46,
-                                      height: 46,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 3,
-                                        color:
-                                            Colors.white.withValues(alpha: 0.7),
-                                        strokeCap: StrokeCap.round,
-                                      ),
-                                    ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    _isOnline ? 'ONLINE' : 'GO ONLINE',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 22,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: 1,
-                                      color: _isOnline
-                                          ? Colors.white
-                                          : AppColors.backgroundDark,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _isOnline
-                                        ? 'Waiting for rides...'
-                                        : 'Tap to start accepting rides',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 11,
-                                      color: _isOnline
-                                          ? Colors.white70
-                                          : AppColors.backgroundDark
-                                              .withValues(alpha: 0.7),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ).animate().fadeIn(delay: 200.ms).scale(
-              begin: const Offset(0.85, 0.85),
-              end: const Offset(1, 1),
-              duration: 600.ms,
-              curve: Curves.elasticOut),
-
-          // ── Driver info card ──────────────────────────────────────────────
-          Container(
-            margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF252540),
-              borderRadius: BorderRadius.circular(20),
-            ),
+        child: CustomScrollView(slivers: [
+          SliverFillRemaining(
+            hasScrollBody: false,
             child: Column(children: [
-              Row(children: [
-                ProfileAvatar(
-                  initials: _initials,
-                  imagePath: _driverPhotoPath,
-                  size: 46,
-                  backgroundColor: AppColors.primary.withValues(alpha: 0.15),
-                  foregroundColor: AppColors.primary,
-                  onTap: _openProfile,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(_driverName,
-                            style: GoogleFonts.poppins(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white)),
-                        Row(children: [
-                          if (_avgRating > 0) ...[
-                            const Icon(Icons.star_rounded,
-                                color: AppColors.primary, size: 14),
-                            const SizedBox(width: 2),
-                            Text(_avgRating.toStringAsFixed(1),
-                                style: GoogleFonts.poppins(
-                                    fontSize: 12, color: Colors.white70)),
-                            const SizedBox(width: 6),
-                          ],
-                          Text('· $_todaBody',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 12, color: Colors.white38)),
-                        ]),
-                      ]),
-                ),
-
-                // ── FAQ help chip ──────────────────────────────────────────
-                GestureDetector(
-                  onTap: _openChat,
-                  child: Container(
+              // ── Top bar ───────────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                child: Row(children: [
+                  _iconBox(Icons.person_rounded, _openProfile),
+                  const Spacer(),
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 300),
                     padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(10),
+                      color: (_isOnline ? Colors.green : Colors.grey)
+                          .withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(20),
                       border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.3)),
+                        color: _isOnline ? Colors.green : Colors.grey,
+                        width: 1.5,
+                      ),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.question_answer_rounded,
-                          color: AppColors.primary, size: 14),
-                      const SizedBox(width: 4),
-                      Text('FAQ Help',
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: _isOnline ? Colors.green : Colors.grey,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                          _isSuspended
+                              ? 'SUSPENDED'
+                              : (_isOnline ? 'ONLINE' : 'OFFLINE'),
                           style: GoogleFonts.poppins(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
+                              color: _isOnline ? Colors.green : Colors.grey)),
                     ]),
                   ),
-                ),
-              ]),
+                  const Spacer(),
+                  _iconBox(Icons.report_problem_outlined, _openReportIssue),
+                  const SizedBox(width: 8),
+                  _iconBox(
+                      Icons.account_balance_wallet_outlined,
+                      () => Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => const DriverWalletScreen()))),
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: 'Driver settings',
+                    child: _iconBox(Icons.settings_outlined, _openSettings),
+                  ),
+                ]).animate().fadeIn(duration: 400.ms),
+              ),
+
               const SizedBox(height: 16),
-              Row(children: [
-                _bottomStat('Online Time', _formatDuration(_onlineSecondsToday),
-                    Icons.access_time_rounded),
-                _bottomStat('Trips Today', '$_tripsToday', Icons.route_rounded),
-                _bottomStat(
-                    'Earnings',
-                    'PHP ${_earningsToday.toStringAsFixed(0)}',
-                    Icons.attach_money_rounded),
-              ]),
-              const SizedBox(height: 14),
-              Container(height: 1, color: Colors.white10),
-              const SizedBox(height: 12),
-              _peakHoursSummary(),
+
+              // ── Stats bar ─────────────────────────────────────────────────────
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF252540),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(children: [
+                    _statItem(
+                      "Today's Earnings",
+                      'PHP ${_earningsToday.toStringAsFixed(2)}',
+                      _tripsToday > 0
+                          ? '$_tripsToday trips today'
+                          : 'No trips yet',
+                      Icons.attach_money_rounded,
+                    ),
+                    Container(width: 1, height: 40, color: Colors.white12),
+                    _statItem(
+                      'Trips Today',
+                      '$_tripsToday',
+                      _avgRating > 0
+                          ? '${_avgRating.toStringAsFixed(1)} ⭐'
+                          : '$_totalTrips total trips',
+                      Icons.trending_up_rounded,
+                    ),
+                  ]),
+                ),
+              ).animate().fadeIn(delay: 100.ms),
+
+              TextButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => const DriverTripHistoryScreen())),
+                icon: const Icon(Icons.history_rounded, color: Colors.white70),
+                label: const Text('Past Trips · Ratings & Reports',
+                    style: TextStyle(color: Colors.white70)),
+              ),
+
+              if (_isSuspended)
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+                  child: Text(
+                    'Ride suspension ends ${DateTime.parse(_rideRestriction!['restrictedUntil'].toString()).toLocal().toString().split('.').first}. You cannot accept new rides until then.',
+                    style: const TextStyle(
+                        color: Colors.orangeAccent, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+
+              // ── GO ONLINE button ──────────────────────────────────────────────
+              Expanded(
+                child: Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: GestureDetector(
+                      onTap: _isUpdating ? null : _toggleOnline,
+                      child: AnimatedBuilder(
+                        animation: _pulse,
+                        builder: (_, __) => Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Pulse ring when online
+                            if (_isOnline)
+                              AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                width: 220 + (_pulse.value * 30),
+                                height: 220 + (_pulse.value * 30),
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.green.withValues(
+                                      alpha: 0.07 * (1 - _pulse.value)),
+                                ),
+                              ),
+                            // Main circle
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 400),
+                              width: 210,
+                              height: 210,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _isOnline
+                                    ? Colors.green
+                                    : AppColors.primary,
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: (_isOnline
+                                            ? Colors.green
+                                            : AppColors.primary)
+                                        .withValues(alpha: 0.4),
+                                    blurRadius: 40,
+                                    spreadRadius: 8,
+                                  )
+                                ],
+                              ),
+                              child: _isUpdating
+                                  ? const Center(
+                                      child: SizedBox(
+                                      width: 36,
+                                      height: 36,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 3, color: Colors.white),
+                                    ))
+                                  : Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        if (!_isOnline)
+                                          const Icon(Icons.location_on_rounded,
+                                              color: AppColors.backgroundDark,
+                                              size: 40)
+                                        else
+                                          SizedBox(
+                                            width: 46,
+                                            height: 46,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 3,
+                                              color: Colors.white
+                                                  .withValues(alpha: 0.7),
+                                              strokeCap: StrokeCap.round,
+                                            ),
+                                          ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          _isOnline ? 'ONLINE' : 'GO ONLINE',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 22,
+                                            fontWeight: FontWeight.w900,
+                                            letterSpacing: 1,
+                                            color: _isOnline
+                                                ? Colors.white
+                                                : AppColors.backgroundDark,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          _isOnline
+                                              ? 'Waiting for rides...'
+                                              : 'Tap to start accepting rides',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 11,
+                                            color: _isOnline
+                                                ? Colors.white70
+                                                : AppColors.backgroundDark
+                                                    .withValues(alpha: 0.7),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ).animate().fadeIn(delay: 200.ms).scale(
+                  begin: const Offset(0.85, 0.85),
+                  end: const Offset(1, 1),
+                  duration: 600.ms,
+                  curve: Curves.elasticOut),
+
+              // ── Driver info card ──────────────────────────────────────────────
+              Container(
+                margin: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF252540),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Column(children: [
+                  Row(children: [
+                    ProfileAvatar(
+                      initials: _initials,
+                      imagePath: _driverPhotoPath,
+                      size: 46,
+                      backgroundColor:
+                          AppColors.primary.withValues(alpha: 0.15),
+                      foregroundColor: AppColors.primary,
+                      onTap: _openProfile,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_driverName,
+                                style: GoogleFonts.poppins(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white)),
+                            Row(children: [
+                              if (_avgRating > 0) ...[
+                                const Icon(Icons.star_rounded,
+                                    color: AppColors.primary, size: 14),
+                                const SizedBox(width: 2),
+                                Text(_avgRating.toStringAsFixed(1),
+                                    style: GoogleFonts.poppins(
+                                        fontSize: 12, color: Colors.white70)),
+                                const SizedBox(width: 6),
+                              ],
+                              Text('· $_todaBody',
+                                  style: GoogleFonts.poppins(
+                                      fontSize: 12, color: Colors.white38)),
+                            ]),
+                          ]),
+                    ),
+
+                    // ── FAQ help chip ──────────────────────────────────────────
+                    GestureDetector(
+                      onTap: _openChat,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.3)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.question_answer_rounded,
+                              color: AppColors.primary, size: 14),
+                          const SizedBox(width: 4),
+                          Text('FAQ Help',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary)),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 16),
+                  Row(children: [
+                    _bottomStat(
+                        'Online Time',
+                        _formatDuration(_onlineSecondsToday),
+                        Icons.access_time_rounded),
+                    _bottomStat(
+                        'Trips Today', '$_tripsToday', Icons.route_rounded),
+                    _bottomStat(
+                        'Earnings',
+                        'PHP ${_earningsToday.toStringAsFixed(0)}',
+                        Icons.attach_money_rounded),
+                  ]),
+                  const SizedBox(height: 14),
+                  Container(height: 1, color: Colors.white10),
+                  const SizedBox(height: 12),
+                  _peakHoursSummary(),
+                ]),
+              ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
             ]),
-          ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.2, end: 0),
+          ),
         ]),
       ),
     );
@@ -804,45 +899,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         Text('No peak hour data yet',
             style: GoogleFonts.poppins(fontSize: 11, color: Colors.white38))
       else
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: List.generate(
-            _peakHours.length,
-            (index) => _peakHourChip(_peakHours[index], index),
-          ),
-        ),
+        TripAnalyticsChart(data: _peakHours, peakHours: true, dark: true),
     ]);
-  }
-
-  Widget _peakHourChip(Map<String, dynamic> hour, int index) {
-    final requests = _asInt(hour['total_requests']);
-    final completed = _asInt(hour['completed_trips']);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white12),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('#${index + 1} ${hour['hour_label'] ?? 'Hour'}',
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: AppColors.primary,
-            )),
-        const SizedBox(height: 2),
-        Text('$completed/$requests trips',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            )),
-        Text(_money(hour['gross_revenue']),
-            style: GoogleFonts.poppins(fontSize: 10, color: Colors.white38)),
-      ]),
-    );
   }
 
   Widget _iconBox(IconData icon, VoidCallback? onTap) => GestureDetector(
@@ -867,9 +925,13 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
             Row(children: [
               Icon(icon, color: AppColors.primary, size: 14),
               const SizedBox(width: 4),
-              Text(label,
-                  style:
-                      GoogleFonts.poppins(fontSize: 10, color: Colors.white54)),
+              Expanded(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                        fontSize: 10, color: Colors.white54)),
+              ),
             ]),
             const SizedBox(height: 2),
             Text(value,

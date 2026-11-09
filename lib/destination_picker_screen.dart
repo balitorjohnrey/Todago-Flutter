@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'app_theme.dart';
+import 'booking_destination.dart';
 import 'service_selection_screen.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
@@ -13,10 +14,12 @@ import 'route_display.dart';
 
 class DestinationPickerScreen extends StatefulWidget {
   final String? initialServiceType;
+  final BookingDestination? initialDestination;
 
   const DestinationPickerScreen({
     super.key,
     this.initialServiceType,
+    this.initialDestination,
   });
   @override
   State<DestinationPickerScreen> createState() =>
@@ -71,6 +74,14 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
     _initLocation();
     _initSpeech();
     _loadFareSettings();
+    final destination = widget.initialDestination;
+    if (destination != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _setDestinationAndRoute(destination.point, name: destination.name);
+        }
+      });
+    }
   }
 
   Future<void> _loadFareSettings() async {

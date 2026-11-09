@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'trip_analytics_chart.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'operator_auth_service.dart';
@@ -604,11 +605,19 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                   color: Colors.grey[500],
                 )),
           )
-        else
-          ...List.generate(
-            _peakHours.length,
-            (index) => _peakHourRow(_peakHours[index], index),
+        else ...[
+          TripAnalyticsChart(data: _peakHours, peakHours: true),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('View hourly details',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+            children: List.generate(
+              _peakHours.length,
+              (index) => _peakHourRow(_peakHours[index], index),
+            ),
           ),
+        ],
       ]),
     );
   }
@@ -715,11 +724,19 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                   color: Colors.grey[500],
                 )),
           )
-        else
-          ...List.generate(
-            _routePerformance.length,
-            (index) => _routePerformanceRow(_routePerformance[index], index),
+        else ...[
+          TripAnalyticsChart(data: _routePerformance),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('View route details',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+            children: List.generate(
+              _routePerformance.length,
+              (index) => _routePerformanceRow(_routePerformance[index], index),
+            ),
           ),
+        ],
       ]),
     );
   }

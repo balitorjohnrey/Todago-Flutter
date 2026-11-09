@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
+import 'booking_destination.dart';
 import 'location_service.dart';
 import 'destination_picker_screen.dart';
 import 'map_service.dart';
@@ -32,7 +33,9 @@ import 'passenger_qr_top_up_screen.dart';
 import 'wallet_migration.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
-  const PassengerHomeScreen({super.key});
+  final BookingDestination? initialBookingDestination;
+
+  const PassengerHomeScreen({super.key, this.initialBookingDestination});
   @override
   State<PassengerHomeScreen> createState() => _PassengerHomeScreenState();
 }
@@ -107,6 +110,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     _startBookingsRealtime();
     _loadWallet();
     _startWalletRealtime();
+    if (widget.initialBookingDestination != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _openDestinationPicker(
+              initialDestination: widget.initialBookingDestination);
+        }
+      });
+    }
   }
 
   Future<void> _loadUser() async {
@@ -538,10 +549,14 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     );
   }
 
-  void _openDestinationPicker({String? initialServiceType}) {
+  void _openDestinationPicker({
+    String? initialServiceType,
+    BookingDestination? initialDestination,
+  }) {
     Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => DestinationPickerScreen(
         initialServiceType: initialServiceType,
+        initialDestination: initialDestination,
       ),
       transitionDuration: const Duration(milliseconds: 400),
       transitionsBuilder: (_, anim, __, child) => SlideTransition(

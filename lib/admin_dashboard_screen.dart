@@ -9,6 +9,7 @@ import 'fare_settings_service.dart';
 import 'panabo_config.dart';
 import 'report_review_dialog.dart';
 import 'splash_screen.dart';
+import 'trip_analytics_chart.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -19,6 +20,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isLoading = true;
+  int _selectedSection = 0;
   bool _isSavingFare = false;
   String? _errorMessage;
   Map<String, dynamic> _stats = {};
@@ -309,6 +311,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF0F2F5),
+      bottomNavigationBar: NavigationBarTheme(
+        data: const NavigationBarThemeData(
+          labelTextStyle: WidgetStatePropertyAll(TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.backgroundDark,
+          )),
+          iconTheme: WidgetStatePropertyAll(
+              IconThemeData(color: AppColors.backgroundDark)),
+        ),
+        child: NavigationBar(
+          backgroundColor: Colors.white,
+          indicatorColor: AppColors.primary.withValues(alpha: 0.3),
+          selectedIndex: _selectedSection,
+          onDestinationSelected: (index) =>
+              setState(() => _selectedSection = index),
+          destinations: const [
+            NavigationDestination(
+                icon: Icon(Icons.fact_check_outlined), label: 'Reports'),
+            NavigationDestination(
+                icon: Icon(Icons.local_gas_station_outlined), label: 'Fares'),
+            NavigationDestination(
+                icon: Icon(Icons.bar_chart_rounded), label: 'Analytics'),
+            NavigationDestination(
+                icon: Icon(Icons.badge_outlined), label: 'Applications'),
+          ],
+        ),
+      ),
       body: Column(children: [
         Container(
           color: AppColors.backgroundDark,
@@ -396,34 +426,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
+        key: PageStorageKey('admin-section-$_selectedSection'),
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          _reportsCard(),
-          const SizedBox(height: 16),
-          _fareCard(),
-          const SizedBox(height: 16),
-          _peakHoursCard(),
-          const SizedBox(height: 16),
-          _routePerformanceCard(),
-          const SizedBox(height: 16),
-          Text('Independent Driver Applications',
-              style: GoogleFonts.poppins(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: AppColors.backgroundDark,
-              )),
-          const SizedBox(height: 10),
-          if (_drivers.isEmpty)
-            _emptyDriversCard()
-          else
-            ...List.generate(
-              _drivers.length,
-              (index) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: _driverCard(_drivers[index], index),
+          if (_selectedSection == 0) _reportsCard(),
+          if (_selectedSection == 1) _fareCard(),
+          if (_selectedSection == 2) ...[
+            _peakHoursCard(),
+            const SizedBox(height: 16),
+            _routePerformanceCard(),
+          ],
+          if (_selectedSection == 3) ...[
+            Text('Independent Driver Applications',
+                style: GoogleFonts.poppins(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.backgroundDark,
+                )),
+            const SizedBox(height: 10),
+            if (_drivers.isEmpty)
+              _emptyDriversCard()
+            else
+              ...List.generate(
+                _drivers.length,
+                (index) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _driverCard(_drivers[index], index),
+                ),
               ),
-            ),
+          ],
         ],
       ),
     );
@@ -634,11 +666,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   color: AppColors.textHint,
                 )),
           )
-        else
-          ...List.generate(
-            _peakHours.length,
-            (index) => _peakHourRow(_peakHours[index], index),
+        else ...[
+          TripAnalyticsChart(data: _peakHours, peakHours: true),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('View hourly details',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+            children: List.generate(
+              _peakHours.length,
+              (index) => _peakHourRow(_peakHours[index], index),
+            ),
           ),
+        ],
       ]),
     );
   }
@@ -739,11 +780,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   color: AppColors.textHint,
                 )),
           )
-        else
-          ...List.generate(
-            _routePerformance.length,
-            (index) => _routePerformanceRow(_routePerformance[index], index),
+        else ...[
+          TripAnalyticsChart(data: _routePerformance),
+          const SizedBox(height: 8),
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('View route details',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+            children: List.generate(
+              _routePerformance.length,
+              (index) => _routePerformanceRow(_routePerformance[index], index),
+            ),
           ),
+        ],
       ]),
     );
   }

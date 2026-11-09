@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'app_theme.dart';
+import 'book_destination_button.dart';
+import 'booking_destination.dart';
 import 'map_service.dart';
 import 'panabo_config.dart';
 import 'map_place.dart';
@@ -510,6 +512,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               TextButton(
                   onPressed: _openDirections,
                   child: const Text('Retry directions')),
+            ],
+            if (_selectedPoint != null) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: BookDestinationButton(
+                  destination: BookingDestination(
+                    point: _selectedPoint!,
+                    name: _placeName,
+                  ),
+                ),
+              ),
             ],
           ]),
         )),

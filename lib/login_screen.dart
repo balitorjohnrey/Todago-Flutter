@@ -3,13 +3,16 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
+import 'booking_destination.dart';
 import 'passenger_home_screen.dart';
 import 'password_reset_dialog.dart';
 import 'persona_verification_launcher.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  final BookingDestination? bookingDestination;
+
+  const LoginScreen({super.key, this.bookingDestination});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -23,12 +26,6 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    AuthService.logout();
-  }
 
   @override
   void dispose() {
@@ -63,7 +60,9 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
+          pageBuilder: (_, __, ___) => PassengerHomeScreen(
+            initialBookingDestination: widget.bookingDestination,
+          ),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -246,7 +245,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: GestureDetector(
                           onTap: () =>
                               Navigator.of(context).push(PageRouteBuilder(
-                            pageBuilder: (_, __, ___) => const RegisterScreen(),
+                            pageBuilder: (_, __, ___) => RegisterScreen(
+                              bookingDestination: widget.bookingDestination,
+                            ),
                             transitionDuration:
                                 const Duration(milliseconds: 400),
                             transitionsBuilder: (_, anim, __, child) =>

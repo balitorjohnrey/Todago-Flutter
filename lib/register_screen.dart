@@ -3,12 +3,15 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
+import 'booking_destination.dart';
 import 'passenger_home_screen.dart';
 import 'persona_verification_launcher.dart';
 import 'persona_verification_notice.dart';
 
 class RegisterScreen extends StatefulWidget {
-  const RegisterScreen({super.key});
+  final BookingDestination? bookingDestination;
+
+  const RegisterScreen({super.key, this.bookingDestination});
 
   @override
   State<RegisterScreen> createState() => _RegisterScreenState();
@@ -83,8 +86,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
     if (!_agreedToTerms) {
-      setState(
-          () => _errorMessage = 'Please accept the terms and conditions');
+      setState(() => _errorMessage = 'Please accept the terms and conditions');
       return;
     }
 
@@ -113,7 +115,9 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
+          pageBuilder: (_, __, ___) => PassengerHomeScreen(
+            initialBookingDestination: widget.bookingDestination,
+          ),
           transitionDuration: const Duration(milliseconds: 500),
           transitionsBuilder: (_, anim, __, child) =>
               FadeTransition(opacity: anim, child: child),
@@ -318,8 +322,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                           color: AppColors.textHint,
                           size: 20,
                         ),
-                        onPressed: () => setState(
-                            () => _obscureConfirm = !_obscureConfirm),
+                        onPressed: () =>
+                            setState(() => _obscureConfirm = !_obscureConfirm),
                       ),
                       validator: (v) {
                         if (v == null || v.isEmpty) {
@@ -365,8 +369,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             ),
                             child: _agreedToTerms
                                 ? const Icon(Icons.check,
-                                    size: 14,
-                                    color: AppColors.backgroundDark)
+                                    size: 14, color: AppColors.backgroundDark)
                                 : null,
                           ),
                           const SizedBox(width: 12),
@@ -503,7 +506,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
       borderRadius: BorderRadius.circular(10),
       child: Image.asset(
         'assets/logo.png',
-        width: 40, height: 40,
+        width: 40,
+        height: 40,
         fit: BoxFit.cover,
       ),
     );

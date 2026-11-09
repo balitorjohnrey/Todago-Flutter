@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_fonts/src/google_fonts_base.dart' as font_loader;
 import 'package:google_fonts/src/google_fonts_descriptor.dart';
 import 'package:google_fonts/src/google_fonts_family_with_variant.dart';
@@ -13,14 +14,23 @@ import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platf
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:todago/admin_login_screen.dart';
+import 'package:todago/admin_dashboard_screen.dart';
 import 'package:todago/ai_chat_screen.dart';
 import 'package:todago/app_theme.dart';
+import 'package:todago/auth_service.dart';
+import 'package:todago/book_destination_button.dart';
+import 'package:todago/booking_destination.dart';
+import 'package:todago/destination_picker_screen.dart';
+import 'package:todago/driver_auth_service.dart';
+import 'package:todago/driver_dashboard_screen.dart';
 import 'package:todago/dropoff_picker_sheet.dart';
 import 'package:todago/live_map_screen.dart';
+import 'package:todago/login_screen.dart';
 import 'package:todago/map_service.dart';
 import 'package:todago/map_place_taps.dart';
 import 'package:todago/role_selection_screen.dart';
 import 'package:todago/smart_ride_sheet.dart';
+import 'package:todago/trip_analytics_chart.dart';
 
 // Load placeholder fonts into Flutter's test engine without network or disk caches.
 class _FontManifest extends Fake implements AssetManifest {
@@ -111,6 +121,12 @@ Future<_TestMaps> _openExplorer(WidgetTester tester) async {
   ));
   await tester.pumpAndSettle();
   return maps;
+}
+
+Future<void> _pumpBooking(WidgetTester tester) async {
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 200));
+  }
 }
 
 Future<void> _openSheet(
@@ -311,12 +327,235 @@ void main() {
   setUpAll(_prepareFonts);
 
   setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
       const MethodChannel('plugin.csdcorp.com/speech_to_text'),
       (call) async => call.method == 'initialize' ? false : true,
     );
   });
+
+  testWidgets('admin sections are separate and analytics renders bar charts',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.theme, home: const AdminDashboardScreen()));
+      await tester.pumpAndSettle();
+      expect(find.text('Reports for Validation'), findsOneWidget);
+      expect(find.text('Fare Regulation'), findsNothing);
+      expect(find.text('Peak Hour Analysis'), findsNothing);
+      expect(find.text('Independent Driver Applications'), findsNothing);
+      await tester.tap(find.text('Fares'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fare Regulation'), findsOneWidget);
+      expect(find.text('Reports for Validation'), findsNothing);
+      final fuel = find.widgetWithText(TextField, 'Gasoline Price / Liter');
+      await tester.enterText(fuel, '92.50');
+      await tester.tap(find.text('Analytics'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TripAnalyticsChart), findsNWidgets(2));
+      expect(find.text('Requests by hour'), findsOneWidget);
+      expect(find.text('Trips by route'), findsOneWidget);
+      expect(find.text('Fare Regulation'), findsNothing);
+      await tester.tap(find.text('Applications'));
+      await tester.pumpAndSettle();
+      expect(find.text('Independent Driver Applications'), findsOneWidget);
+      expect(find.byType(TripAnalyticsChart), findsNothing);
+      await tester.tap(find.text('Fares'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(fuel).controller?.text, '92.50');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              final path = request.url.path;
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    if (path.endsWith('/stats')) 'stats': {},
+                    if (path.endsWith('/independent')) 'drivers': [],
+                    if (path.endsWith('/settings')) 'settings': {},
+                    if (path.endsWith('/reports')) 'reports': [],
+                    if (path.endsWith('/peak-hours'))
+                      'hours': [
+                        {
+                          'hour_label': '9 AM - 10 AM',
+                          'total_requests': 10,
+                          'completed_trips': 7,
+                          'cancelled_trips': 2,
+                        }
+                      ],
+                    if (path.endsWith('/routes'))
+                      'routes': [
+                        {
+                          'route_from': 'Terminal',
+                          'route_to': 'College',
+                          'total_trips': 5,
+                          'completed_trips': 4,
+                          'cancelled_trips': 1,
+                        }
+                      ],
+                  }),
+                  200);
+            }));
+  });
+
+  testWidgets(
+      'driver settings opens safely and cancelling logout keeps session',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    FlutterSecureStorage.setMockInitialValues(
+        {'driver_auth_token': 'driver-session'});
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.theme, home: const DriverDashboardScreen()));
+      await tester.pump(const Duration(seconds: 1));
+      expect(tester.takeException(), isNull);
+      await tester.tap(find.byTooltip('Driver settings'));
+      await _pumpBooking(tester);
+      expect(find.text('Driver Settings'), findsOneWidget);
+      expect(await DriverAuthService.getToken(), 'driver-session');
+      await tester.tap(find.text('Log out'));
+      await _pumpBooking(tester);
+      expect(find.text('Log out?'), findsOneWidget);
+      await tester.tap(find.text('Cancel'));
+      await _pumpBooking(tester);
+      expect(find.byType(DriverDashboardScreen), findsOneWidget);
+      expect(await DriverAuthService.getToken(), 'driver-session');
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async => http.Response(
+            jsonEncode({
+              'success': true,
+              'driver': {'driver_name': 'Test Driver', 'status': 'offline'},
+              'stats': {},
+              'trips': [],
+              'hours': [
+                for (final hour in [
+                  '9 AM - 10 AM',
+                  '10 AM - 11 AM',
+                  '2 PM - 3 PM'
+                ])
+                  {
+                    'hour_label': hour,
+                    'total_requests': 10,
+                    'completed_trips': 7,
+                    'cancelled_trips': 2,
+                  }
+              ],
+            }),
+            200)));
+  });
+
+  for (final loggedIn in [false, true]) {
+    testWidgets(
+        'Book Now ${loggedIn ? 'opens booking' : 'opens login'} with the exact place',
+        (tester) async {
+      _installTestMaps();
+      _mockLocation();
+      final messenger = tester.binding.defaultBinaryMessenger;
+      for (final channel in [
+        'flutter.baseflow.com/geolocator_updates',
+        'com.llfbandit.app_links/events',
+        'com.llfbandit.app_links/messages',
+      ]) {
+        messenger.setMockMethodCallHandler(
+            MethodChannel(channel), (_) async => null);
+        addTearDown(() =>
+            messenger.setMockMethodCallHandler(MethodChannel(channel), null));
+      }
+      if (loggedIn) {
+        FlutterSecureStorage.setMockInitialValues(
+            {'auth_token': 'passenger-session'});
+      }
+      const destination =
+          BookingDestination(point: _collegePoint, name: _collegeName);
+      var acceptLogin = false;
+      await http.runWithClient(() async {
+        await tester.pumpWidget(MaterialApp(
+            theme: AppTheme.theme,
+            home: const Scaffold(
+                body: BookDestinationButton(destination: destination))));
+        await tester.tap(find.text('Book Now?'));
+        await _pumpBooking(tester);
+        if (!loggedIn) {
+          expect(find.byType(LoginScreen), findsOneWidget);
+          expect(
+              tester
+                  .widget<LoginScreen>(find.byType(LoginScreen))
+                  .bookingDestination,
+              same(destination));
+          await tester.enterText(
+              find.widgetWithText(TextFormField, 'Email Address'),
+              'passenger@example.com');
+          await tester.enterText(
+              find.widgetWithText(TextFormField, 'Password'), 'password123');
+          final submit = find.widgetWithText(ElevatedButton, 'Sign In');
+          await tester.ensureVisible(submit);
+          await tester.tap(submit);
+          await _pumpBooking(tester);
+          expect(find.text('Invalid credentials'), findsOneWidget);
+          expect(find.byType(DestinationPickerScreen), findsNothing);
+          acceptLogin = true;
+          await tester.tap(submit);
+          await _pumpBooking(tester);
+          expect(await AuthService.getToken(), 'new-passenger-session');
+        }
+        expect(find.byType(DestinationPickerScreen), findsOneWidget);
+        final picker = tester.widget<DestinationPickerScreen>(
+            find.byType(DestinationPickerScreen));
+        expect(picker.initialDestination?.point, _collegePoint);
+        expect(picker.initialDestination?.name, _collegeName);
+        final map = tester.widget<GoogleMap>(find.byType(GoogleMap).last);
+        expect(
+            map.markers
+                .firstWhere((marker) => marker.markerId.value == 'destination')
+                .position,
+            _collegePoint);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump(const Duration(seconds: 1));
+      },
+          () => MockClient((request) async {
+                if (request.url.path.endsWith('/login')) {
+                  return http.Response(
+                      jsonEncode(acceptLogin
+                          ? {
+                              'success': true,
+                              'token': 'new-passenger-session',
+                              'user': {'full_name': 'Passenger'}
+                            }
+                          : {
+                              'success': false,
+                              'message': 'Invalid credentials'
+                            }),
+                      acceptLogin ? 200 : 401);
+                }
+                if (request.url.path.contains('/directions/')) {
+                  return _googleRoute();
+                }
+                if (request.url.path.contains('/geocode/')) {
+                  return http.Response('{"status":"ZERO_RESULTS"}', 200);
+                }
+                return http.Response(
+                    jsonEncode({
+                      'success': true,
+                      'user': {'full_name': 'Passenger'},
+                      'settings': {},
+                      'trips': [],
+                      'transactions': [],
+                      'wallet': {}
+                    }),
+                    200);
+              }));
+    });
+  }
 
   testWidgets('Admin Login is reachable from the account chooser',
       (tester) async {
@@ -331,6 +570,46 @@ void main() {
     expect(find.byType(AdminLoginScreen), findsOneWidget);
     expect(find.text('Admin Secret'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chat directions offer booking for the exact suggested place',
+      (tester) async {
+    _mockLocation();
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.theme,
+          home: const AIChatScreen(userType: 'guest', userName: 'Guest')));
+      await _pumpBooking(tester);
+      await tester.enterText(find.byType(TextField), 'Directions to DNSC');
+      await tester.tap(find.byIcon(Icons.send_rounded));
+      await _pumpBooking(tester);
+      expect(find.text('Book Now?'), findsOneWidget);
+      final button = tester
+          .widget<BookDestinationButton>(find.byType(BookDestinationButton));
+      expect(button.destination.point, _collegePoint);
+      expect(button.destination.name, _collegeName);
+      await tester.ensureVisible(find.text('Book Now?'));
+      await tester.tap(find.text('Book Now?'));
+      await _pumpBooking(tester);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(
+          tester
+              .widget<LoginScreen>(find.byType(LoginScreen))
+              .bookingDestination
+              ?.point,
+          _collegePoint);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.contains('/directions/')) {
+                return _googleRoute();
+              }
+              return _placeResponse(_collegeName, id: 'coord:7.3143:125.6702');
+            }));
   });
 
   testWidgets(
@@ -431,6 +710,20 @@ void main() {
               .firstWhere((m) => m.markerId.value == 'explore-origin')
               .position,
           _origin);
+      final book = tester
+          .widget<BookDestinationButton>(find.byType(BookDestinationButton));
+      expect(book.destination.point, const LatLng(7.3, 125.68));
+      expect(book.destination.name, 'Gaisano');
+      await tester.ensureVisible(find.text('Book Now?'));
+      await tester.tap(find.text('Book Now?'));
+      await _pumpBooking(tester);
+      expect(find.byType(LoginScreen), findsOneWidget);
+      expect(
+          tester
+              .widget<LoginScreen>(find.byType(LoginScreen))
+              .bookingDestination
+              ?.point,
+          const LatLng(7.3, 125.68));
       expect(tester.takeException(), isNull);
     },
         () => MockClient((request) async {

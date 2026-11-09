@@ -6,6 +6,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'app_theme.dart';
+import 'book_destination_button.dart';
+import 'booking_destination.dart';
 import 'live_map_screen.dart';
 import 'location_query.dart';
 import 'map_service.dart';
@@ -17,6 +19,7 @@ class _Msg {
   final bool isTyping;
   final DateTime time;
   final String? routeQuery;
+  final BookingDestination? bookingDestination;
 
   _Msg({
     required this.id,
@@ -24,6 +27,7 @@ class _Msg {
     required this.isUser,
     this.isTyping = false,
     this.routeQuery,
+    this.bookingDestination,
     DateTime? time,
   }) : time = time ?? DateTime.now();
 }
@@ -258,11 +262,14 @@ class _AIChatScreenState extends State<AIChatScreen>
   }
 
   Future<_Msg> _routeReply(String query) async {
-    _Msg reply(String text, {String? routeQuery}) => _Msg(
+    _Msg reply(String text,
+            {String? routeQuery, BookingDestination? bookingDestination}) =>
+        _Msg(
           id: UniqueKey().toString(),
           text: text,
           isUser: false,
           routeQuery: routeQuery,
+          bookingDestination: bookingDestination,
         );
 
     final places =
@@ -299,7 +306,12 @@ class _AIChatScreenState extends State<AIChatScreen>
             '${routes[i].summary.isEmpty ? '' : ' via ${routes[i].summary}'}',
       'View the routes on the map to compare them.',
     ];
-    return reply(lines.join('\n'), routeQuery: place.fullText);
+    return reply(
+      lines.join('\n'),
+      routeQuery: place.fullText,
+      bookingDestination:
+          BookingDestination(point: destination, name: place.mainText),
+    );
   }
 
   String _answerFaq(String question) {
@@ -589,6 +601,11 @@ class _AIChatScreenState extends State<AIChatScreen>
                           icon: const Icon(Icons.map_outlined),
                           label: const Text('View routes on map'),
                         ),
+                      ],
+                      if (msg.bookingDestination != null) ...[
+                        const SizedBox(height: 8),
+                        BookDestinationButton(
+                            destination: msg.bookingDestination!),
                       ],
                     ],
                   ),
