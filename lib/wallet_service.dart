@@ -105,6 +105,9 @@ class WalletService {
   static Future<Map<String, dynamic>> getMerchantQrConfiguration() =>
       _getPaymentData('in-store-qr/configuration');
 
+  static Future<Map<String, dynamic>> getPassengerQr() =>
+      _getPaymentData('in-store-qr/passenger-qr');
+
   static Future<Map<String, dynamic>> createMerchantQrTopUp(double amount) =>
       _postPaymentData('in-store-qr/top-ups', {'amount': amount});
 

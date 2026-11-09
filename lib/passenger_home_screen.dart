@@ -28,6 +28,7 @@ import 'wallet_checkout_screen.dart';
 import 'wallet_payment_screen.dart';
 import 'wallet_return_links.dart';
 import 'merchant_qr_top_up_screen.dart';
+import 'passenger_qr_top_up_screen.dart';
 import 'wallet_migration.dart';
 
 class PassengerHomeScreen extends StatefulWidget {
@@ -1753,7 +1754,9 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     setState(() => _showingMerchantQr = true);
     try {
       final status = await Navigator.of(context).push<String>(MaterialPageRoute(
-        builder: (_) => MerchantQrTopUpScreen(transactionId: transactionId),
+        builder: (_) => transactionId == null
+            ? const PassengerQrTopUpScreen()
+            : MerchantQrTopUpScreen(transactionId: transactionId),
       ));
       if (status == 'completed' &&
           mounted &&

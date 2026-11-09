@@ -27,6 +27,12 @@ class FakeQrController extends PlatformWebViewController {
   late FakeQrDelegate delegate;
   late Uri loaded;
   int loads = 0;
+  final Map<String, JavaScriptChannelParams> channels = {};
+
+  @override
+  Future<void> addJavaScriptChannel(JavaScriptChannelParams params) async {
+    channels[params.name] = params;
+  }
 
   @override
   Future<void> setJavaScriptMode(JavaScriptMode mode) async {}
@@ -46,7 +52,9 @@ class FakeQrController extends PlatformWebViewController {
   }
 
   void finish() => delegate.onFinish?.call(loaded.toString());
-  Uri get completion => loaded.replace(path: '/done.html');
+  Uri get completion => loaded.replace(
+      path: '/done.html',
+      queryParameters: {'session': loaded.queryParameters['session']!});
   Future<NavigationDecision> navigate(Uri target,
           {bool mainFrame = true}) async =>
       await delegate.onNavigate!(

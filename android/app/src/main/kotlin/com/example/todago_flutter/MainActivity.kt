@@ -6,8 +6,16 @@ import io.flutter.plugin.common.MethodChannel
 import com.google.android.gms.maps.MapView
 
 class MainActivity : FlutterActivity() {
+    private var qrGallery: QrGalleryBridge? = null
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        qrGallery?.onPermissionResult(requestCode, grantResults)
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        qrGallery = QrGalleryBridge(this, flutterEngine.dartExecutor.binaryMessenger)
         val channel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "todago/map_places")
         channel.setMethodCallHandler { call, result ->
             val mapId = call.argument<Int>("mapId")
