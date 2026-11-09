@@ -11,6 +11,7 @@ import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
 import 'route_display.dart';
 import 'report_issue_dialog.dart';
+import 'rate_passenger_screen.dart';
 
 class ActiveTripDriverScreen extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -27,6 +28,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   LatLng? _destPoint;
   MapRoute? _route;
   bool _isCompleting = false;
+  bool _showingFeedback = false;
   bool _isDroppingPassenger = false;
   bool _isFetchingRoute = false;
 
@@ -55,6 +57,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     }
     return _trip['destination']?.toString() ?? 'Destination';
   }
+
   String get _passengerInitials => _passengerName
       .trim()
       .split(' ')
@@ -94,7 +97,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _hasArrivedAtDestination ? 'Collect Payment' : 'Arrived at Destination';
 
   String get _primaryActionSubtitle {
-    if (!_hasArrivedAtDestination) return 'Tap when passenger reaches destination';
+    if (!_hasArrivedAtDestination) {
+      return 'Tap when passenger reaches destination';
+    }
     if (_paymentMethod == 'cash') return 'Confirm cash payment from passenger';
     if (_isPaymentPaid) return 'Online payment received by TodaGo';
     return 'Waiting for passenger $_paymentLabel payment';
@@ -407,7 +412,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
 
   Future<void> _pollTripStatus() async {
     final tripId = _trip['trip_id']?.toString() ?? '';
-    if (tripId.isEmpty || !mounted) return;
+    if (tripId.isEmpty || !mounted || _showingFeedback) return;
     final trip = await TripService.getTripById(tripId, forDriver: true);
     if (!mounted || trip == null) return;
     final previousDest = _destPoint;
@@ -415,6 +420,10 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _trip = Map<String, dynamic>.from(trip);
       _destPoint = _currentDestinationPoint();
     });
+    if (trip['status'] == 'completed' && trip['payment_status'] == 'paid') {
+      if (!_isCompleting) await _openFeedback();
+      return;
+    }
     final nextDest = _destPoint;
     if (_myLocation != null && !_sameDestination(previousDest, nextDest)) {
       if (nextDest != null) {
@@ -601,100 +610,27 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
         ? parseFare(earnings['your_earnings'], _driverEarnings)
         : _driverEarnings;
 
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        backgroundColor: Colors.white,
-        contentPadding: const EdgeInsets.all(24),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-                color: Colors.green.withOpacity(0.1), shape: BoxShape.circle),
-            child: const Icon(Icons.check_circle_rounded,
-                color: Colors.green, size: 40),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Trip Completed! 🎉',
-            style: GoogleFonts.poppins(
-                fontSize: 18,
-                fontWeight: FontWeight.w800,
-                color: AppColors.backgroundDark),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Thank you for the ride, $_passengerName!',
-            style: GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-                color: const Color(0xFFF8F9FA),
-                borderRadius: BorderRadius.circular(14)),
-            child: Column(children: [
-              _earningsRow('Passenger Fare', '₱${_fare.toStringAsFixed(2)}',
-                  Colors.black),
-              const Divider(height: 16),
-              _earningsRow('Your Earnings',
-                  '₱${actualEarnings.toStringAsFixed(2)}', Colors.green,
-                  bold: true, large: true),
-            ]),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                Navigator.of(context).pushAndRemoveUntil(
-                  PageRouteBuilder(
-                    pageBuilder: (_, __, ___) => const DriverDashboardScreen(),
-                    transitionDuration: const Duration(milliseconds: 500),
-                    transitionsBuilder: (_, anim, __, child) =>
-                        FadeTransition(opacity: anim, child: child),
-                  ),
-                  (_) => false,
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.backgroundDark,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  elevation: 0),
-              child: Text(
-                'Back to Dashboard',
-                style: GoogleFonts.poppins(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white),
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
+    await _openFeedback(earnings: actualEarnings);
   }
 
-  Widget _earningsRow(String label, String value, Color valueColor,
-          {bool bold = false, bool large = false}) =>
-      Row(children: [
-        Text(label,
-            style:
-                GoogleFonts.poppins(fontSize: 13, color: AppColors.textHint)),
-        const Spacer(),
-        Text(value,
-            style: GoogleFonts.poppins(
-                fontSize: large ? 18 : 13,
-                fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
-                color: valueColor)),
-      ]);
+  Future<void> _openFeedback({double? earnings}) async {
+    if (!mounted || _showingFeedback) return;
+    _showingFeedback = true;
+    _locSub?.cancel();
+    _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RatePassengerScreen(
+        trip: Map<String, dynamic>.from(_trip),
+        earnings: earnings ?? _driverEarnings,
+      ),
+    ));
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
+      (_) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -788,10 +724,9 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                       const SizedBox(height: 12),
                       // Live distance + time from _route
                       Row(children: [
-                        _navStat('${dist.toStringAsFixed(1)} km', 'Distance'),
+                        Expanded(child: _navStat('${dist.toStringAsFixed(1)} km', 'Distance')),
                         const SizedBox(width: 24),
-                        _navStat('$eta min', 'Time Left'),
-                        const Spacer(),
+                        Expanded(child: _navStat('$eta min', 'Time Left')),
                         GestureDetector(
                           onTap: () {
                             if (_myLocation != null && _destPoint != null) {
@@ -1182,6 +1117,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   Widget _navStat(String v, String l) =>
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(v,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: GoogleFonts.poppins(
                 fontSize: 22,
                 fontWeight: FontWeight.w900,

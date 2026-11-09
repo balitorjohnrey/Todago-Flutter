@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'app_theme.dart';
 import 'report_issue_service.dart';
+import 'trip_service.dart';
 
 class ReportIssueOption {
   final String type;
@@ -75,6 +76,17 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
   late String _selectedType;
   final TextEditingController _detailsController = TextEditingController();
   bool _isSubmitting = false;
+  bool _isLoadingTrips = false;
+  List<Map<String, dynamic>> _trips = [];
+  Map<String, dynamic>? _selectedTrip;
+  String? _error;
+
+  bool get _participantReporter =>
+      ['driver', 'passenger', 'commuter'].contains(widget.reporterRole);
+  String? get _tripId => widget.tripId ?? _selectedTrip?['trip_id']?.toString();
+  bool get _needsTrip =>
+      _participantReporter &&
+      (_selectedType != 'other' || widget.subjectRole != null);
 
   @override
   void initState() {
@@ -84,6 +96,41 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
             options.any((option) => option.type == widget.initialType)
         ? widget.initialType!
         : options.first.type;
+    if (_participantReporter && widget.tripId == null) _loadTrips();
+  }
+
+  Future<void> _loadTrips() async {
+    setState(() => _isLoadingTrips = true);
+    final trips = widget.reporterRole == 'driver'
+        ? await TripService.getDriverHistory()
+        : await TripService.getCommuterHistory();
+    if (!mounted) return;
+    setState(() {
+      _isLoadingTrips = false;
+      _trips = trips
+          .where((trip) =>
+              (trip['trip_id']?.toString().isNotEmpty ?? false) &&
+              (trip[widget.reporterRole == 'driver'
+                          ? 'commuter_id'
+                          : 'driver_id']
+                      ?.toString()
+                      .isNotEmpty ??
+                  false))
+          .toList();
+    });
+  }
+
+  String _tripLabel(Map<String, dynamic> trip) {
+    final name =
+        trip[widget.reporterRole == 'driver' ? 'commuter_name' : 'driver_name']
+                ?.toString() ??
+            (widget.reporterRole == 'driver' ? 'Passenger' : 'Driver');
+    final date = DateTime.tryParse(trip['request_timestamp']?.toString() ?? '')
+        ?.toLocal();
+    final dateLabel = date == null
+        ? ''
+        : ' · ${date.month}/${date.day} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    return '$name$dateLabel · ${trip['destination'] ?? 'Trip'}';
   }
 
   @override
@@ -200,24 +247,45 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
 
   Future<void> _submit() async {
     if (_isSubmitting) return;
-    setState(() => _isSubmitting = true);
+    if (_needsTrip && (_tripId == null || _tripId!.isEmpty)) {
+      setState(
+          () => _error = 'Select the trip to identify the reported account.');
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+      _error = null;
+    });
     final option = _selectedOption;
+    final forDriver = widget.reporterRole == 'driver';
     final result = await ReportIssueService.submitReport(
       reporterRole: widget.reporterRole,
       reportType: option.type,
       title: option.title,
       details: _detailsController.text,
-      subjectRole: widget.subjectRole,
-      subjectId: widget.subjectId,
-      subjectName: widget.subjectName,
-      tripId: widget.tripId,
+      subjectRole: _selectedTrip == null
+          ? widget.subjectRole
+          : (forDriver ? 'passenger' : 'driver'),
+      subjectId: _selectedTrip == null
+          ? widget.subjectId
+          : _selectedTrip![forDriver ? 'commuter_id' : 'driver_id']?.toString(),
+      subjectName: _selectedTrip == null
+          ? widget.subjectName
+          : _selectedTrip![forDriver ? 'commuter_name' : 'driver_name']
+              ?.toString(),
+      tripId: _tripId,
       priority: option.priority,
       metadata: widget.metadata,
     );
     if (!mounted) return;
     setState(() => _isSubmitting = false);
+    if (!result.success) {
+      setState(() => _error = result.message);
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    messenger.showSnackBar(SnackBar(
       content: Text(
         result.message,
         style: GoogleFonts.poppins(fontSize: 13),
@@ -297,14 +365,60 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
                     ),
                   ]),
                   const SizedBox(height: 16),
+                  if (_participantReporter && widget.tripId == null) ...[
+                    Text('Which trip is this about?',
+                        style:
+                            GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 8),
+                    if (_isLoadingTrips)
+                      const LinearProgressIndicator()
+                    else if (_trips.isEmpty)
+                      Row(children: [
+                        const Expanded(
+                            child: Text(
+                                'No trips available. A trip is required to report a passenger or driver.')),
+                        TextButton(
+                            onPressed: _loadTrips, child: const Text('Retry')),
+                      ])
+                    else
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedTrip?['trip_id']?.toString(),
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                            labelText: 'Select trip',
+                            border: OutlineInputBorder()),
+                        items: _trips
+                            .map((trip) => DropdownMenuItem(
+                                  value: trip['trip_id'].toString(),
+                                  child: Text(_tripLabel(trip),
+                                      overflow: TextOverflow.ellipsis),
+                                ))
+                            .toList(),
+                        onChanged: _isSubmitting
+                            ? null
+                            : (id) => setState(() {
+                                  _selectedTrip = _trips.firstWhere((trip) =>
+                                      trip['trip_id'].toString() == id);
+                                  _error = null;
+                                }),
+                      ),
+                    const SizedBox(height: 16),
+                  ] else if (widget.subjectName?.isNotEmpty ?? false) ...[
+                    Text('Reported account: ${widget.subjectName}',
+                        style:
+                            GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 12),
+                  ],
                   Wrap(
                     spacing: 8,
                     runSpacing: 8,
                     children: options
                         .map((option) => ChoiceChip(
                               selected: _selectedType == option.type,
-                              onSelected: (_) =>
-                                  setState(() => _selectedType = option.type),
+                              onSelected: _isSubmitting
+                                  ? null
+                                  : (_) => setState(
+                                      () => _selectedType = option.type),
                               showCheckmark: false,
                               avatar: Icon(option.icon, size: 16),
                               label: Text(option.label),
@@ -325,6 +439,8 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
                     controller: _detailsController,
                     minLines: 3,
                     maxLines: 5,
+                    maxLength: 1200,
+                    enabled: !_isSubmitting,
                     decoration: InputDecoration(
                       hintText: _selectedOption.hint,
                       filled: true,
@@ -341,6 +457,11 @@ class _ReportIssueSheetState extends State<_ReportIssueSheet> {
                     ),
                   ),
                   const SizedBox(height: 16),
+                  if (_error != null) ...[
+                    Text(_error!,
+                        style: const TextStyle(color: AppColors.error)),
+                    const SizedBox(height: 12),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     height: 50,

@@ -1307,6 +1307,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                       ? () => Navigator.of(context)
                           .push(PageRouteBuilder(
                             pageBuilder: (_, __, ___) => RateDriverScreen(
+                              returnToPrevious: true,
                               tripId: tripId,
                               driverName: b['driver_name']?.toString() ??
                                   b['driver']?.toString() ??
@@ -1352,6 +1353,26 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                   ),
                 ),
               ),
+          ],
+
+          if (isPast && isCompleted && tripId.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => showReportIssueDialog(
+                  context: context,
+                  reporterRole: 'passenger',
+                  initialType: 'driver_behavior',
+                  tripId: tripId,
+                  subjectRole: 'driver',
+                  subjectId: b['driver_id']?.toString(),
+                  subjectName: b['driver_name']?.toString(),
+                ),
+                icon: const Icon(Icons.report_problem_outlined, size: 18),
+                label: const Text('Report Driver'),
+              ),
+            ),
           ],
 
           // ── Track / Cancel (upcoming) ───────────────────────────────────

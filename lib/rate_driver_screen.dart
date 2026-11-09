@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
 import 'trip_service.dart';
 import 'passenger_home_screen.dart';
+import 'report_issue_dialog.dart';
 
 class RateDriverScreen extends StatefulWidget {
   final String tripId;
@@ -14,6 +15,7 @@ class RateDriverScreen extends StatefulWidget {
   final String plateNo;
   final String destination;
   final double fare;
+  final bool returnToPrevious;
 
   const RateDriverScreen({
     super.key,
@@ -24,6 +26,7 @@ class RateDriverScreen extends StatefulWidget {
     required this.plateNo,
     required this.destination,
     required this.fare,
+    this.returnToPrevious = false,
   });
 
   @override
@@ -142,11 +145,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
     if (result['success'] == true) {
       setState(() => _submitted = true);
       HapticFeedback.lightImpact();
-      await Future.delayed(const Duration(milliseconds: 1800));
-      if (!mounted) return;
-      _goHome();
     } else {
-      // Already rated or server error — still let them go home
       final msg = result['message']?.toString() ?? 'Something went wrong.';
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(msg,
@@ -158,13 +157,26 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: const EdgeInsets.all(16),
       ));
-      if (msg.contains('already')) _goHome();
+      if (msg.contains('already')) setState(() => _submitted = true);
     }
   }
 
   void _skip() => _goHome();
 
+  void _reportDriver() => showReportIssueDialog(
+        context: context,
+        reporterRole: 'passenger',
+        initialType: 'driver_behavior',
+        tripId: widget.tripId,
+        subjectRole: 'driver',
+        subjectName: widget.driverName,
+      );
+
   void _goHome() {
+    if (widget.returnToPrevious) {
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pushAndRemoveUntil(
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const PassengerHomeScreen(),
@@ -188,7 +200,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
   Widget _buildSuccessView() {
     return SafeArea(
       child: Center(
-        child: Column(
+        child: SingleChildScrollView(
+            child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
@@ -234,8 +247,18 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                             curve: Curves.bounceOut),
               ),
             ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: _reportDriver,
+              icon: const Icon(Icons.report_problem_outlined),
+              label: const Text('Report Driver'),
+            ),
+            const SizedBox(height: 12),
+            ElevatedButton(
+                onPressed: _goHome,
+                child: Text(widget.returnToPrevious ? 'Done' : 'Back to Home')),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -254,9 +277,16 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
               child: Column(children: [
                 // Top row
                 Row(children: [
+                  TextButton.icon(
+                    onPressed: _isSubmitting ? null : _reportDriver,
+                    icon: const Icon(Icons.report_problem_outlined,
+                        color: Colors.white70, size: 18),
+                    label: const Text('Report Driver',
+                        style: TextStyle(color: Colors.white70)),
+                  ),
                   const Spacer(),
                   TextButton(
-                    onPressed: _skip,
+                    onPressed: _isSubmitting ? null : _skip,
                     child: Text(
                       'Skip',
                       style: GoogleFonts.poppins(
@@ -267,6 +297,9 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                   ),
                 ]),
                 const SizedBox(height: 4),
+                const Text('Trip completed · Payment collected',
+                    style: TextStyle(color: Colors.white70, fontSize: 12)),
+                const SizedBox(height: 12),
 
                 // Driver avatar
                 Container(
@@ -308,16 +341,18 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                 const SizedBox(height: 4),
 
                 // Trip summary chip
-                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _infoChip(Icons.flag_rounded, widget.destination),
-                  const SizedBox(width: 8),
-                  _infoChip(Icons.payments_rounded,
-                      '₱${widget.fare.toStringAsFixed(0)}'),
-                  if (widget.plateNo.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    _infoChip(Icons.directions_car_rounded, widget.plateNo),
-                  ],
-                ]),
+                Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _infoChip(Icons.flag_rounded, widget.destination),
+                      _infoChip(Icons.payments_rounded,
+                          '₱${widget.fare.toStringAsFixed(0)}'),
+                      if (widget.plateNo.isNotEmpty) ...[
+                        _infoChip(Icons.directions_car_rounded, widget.plateNo),
+                      ],
+                    ]),
               ]),
             ),
           ),
@@ -543,7 +578,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                 // ── Skip link ──────────────────────────────────────────────
                 Center(
                   child: TextButton(
-                    onPressed: _skip,
+                    onPressed: _isSubmitting ? null : _skip,
                     child: Text(
                       'Skip for now',
                       style: GoogleFonts.poppins(
@@ -571,7 +606,8 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon, size: 12, color: Colors.white54),
           const SizedBox(width: 4),
-          Text(
+          Flexible(
+              child: Text(
             label,
             style: GoogleFonts.poppins(
                 fontSize: 11,
@@ -579,7 +615,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                 fontWeight: FontWeight.w500),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-          ),
+          )),
         ]),
       );
 }

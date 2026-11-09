@@ -16,6 +16,7 @@ import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
 import 'reservation_notification_service.dart';
 import 'report_issue_dialog.dart';
+import 'driver_trip_history_screen.dart';
 import 'driver_wallet_screen.dart';
 
 class DriverDashboardScreen extends StatefulWidget {
@@ -558,6 +559,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               ]),
             ),
           ).animate().fadeIn(delay: 100.ms),
+
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const DriverTripHistoryScreen())),
+            icon: const Icon(Icons.history_rounded, color: Colors.white70),
+            label: const Text('Past Trips · Ratings & Reports',
+                style: TextStyle(color: Colors.white70)),
+          ),
 
           if (_isSuspended)
             Padding(

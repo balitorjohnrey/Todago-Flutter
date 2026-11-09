@@ -554,10 +554,9 @@ class TripService {
     }
   }
 
-  // ── Passenger: submit driver rating ──────────────────────────────────────
-  /// Submits a 1–5 star rating with optional tags and comment for a completed
-  /// trip. The backend inserts into the `feedback` table and permanently
-  /// recalculates `drivers.avg_rating` so the score is always up to date.
+  // ── Trip participant: rate the other person ──────────────────────────────
+  /// Submits a 1–5 star rating after completion and payment. Driver ratings
+  /// use the driver token and are stored separately from ratings of drivers.
   ///
   /// Returns `{'success': true}` on success, or `{'success': false, 'message': ...}`
   /// on failure (including duplicate-rating 409).
@@ -566,9 +565,11 @@ class TripService {
     required int rating, // 1–5
     String? comment, // optional free-text
     List<String>? tags, // optional quick-pick tags joined into comment
+    bool forDriver = false,
   }) async {
     try {
-      final token = await _getPassengerToken();
+      final token =
+          forDriver ? await _getDriverToken() : await _getPassengerToken();
 
       // Merge tags into the comment string if provided
       String? fullComment = comment?.trim();
@@ -601,12 +602,14 @@ class TripService {
     }
   }
 
-  // ── Passenger: check if trip already rated ────────────────────────────────
+  // ── Trip participant: check their own submitted rating ────────────────────
   /// Returns `{'hasRated': bool, 'feedback': {...} | null}`.
   /// Used by the Bookings tab to decide whether to show a Rate button.
-  static Future<Map<String, dynamic>> getTripRating(String tripId) async {
+  static Future<Map<String, dynamic>> getTripRating(String tripId,
+      {bool forDriver = false}) async {
     try {
-      final token = await _getPassengerToken();
+      final token =
+          forDriver ? await _getDriverToken() : await _getPassengerToken();
       final response = await http
           .get(
             Uri.parse('$_baseUrl/$tripId/rating'),
@@ -616,9 +619,15 @@ class TripService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
-      return {'hasRated': false, 'feedback': null};
+      return {
+        'success': false,
+        'message': 'Unable to load your rating. Please try again.'
+      };
     } catch (e) {
-      return {'hasRated': false, 'feedback': null};
+      return {
+        'success': false,
+        'message': 'Connection failed. Please try again.'
+      };
     }
   }
 }
