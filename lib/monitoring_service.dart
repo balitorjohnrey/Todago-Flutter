@@ -35,6 +35,16 @@ class MonitoringService {
     return data == null ? null : records(data['drivers']);
   }
 
+  static Future<Map<String, dynamic>?> fetchDriverProfile(String driverId,
+      {required bool operator}) async {
+    final path =
+        operator ? 'operator/analytics/drivers' : 'admin/monitoring/drivers';
+    final data = await _get('$path/${Uri.encodeComponent(driverId)}',
+        operator: operator);
+    final driver = data?['driver'];
+    return driver is Map<String, dynamic> ? driver : null;
+  }
+
   static Future<List<Map<String, dynamic>>?> fetchPendingReports() async {
     final data = await _get('admin/reports');
     return data == null ? null : records(data['reports']);

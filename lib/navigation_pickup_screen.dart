@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'contact_service.dart';
+import 'trip_message_screens.dart';
 import 'trip_service.dart';
 import 'driver_alerts.dart';
 import 'active_trip_driver_screen.dart';
@@ -532,11 +533,23 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                         ]),
                   ),
                   Row(children: [
-                    _iconBtn(Icons.phone_rounded, Colors.green,
-                        () => _contactPassenger(call: true)),
+                    Tooltip(
+                      message: 'Call passenger',
+                      child: _iconBtn(
+                          Icons.phone_rounded, Colors.green, _callPassenger),
+                    ),
                     const SizedBox(width: 8),
-                    _iconBtn(Icons.chat_bubble_rounded, AppColors.primary,
-                        () => _contactPassenger(call: false)),
+                    Tooltip(
+                      message: 'Message passenger',
+                      child: _iconBtn(
+                          Icons.chat_bubble_rounded,
+                          AppColors.primary,
+                          () => TripConversationScreen.open(
+                                context,
+                                tripId: widget.trip['trip_id']?.toString(),
+                                forDriver: true,
+                              )),
+                    ),
                   ]),
                 ]),
                 const SizedBox(height: 14),
@@ -624,13 +637,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                 GoogleFonts.poppins(fontSize: 11, color: AppColors.textHint)),
       ]);
 
-  Future<void> _contactPassenger({required bool call}) async {
-    final ok = call
-        ? await ContactService.call(_passengerPhone)
-        : await ContactService.message(
-            _passengerPhone,
-            body: 'Hi, this is your TodaGo driver. I am on my way.',
-          );
+  Future<void> _callPassenger() async {
+    final ok = await ContactService.call(_passengerPhone);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Passenger phone number is not available.',

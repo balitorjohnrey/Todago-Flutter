@@ -7,6 +7,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'panabo_config.dart';
 import 'contact_service.dart';
+import 'trip_message_screens.dart';
 import 'trip_service.dart';
 import 'driver_alerts.dart';
 import 'driver_dashboard_screen.dart';
@@ -31,6 +32,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   MapRoute? _route;
   bool _isCompleting = false;
   bool _showingFeedback = false;
+  bool _tripChatOpen = false;
   bool _isDroppingPassenger = false;
   bool _isFetchingRoute = false;
 
@@ -441,7 +443,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _destPoint = _currentDestinationPoint();
     });
     if (trip['status'] == 'completed' && trip['payment_status'] == 'paid') {
-      if (!_isCompleting) await _openFeedback();
+      if (!_isCompleting && !_tripChatOpen) await _openFeedback();
       return;
     }
     final nextDest = _destPoint;
@@ -878,14 +880,14 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                 Row(children: [
                   Expanded(
                       child: _actionBtn(Icons.phone_rounded, 'Call',
-                          Colors.green, () => _contactPassenger(call: true))),
+                          Colors.green, _callPassenger)),
                   const SizedBox(width: 10),
                   Expanded(
                       child: _actionBtn(
                           Icons.chat_bubble_rounded,
                           'Message',
                           AppColors.primary,
-                          () => _contactPassenger(call: false))),
+                          _messagePassenger)),
                 ]),
                 const SizedBox(height: 14),
 
@@ -1170,13 +1172,19 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
         ),
       );
 
-  Future<void> _contactPassenger({required bool call}) async {
-    final ok = call
-        ? await ContactService.call(_passengerPhone)
-        : await ContactService.message(
-            _passengerPhone,
-            body: 'Hi, this is your TodaGo driver.',
-          );
+  Future<void> _messagePassenger() async {
+    if (_tripChatOpen || _isCompleting) return;
+    _tripChatOpen = true;
+    await TripConversationScreen.open(
+      context,
+      tripId: _trip['trip_id']?.toString(),
+      forDriver: true,
+    );
+    _tripChatOpen = false;
+  }
+
+  Future<void> _callPassenger() async {
+    final ok = await ContactService.call(_passengerPhone);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Passenger phone number is not available.',

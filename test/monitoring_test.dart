@@ -7,12 +7,15 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:todago/admin_dashboard_screen.dart';
 import 'package:todago/admin_monitoring_screens.dart';
 import 'package:todago/app_theme.dart';
 import 'package:todago/driver_alerts.dart';
 import 'package:todago/driver_dashboard_screen.dart';
 import 'package:todago/operator_dashboard_screen.dart';
+import 'package:todago/passenger_home_screen.dart';
+import 'package:todago/trip_message_screens.dart';
 import 'package:todago/trip_service.dart';
 import 'support/test_fonts.dart';
 
@@ -113,6 +116,12 @@ void main() {
       expect(find.text('Top Rated Drivers'), findsOneWidget);
       expect(find.text('4.90 / 5'), findsOneWidget);
       expect(find.text('12 completed trips'), findsOneWidget);
+      await _tap(tester, 'Driver Two');
+      expect(find.text('Driver profile'), findsOneWidget);
+      expect(find.text('09170000002'), findsOneWidget);
+      expect(find.text('PLATE-2'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close profile'));
+      await tester.pumpAndSettle();
       await _tap(tester, 'Fares');
       await _tap(tester, 'Trip Additional Charges');
       expect(find.byType(TripChargesScreen), findsOneWidget);
@@ -139,7 +148,27 @@ void main() {
               if (request.url.path.endsWith('/monitoring/drivers')) {
                 expect(request.headers['Authorization'], 'Bearer admin-token');
                 return _response({
-                  'drivers': [_driver]
+                  'drivers': [
+                    _driver,
+                    {
+                      ..._driver,
+                      'driver_id': 'driver-2',
+                      'driver_name': 'Driver Two',
+                      'rating_count': 0,
+                      'total_trips': 0,
+                    }
+                  ]
+                });
+              }
+              if (request.url.path ==
+                  '/api/admin/monitoring/drivers/driver-2') {
+                expect(request.headers['Authorization'], 'Bearer admin-token');
+                return _response({
+                  'driver': {
+                    'driver_name': 'Driver Two',
+                    'phone': '09170000002',
+                    'plate_no': 'PLATE-2',
+                  }
                 });
               }
               if (request.url.path.endsWith('/monitoring/charges')) {
@@ -174,6 +203,11 @@ void main() {
       expect(find.text('Top Rated Drivers'), findsOneWidget);
       expect(find.text('Driver One'), findsOneWidget);
       expect(find.text('8 ratings'), findsOneWidget);
+      await _tap(tester, 'Driver One');
+      expect(find.text('Driver profile'), findsOneWidget);
+      expect(find.text('Fleet One'), findsWidgets);
+      await tester.tap(find.byTooltip('Close profile'));
+      await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 15));
       await tester.pumpAndSettle();
       expect(performanceRequests, greaterThanOrEqualTo(2));
@@ -190,7 +224,131 @@ void main() {
                   'drivers': [_driver]
                 });
               }
+              if (request.url.path ==
+                  '/api/operator/analytics/drivers/driver-1') {
+                expect(
+                    request.headers['Authorization'], 'Bearer operator-token');
+                return _response({
+                  'driver': {
+                    ..._driver,
+                    'association_name': 'Fleet One',
+                    'is_verified': true
+                  }
+                });
+              }
               return _fallback(request);
+            }));
+  });
+
+  testWidgets(
+      'passenger Messages opens saved trip chat and retries a failed send',
+      (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues(
+        {'auth_token': 'passenger-token'});
+    final previousMaps = GoogleMapsFlutterPlatform.instance;
+    GoogleMapsFlutterPlatform.instance = _TestMaps();
+    const gps = MethodChannel('flutter.baseflow.com/geolocator');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(gps,
+        (call) async => call.method == 'isLocationServiceEnabled' ? true : 0);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(gps, null);
+      GoogleMapsFlutterPlatform.instance = previousMaps;
+    });
+    final requestIds = <String>[];
+    const conversation = {
+      'trip_id': 'trip-1',
+      'peer_name': 'Driver One',
+      'destination': 'Panabo Public Market',
+      'activity_at': '2026-11-11T04:00:00Z',
+    };
+    var closed = false;
+    var driverReplied = false;
+    await http.runWithClient(() async {
+      await _open(tester, const PassengerHomeScreen(),
+          size: const Size(360, 800));
+      expect(find.text('FAQ Chatbot'), findsOneWidget);
+      await tester.tap(find.byTooltip('Messages'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TripInboxScreen), findsOneWidget);
+      await _tap(tester, 'Driver One');
+      expect(find.text('No messages yet'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Meet me at the gate.');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(requestIds.length, 1);
+      expect(
+          find.text('Could not send the message. Try again.'), findsOneWidget);
+      expect(find.text('Meet me at the gate.'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Send message'));
+      await tester.pumpAndSettle();
+      expect(requestIds.length, 2);
+      expect(requestIds.toSet().length, 1);
+      expect(find.text('Meet me at the gate.'), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          isEmpty);
+
+      driverReplied = true;
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('I am on my way.'), findsOneWidget);
+      closed = true;
+      await tester.tap(find.byTooltip('Refresh messages'));
+      await tester.pumpAndSettle();
+      expect(find.text('This trip conversation is closed.'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+      expect(find.text('Meet me at the gate.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              switch (request.url.path) {
+                case '/api/trips/conversations':
+                  expect(request.headers['Authorization'],
+                      'Bearer passenger-token');
+                  return _response({
+                    'conversations': [conversation]
+                  });
+                case '/api/trips/trip-1/messages':
+                  expect(request.headers['Authorization'],
+                      'Bearer passenger-token');
+                  if (request.method == 'POST') {
+                    final body =
+                        jsonDecode(request.body) as Map<String, dynamic>;
+                    expect(body['message'], 'Meet me at the gate.');
+                    requestIds.add(body['requestId'] as String);
+                    return requestIds.length == 1
+                        ? http.Response('{}', 503)
+                        : _response({});
+                  }
+                  return _response({
+                    'conversation': {...conversation, 'can_send': !closed},
+                    'messages': [
+                      if (driverReplied)
+                        {
+                          'message_id': '2',
+                          'sender_role': 'driver',
+                          'body': 'I am on my way.',
+                          'created_at': '2026-11-11T04:01:00Z',
+                        },
+                      if (requestIds.length > 1)
+                        {
+                          'message_id': '1',
+                          'sender_role': 'passenger',
+                          'body': 'Meet me at the gate.',
+                          'created_at': '2026-11-11T04:00:00Z',
+                        },
+                    ],
+                  });
+                default:
+                  return _response({
+                    'trips': [],
+                    'wallet': {'balance': 0}
+                  });
+              }
             }));
   });
 
@@ -434,6 +592,22 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(read, true);
       expect(find.text('TodaGo Admin · New'), findsNothing);
+      await tester.pageBack();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('FAQ Chatbot'), findsOneWidget);
+      await tester.tap(find.byTooltip('Messages'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      expect(find.text('Passenger One'), findsOneWidget);
+      expect(find.text('Meet me at the gate.'), findsOneWidget);
+      await tester.tap(find.text('Passenger One'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      expect(find.byType(TripConversationScreen), findsOneWidget);
+      expect(find.text('This trip conversation is closed.'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },
@@ -476,6 +650,34 @@ void main() {
                       request.headers['Authorization'], 'Bearer driver-token');
                   read = true;
                   return _response({});
+                case '/api/trips/conversations':
+                  expect(
+                      request.headers['Authorization'], 'Bearer driver-token');
+                  return _response({
+                    'conversations': [
+                      {
+                        'trip_id': 'trip-1',
+                        'peer_name': 'Passenger One',
+                        'last_message': 'Meet me at the gate.',
+                      }
+                    ],
+                  });
+                case '/api/trips/trip-1/messages':
+                  expect(
+                      request.headers['Authorization'], 'Bearer driver-token');
+                  return _response({
+                    'conversation': {
+                      'peer_name': 'Passenger One',
+                      'can_send': false
+                    },
+                    'messages': [
+                      {
+                        'message_id': '1',
+                        'sender_role': 'passenger',
+                        'body': 'Meet me at the gate.',
+                      }
+                    ],
+                  });
                 default:
                   return _fallback(request);
               }

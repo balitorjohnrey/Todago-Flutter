@@ -8,6 +8,7 @@ import 'driver_alerts.dart';
 import 'driver_auth_service.dart';
 import 'driver_messages.dart';
 import 'map_service.dart';
+import 'trip_message_screens.dart';
 import 'trip_service.dart';
 import 'splash_screen.dart';
 import 'ride_request_screen.dart';
@@ -419,7 +420,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
               Icons.history_rounded,
               'Trip history'
             ),
-            (_DriverSettingsAction.help, Icons.help_outline, 'FAQ and support'),
+            (_DriverSettingsAction.help, Icons.help_outline, 'FAQ Chatbot'),
             (_DriverSettingsAction.logout, Icons.logout_rounded, 'Log out'),
           ])
             ListTile(
@@ -558,51 +559,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF1A1A2E),
-
-      // ── Floating FAQ chatbot button ────────────────────────────────────────
-      floatingActionButton: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: GestureDetector(
-          onTap: _openChat,
-          child: Container(
-            width: 54,
-            height: 54,
-            decoration: BoxDecoration(
-              color: AppColors.primary,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.45),
-                  blurRadius: 16,
-                  offset: const Offset(0, 4),
-                )
-              ],
-            ),
-            child: Stack(alignment: Alignment.center, children: [
-              const Icon(Icons.question_answer_rounded,
-                  color: AppColors.backgroundDark, size: 26),
-              // Online dot
-              Positioned(
-                top: 10,
-                right: 10,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: const BoxDecoration(
-                    color: AppColors.success,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ).animate().fadeIn(delay: 500.ms).scale(
-            begin: const Offset(0.6, 0.6),
-            end: const Offset(1, 1),
-            duration: 400.ms,
-            curve: Curves.elasticOut),
+      floatingActionButton: const Padding(
+        padding: EdgeInsets.only(bottom: 8),
+        child: TripMessagesButton(forDriver: true),
       ),
-
       body: SafeArea(
         child: CustomScrollView(slivers: [
           SliverFillRemaining(
@@ -709,21 +669,30 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                 label: const Text('Past Trips · Ratings & Reports',
                     style: TextStyle(color: Colors.white70)),
               ),
-              TextButton.icon(
-                onPressed: _openMessages,
-                icon: Icon(
-                  _hasUnreadMessages
-                      ? Icons.mark_email_unread_outlined
-                      : Icons.mail_outline,
-                  color: AppColors.primary,
+              Wrap(alignment: WrapAlignment.center, children: [
+                TextButton.icon(
+                  onPressed: _openMessages,
+                  icon: Icon(
+                    _hasUnreadMessages
+                        ? Icons.mark_email_unread_outlined
+                        : Icons.mail_outline,
+                    color: AppColors.primary,
+                  ),
+                  label: Text(
+                    _hasUnreadMessages
+                        ? 'Admin messages · New'
+                        : 'Admin messages',
+                    style: const TextStyle(color: AppColors.primary),
+                  ),
                 ),
-                label: Text(
-                  _hasUnreadMessages
-                      ? 'Admin messages · New'
-                      : 'Admin messages',
-                  style: const TextStyle(color: AppColors.primary),
+                TextButton.icon(
+                  onPressed: _openChat,
+                  icon: const Icon(Icons.help_outline_rounded,
+                      color: Colors.white70),
+                  label: const Text('FAQ Chatbot',
+                      style: TextStyle(color: Colors.white70)),
                 ),
-              ),
+              ]),
 
               if (_isSuspended)
                 Padding(
@@ -893,31 +862,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                                       fontSize: 12, color: Colors.white38)),
                             ]),
                           ]),
-                    ),
-
-                    // ── FAQ help chip ──────────────────────────────────────────
-                    GestureDetector(
-                      onTap: _openChat,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.3)),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.question_answer_rounded,
-                              color: AppColors.primary, size: 14),
-                          const SizedBox(width: 4),
-                          Text('FAQ Help',
-                              style: GoogleFonts.poppins(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.primary)),
-                        ]),
-                      ),
                     ),
                   ]),
                   const SizedBox(height: 16),

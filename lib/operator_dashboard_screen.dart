@@ -402,7 +402,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
 
                   const SizedBox(height: 16),
 
-                  DriverPerformanceCard(drivers: _topDrivers),
+                  DriverPerformanceCard(drivers: _topDrivers, operator: true),
                   const SizedBox(height: 16),
 
                   // Avg Rating card

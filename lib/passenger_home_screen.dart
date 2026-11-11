@@ -14,6 +14,7 @@ import 'map_service.dart';
 import 'live_trip_tracking_screen.dart';
 import 'rate_driver_screen.dart';
 import 'service_selection_screen.dart';
+import 'trip_message_screens.dart';
 import 'trip_service.dart';
 import 'splash_screen.dart';
 import 'ai_chat_screen.dart';
@@ -748,50 +749,10 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             _buildEnhancedProfileTab(),
           ],
         ),
-
-        // ── Floating FAQ chatbot button ─────────────────────────────────
-        Positioned(
-          bottom: 76, // just above the bottom nav
+        const Positioned(
+          bottom: 76,
           right: 16,
-          child: GestureDetector(
-            onTap: _openChat,
-            child: Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: AppColors.backgroundDark,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.backgroundDark.withOpacity(0.35),
-                    blurRadius: 14,
-                    offset: const Offset(0, 4),
-                  )
-                ],
-              ),
-              child: Stack(alignment: Alignment.center, children: [
-                const Icon(Icons.question_answer_rounded,
-                    color: AppColors.primary, size: 26),
-                // Notification dot
-                Positioned(
-                  top: 10,
-                  right: 10,
-                  child: Container(
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(
-                      color: AppColors.success,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ),
-              ]),
-            ),
-          ).animate().fadeIn(delay: 600.ms).scale(
-              begin: const Offset(0.6, 0.6),
-              end: const Offset(1, 1),
-              duration: 400.ms,
-              curve: Curves.elasticOut),
+          child: TripMessagesButton(),
         ),
       ]),
       bottomNavigationBar: _buildBottomNav(),
@@ -862,7 +823,24 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                           color: AppColors.backgroundDark)),
                 ]),
               ),
-              const Spacer(),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _openChat,
+                    icon: const Icon(Icons.help_outline_rounded, size: 16),
+                    label: const Text('FAQ Chatbot'),
+                    style: TextButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: AppColors.backgroundDark,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      textStyle: GoogleFonts.poppins(
+                          fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: _initLocation,
                 child: Container(

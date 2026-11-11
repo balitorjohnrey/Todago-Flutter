@@ -22,6 +22,60 @@ class TripService {
         if (token != null) 'Authorization': 'Bearer $token',
       };
 
+  static Future<Map<String, dynamic>> getConversations({
+    required bool forDriver,
+    Map<String, String>? cursor,
+  }) =>
+      _messageRequest('conversations', forDriver: forDriver, query: cursor);
+
+  static Future<Map<String, dynamic>> getTripMessages(
+    String tripId, {
+    required bool forDriver,
+    String? before,
+  }) =>
+      _messageRequest(
+        '${Uri.encodeComponent(tripId)}/messages',
+        forDriver: forDriver,
+        query: before == null ? null : {'before': before},
+      );
+
+  static Future<Map<String, dynamic>> sendTripMessage(
+    String tripId, {
+    required bool forDriver,
+    required String text,
+    required String requestId,
+  }) =>
+      _messageRequest(
+        '${Uri.encodeComponent(tripId)}/messages',
+        forDriver: forDriver,
+        body: {'message': text, 'requestId': requestId},
+      );
+
+  static Future<Map<String, dynamic>> _messageRequest(
+    String path, {
+    required bool forDriver,
+    Map<String, String>? query,
+    Map<String, String>? body,
+  }) async {
+    try {
+      final token =
+          await (forDriver ? _getDriverToken() : _getPassengerToken());
+      final uri = Uri.parse('$_baseUrl/$path').replace(queryParameters: query);
+      final response = await (body == null
+              ? http.get(uri, headers: _headers(token))
+              : http.post(uri,
+                  headers: _headers(token), body: jsonEncode(body)))
+          .timeout(const Duration(seconds: 12));
+      final data = jsonDecode(response.body);
+      if (data is Map<String, dynamic> && response.statusCode < 500) {
+        return data;
+      }
+    } catch (_) {
+      // A retry can reuse the same request ID after an interrupted send.
+    }
+    return const {'success': false};
+  }
+
   // ── Passenger: fetch online drivers ───────────────────────────────────────
   static Future<List<Map<String, dynamic>>> fetchOnlineDrivers({
     LatLng? pickupLatLng,

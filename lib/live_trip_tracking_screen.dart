@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'app_theme.dart';
 import 'contact_service.dart';
+import 'trip_message_screens.dart';
 import 'trip_service.dart';
 import 'passenger_home_screen.dart';
 import 'rate_driver_screen.dart';
@@ -71,6 +72,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   Map<String, dynamic>? _latestTrip;
   bool _isChangingPaymentMethod = false;
   bool _isStartingPayment = false;
+  bool _tripChatOpen = false;
+  bool _ratingPending = false;
 
   static const List<Map<String, dynamic>> _paymentOptions = [
     {
@@ -410,6 +413,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   void _navigateToRating() {
     _stopTimers();
     if (!mounted) return;
+    if (_tripChatOpen) {
+      _ratingPending = true;
+      return;
+    }
+    _ratingPending = false;
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       pageBuilder: (_, __, ___) => RateDriverScreen(
         tripId: widget.tripId,
@@ -1031,11 +1039,17 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                     ),
                   ),
                   Row(children: [
-                    _actionBtn(Icons.phone_rounded, Colors.green,
-                        () => _contactDriver(call: true)),
+                    Tooltip(
+                      message: 'Call driver',
+                      child: _actionBtn(
+                          Icons.phone_rounded, Colors.green, _callDriver),
+                    ),
                     const SizedBox(width: 10),
-                    _actionBtn(Icons.chat_bubble_rounded, AppColors.primary,
-                        () => _contactDriver(call: false)),
+                    Tooltip(
+                      message: 'Message driver',
+                      child: _actionBtn(Icons.chat_bubble_rounded,
+                          AppColors.primary, _messageDriver),
+                    ),
                   ]),
                 ]),
                 const SizedBox(height: 14),
@@ -1261,13 +1275,17 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
         ]),
       ]);
 
-  Future<void> _contactDriver({required bool call}) async {
-    final ok = call
-        ? await ContactService.call(_driverPhone)
-        : await ContactService.message(
-            _driverPhone,
-            body: 'Hi, this is your TodaGo passenger.',
-          );
+  Future<void> _messageDriver() async {
+    if (_tripChatOpen) return;
+    _tripChatOpen = true;
+    await TripConversationScreen.open(context,
+        tripId: widget.tripId, forDriver: false);
+    _tripChatOpen = false;
+    if (mounted && _ratingPending) _navigateToRating();
+  }
+
+  Future<void> _callDriver() async {
+    final ok = await ContactService.call(_driverPhone);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Driver phone number is not available.',
