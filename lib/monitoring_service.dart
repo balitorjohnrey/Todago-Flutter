@@ -61,6 +61,33 @@ class MonitoringService {
           ...cursor.map((key, value) => MapEntry(key, value.toString())),
       });
 
+  static Future<String?> sendGpsMessage(
+      String locationId, String message, String requestId) async {
+    try {
+      final token = await AdminAuthService.getToken();
+      final response = await http
+          .post(
+            Uri.parse(
+                '$_api/admin/monitoring/gps/${Uri.encodeComponent(locationId)}/messages'),
+            headers: {
+              'Content-Type': 'application/json',
+              if (token != null) 'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode({'message': message, 'requestId': requestId}),
+          )
+          .timeout(const Duration(seconds: 12));
+      final data = jsonDecode(response.body);
+      if (data is Map) {
+        if ((response.statusCode == 200 || response.statusCode == 201) &&
+            data['success'] == true) return null;
+        if (data['message'] is String) return data['message'] as String;
+      }
+    } catch (_) {
+      // Keep the draft and allow the admin to retry.
+    }
+    return 'Unable to send the message. Please retry.';
+  }
+
   static List<Map<String, dynamic>> records(dynamic value) => value is List
       ? value
           .whereType<Map>()

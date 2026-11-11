@@ -8,6 +8,7 @@ import 'app_theme.dart';
 import 'panabo_config.dart';
 import 'contact_service.dart';
 import 'trip_service.dart';
+import 'driver_alerts.dart';
 import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
 import 'route_display.dart';
@@ -782,6 +783,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                           ),
                         ),
                       ]),
+                      const DriverServiceAreaWarning(),
                     ]),
               ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0),
             ),

@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'driver_alerts.dart';
 
 class DriverAuthResponse {
   final bool success;
@@ -188,6 +189,7 @@ class DriverAuthService {
   }
 
   static Future<void> _clearSession() async {
+    DriverAlerts.clearServiceArea();
     await _storage.delete(key: _driverTokenKey);
     await _storage.delete(key: _driverDataKey);
   }
@@ -346,5 +348,8 @@ class DriverAuthService {
     }
   }
 
-  static Future<void> logout() async => await _storage.deleteAll();
+  static Future<void> logout() async {
+    DriverAlerts.clearServiceArea();
+    await _storage.deleteAll();
+  }
 }

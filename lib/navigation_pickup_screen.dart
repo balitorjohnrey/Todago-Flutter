@@ -6,6 +6,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
 import 'contact_service.dart';
 import 'trip_service.dart';
+import 'driver_alerts.dart';
 import 'active_trip_driver_screen.dart';
 import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
@@ -450,6 +451,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                           ),
                         ),
                       ]),
+                      const DriverServiceAreaWarning(),
                     ]),
               ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.2, end: 0),
             ),

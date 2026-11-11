@@ -10,7 +10,10 @@ import 'package:http/testing.dart';
 import 'package:todago/admin_dashboard_screen.dart';
 import 'package:todago/admin_monitoring_screens.dart';
 import 'package:todago/app_theme.dart';
+import 'package:todago/driver_alerts.dart';
+import 'package:todago/driver_dashboard_screen.dart';
 import 'package:todago/operator_dashboard_screen.dart';
+import 'package:todago/trip_service.dart';
 import 'support/test_fonts.dart';
 
 class _TestMaps extends MethodChannelGoogleMapsFlutter {
@@ -75,8 +78,9 @@ http.Response _fallback(http.Request request) => _response({
       },
     });
 
-Future<void> _open(WidgetTester tester, Widget screen) async {
-  tester.view.physicalSize = const Size(800, 1000);
+Future<void> _open(WidgetTester tester, Widget screen,
+    {Size size = const Size(800, 1000)}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(MaterialApp(theme: AppTheme.theme, home: screen));
@@ -96,6 +100,7 @@ void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({
         'admin_auth_token': 'admin-token',
         'operator_auth_token': 'operator-token',
+        'driver_auth_token': 'driver-token',
       }));
 
   testWidgets(
@@ -208,7 +213,8 @@ void main() {
       expect(find.byType(GpsActivityScreen), findsOneWidget);
       final map = tester.widget<GoogleMap>(find.byType(GoogleMap));
       expect(map.markers.single.position, const LatLng(7.31, 125.67));
-      expect(find.text('7.310000, 125.670000'), findsOneWidget);
+      expect(find.widgetWithText(SelectableText, '7.310000, 125.670000'),
+          findsOneWidget);
       expect(find.textContaining('Outside designated route'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -221,8 +227,8 @@ void main() {
                     if (reportRequests > 1)
                       {
                         'issue_id': 'gps-1',
-              'report_type': 'driver_route_deviation',
-              'reporter_role': 'system',
+                        'report_type': 'driver_route_deviation',
+                        'reporter_role': 'system',
                         'title': 'Driver outside designated route',
                         'subject_name': 'Driver One',
                         'subject_id': 'driver-1',
@@ -258,6 +264,221 @@ void main() {
                 });
               }
               return _fallback(request);
+            }));
+  });
+
+  testWidgets('a Tagum GPS entry is red and opens a message to its driver',
+      (tester) async {
+    final previousMaps = GoogleMapsFlutterPlatform.instance;
+    GoogleMapsFlutterPlatform.instance = _TestMaps();
+    addTearDown(() => GoogleMapsFlutterPlatform.instance = previousMaps);
+    final sends = <Map<String, dynamic>>[];
+    const message = 'Please return to Panabo City or Carmen.';
+    await http.runWithClient(() async {
+      await _open(tester, const GpsActivityScreen(),
+          size: const Size(360, 800));
+      final row = find.widgetWithText(ListTile, 'Driver One · PLATE-1');
+      expect(
+        tester
+            .widget<Icon>(find.descendant(
+              of: row,
+              matching: find.byIcon(Icons.warning_amber_rounded),
+            ))
+            .color,
+        const Color(0xFFB42318),
+      );
+      await _tap(tester, 'Driver One · PLATE-1');
+      expect(find.text('GPS update details'), findsOneWidget);
+      expect(find.text('Panabo City and Carmen'), findsOneWidget);
+      expect(find.text('Fleet One'), findsOneWidget);
+      await _tap(tester, 'Message driver');
+      expect(find.text('To: Driver One'), findsOneWidget);
+      final field = find.byType(TextField);
+      expect(tester.widget<TextField>(field).controller!.text,
+          contains('outside the TodaGo service area'));
+      await tester.enterText(field, message);
+      await _tap(tester, 'Send message');
+      expect(find.text('Unable to send the message. Please retry.'),
+          findsOneWidget);
+      expect(tester.widget<TextField>(field).controller!.text, message);
+      await _tap(tester, 'Send message');
+      expect(find.text('Message sent to Driver One.'), findsOneWidget);
+      expect(sends, hasLength(2));
+      expect(sends.last, sends.first);
+      expect(sends.first['message'], message);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              expect(request.headers['Authorization'], 'Bearer admin-token');
+              if (request.method == 'POST') {
+                expect(request.url.path,
+                    '/api/admin/monitoring/gps/tagum-1/messages');
+                sends.add(jsonDecode(request.body) as Map<String, dynamic>);
+                return sends.length == 1
+                    ? http.Response('{}', 503)
+                    : _response({});
+              }
+              return _response({
+                'locations': [
+                  {
+                    'location_id': 'tagum-1',
+                    'driver_name': 'Driver One',
+                    'plate_no': 'PLATE-1',
+                    'toda_body_number': 'T-1',
+                    'association_name': 'Fleet One',
+                    'latitude': 7.456748,
+                    'longitude': 125.795412,
+                    'source': 'online_driver_location',
+                    'observed_at': '2026-11-11T03:53:52Z',
+                    'within_service_area': false,
+                    'allowed_service_areas': ['Panabo City', 'Carmen'],
+                    'can_message_driver': true,
+                  }
+                ],
+                'has_more': false,
+              });
+            }));
+  });
+
+  testWidgets(
+      'going online in Tagum warns the driver and admin messages appear in the inbox',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    const location = MethodChannel('flutter.baseflow.com/geolocator');
+    const locationUpdates =
+        MethodChannel('flutter.baseflow.com/geolocator_updates');
+    const notifications =
+        MethodChannel('dexterous.com/flutter/local_notifications');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final notificationTitles = <String>[];
+    messenger.setMockMethodCallHandler(
+        location,
+        (call) async => switch (call.method) {
+              'isLocationServiceEnabled' => true,
+              'checkPermission' => 2,
+              'getCurrentPosition' => {
+                  'latitude': 7.456748,
+                  'longitude': 125.795412,
+                  'timestamp': DateTime(2026).millisecondsSinceEpoch,
+                  'accuracy': 5.0,
+                },
+              _ => null,
+            });
+    messenger.setMockMethodCallHandler(locationUpdates, (_) async => null);
+    messenger.setMockMethodCallHandler(notifications, (call) async {
+      if (call.method == 'show')
+        notificationTitles.add(call.arguments['title'] as String);
+      return null;
+    });
+    addTearDown(() {
+      DriverAlerts.clearServiceArea();
+      for (final channel in [location, locationUpdates, notifications]) {
+        messenger.setMockMethodCallHandler(channel, null);
+      }
+    });
+
+    var online = false;
+    var withinArea = false;
+    var sample = 0;
+    var sent = false;
+    var read = false;
+    const message = 'Please return to Panabo City or Carmen.';
+    final area = () => {
+          'within_service_area': withinArea,
+          'allowed_service_areas': ['Panabo City', 'Carmen'],
+          'observed_at':
+              DateTime.utc(2026, 11, 11, 4, 0, sample++).toIso8601String(),
+        };
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.theme, home: const DriverDashboardScreen()));
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.tap(find.text('GO ONLINE'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      final warning =
+          find.textContaining('Outside service area', findRichText: true);
+      expect(warning, findsOneWidget);
+      expect(find.textContaining('Panabo City or Carmen', findRichText: true),
+          findsOneWidget);
+      expect(notificationTitles, ['Outside service area']);
+
+      await TripService.updateOnlineDriverLocation(
+          const LatLng(7.456748, 125.795412));
+      await tester.pump();
+      expect(notificationTitles, ['Outside service area']);
+      withinArea = true;
+      await TripService.updateOnlineDriverLocation(
+          const LatLng(7.3209196, 125.670569));
+      await tester.pump();
+      expect(warning, findsNothing);
+
+      sent = true;
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pump();
+      expect(notificationTitles,
+          ['Outside service area', 'Message from TodaGo Admin']);
+      await tester.tap(find.text('Admin messages · New'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('TodaGo Admin · New'), findsOneWidget);
+      await tester.tap(find.text('TodaGo Admin · New'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.widgetWithText(SelectableText, message), findsOneWidget);
+      await tester.tap(find.text('Done'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(read, true);
+      expect(find.text('TodaGo Admin · New'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              switch (request.url.path) {
+                case '/api/driver/status':
+                  final body = jsonDecode(request.body);
+                  expect(body['status'], 'online');
+                  expect(body['lat'], 7.456748);
+                  expect(body['lng'], 125.795412);
+                  online = true;
+                  return _response({'service_area': area()});
+                case '/api/driver/location':
+                  return _response({'service_area': area()});
+                case '/api/driver/me':
+                  return _response({
+                    'driver': {'driver_name': 'Driver One', 'status': 'offline'}
+                  });
+                case '/api/driver/stats/today':
+                  return _response({
+                    'stats': {'status': online ? 'online' : 'offline'}
+                  });
+                case '/api/driver/messages':
+                  expect(
+                      request.headers['Authorization'], 'Bearer driver-token');
+                  return _response({
+                    'messages': [
+                      if (sent)
+                        {
+                          'message_id': 'test-admin-message',
+                          'body': message,
+                          'created_at': '2026-11-11T04:00:00Z',
+                          'read_at': read ? '2026-11-11T04:00:20Z' : null,
+                        },
+                    ]
+                  });
+                case '/api/driver/messages/test-admin-message/read':
+                  expect(request.method, 'PATCH');
+                  expect(
+                      request.headers['Authorization'], 'Bearer driver-token');
+                  read = true;
+                  return _response({});
+                default:
+                  return _fallback(request);
+              }
             }));
   });
 

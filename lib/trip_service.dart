@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'driver_alerts.dart';
 
 class TripService {
   static const String _baseUrl =
@@ -383,6 +384,7 @@ class TripService {
   static Future<bool> updateDriverLocation(
       String tripId, LatLng location) async {
     if (tripId.isEmpty) return false;
+    final alertSession = DriverAlerts.session;
     try {
       final token = await _getDriverToken();
       final response = await http
@@ -397,6 +399,9 @@ class TripService {
           .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          DriverAlerts.applyServiceArea(data['service_area'], alertSession);
+        }
         return data['success'] == true;
       }
       return false;
@@ -432,6 +437,7 @@ class TripService {
     LatLng? location,
     void Function(String)? onError,
   }) async {
+    final alertSession = DriverAlerts.session;
     try {
       final token = await _getDriverToken();
       final response = await http
@@ -450,6 +456,10 @@ class TripService {
       if (data['success'] != true) {
         onError?.call(
             data['message']?.toString() ?? 'Unable to update driver status.');
+      } else if (status == 'offline') {
+        DriverAlerts.clearServiceArea();
+      } else {
+        DriverAlerts.applyServiceArea(data['service_area'], alertSession);
       }
       return data['success'] == true;
     } catch (e) {
@@ -459,6 +469,7 @@ class TripService {
 
   // Driver: refresh online GPS point used for matching.
   static Future<bool> updateOnlineDriverLocation(LatLng location) async {
+    final alertSession = DriverAlerts.session;
     try {
       final token = await _getDriverToken();
       final response = await http
@@ -474,6 +485,9 @@ class TripService {
           .timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          DriverAlerts.applyServiceArea(data['service_area'], alertSession);
+        }
         return data['success'] == true;
       }
       return false;

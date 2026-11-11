@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -235,6 +237,8 @@ class GpsActivityScreen extends StatefulWidget {
 }
 
 class _GpsActivityScreenState extends State<GpsActivityScreen> {
+  static const _warning = Color(0xFFB42318);
+  static const _warningSurface = Color(0xFFFFF1F0);
   List<Map<String, dynamic>> _locations = [];
   Map<String, dynamic>? _selected;
   Map<String, dynamic>? _cursor;
@@ -247,8 +251,18 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
   LatLng? _point(Map<String, dynamic>? row) {
     final lat = double.tryParse('${row?['latitude'] ?? row?['lat']}');
     final lng = double.tryParse('${row?['longitude'] ?? row?['lng']}');
-    return lat == null || lng == null ? null : LatLng(lat, lng);
+    return lat == null ||
+            lng == null ||
+            !lat.isFinite ||
+            !lng.isFinite ||
+            lat.abs() > 90 ||
+            lng.abs() > 180
+        ? null
+        : LatLng(lat, lng);
   }
+
+  String _coordinates(LatLng point) =>
+      '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}';
 
   @override
   void initState() {
@@ -277,12 +291,27 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
       }
       final rows = MonitoringService.records(data['locations']);
       _locations = append ? [..._locations, ...rows] : rows;
-      _selected ??= rows.isEmpty ? null : rows.first;
+      if (!append) {
+        final id = _selected?['location_id'];
+        final updated =
+            rows.where((row) => id != null && row['location_id'] == id);
+        if (updated.isNotEmpty) {
+          _selected = updated.first;
+        } else if (_selected == null || _selected != widget.initialLocation) {
+          _selected = rows.isEmpty ? null : rows.first;
+        }
+      }
       _hasMore = data['has_more'] == true;
       _cursor = data['next_cursor'] == null
           ? null
           : Map<String, dynamic>.from(data['next_cursor'] as Map);
     });
+    final point = _point(_selected);
+    if (point == null) {
+      _map = null;
+    } else if (!append) {
+      _map?.animateCamera(CameraUpdate.newLatLng(point));
+    }
   }
 
   @override
@@ -291,15 +320,201 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
     super.dispose();
   }
 
-  String _state(Map<String, dynamic> row) {
-    final parts = <String>[
-      if (row['within_service_area'] == false) 'Outside service area',
-      if (row['route_deviation'] == true) 'Outside designated route',
-      if (row['route_distance_m'] != null)
-        '${(double.tryParse('${row['route_distance_m']}') ?? 0).round()} m from route',
-      if (row['route_deviation'] == null) 'Route not recorded for this update',
-    ];
-    return parts.isEmpty ? 'Within service area and route' : parts.join(' · ');
+  String _areaStatus(Map<String, dynamic> row) {
+    if (row['within_service_area'] == false) return 'Outside service area';
+    if (row['within_service_area'] != true) return 'Service area unavailable';
+    return row['service_area_name']?.toString() ?? 'Within service area';
+  }
+
+  String _routeStatus(Map<String, dynamic> row) {
+    final deviation = row['route_deviation'];
+    if (deviation == null) return 'Route not recorded for this update';
+    final distance = double.tryParse('${row['route_distance_m']}');
+    return [
+      deviation == true
+          ? 'Outside designated route'
+          : 'Within designated route',
+      if (distance != null && distance.isFinite)
+        '${distance.round()} m from route',
+    ].join(' · ');
+  }
+
+  String _allowedAreas(Map<String, dynamic> row) {
+    final areas = row['allowed_service_areas'];
+    return areas is List ? areas.whereType<String>().join(' and ') : '';
+  }
+
+  Future<void> _openMaps(LatLng point) async {
+    final opened = await launchUrl(
+      Uri.https('www.google.com', '/maps/search/', {
+        'api': '1',
+        'query': '${point.latitude},${point.longitude}',
+      }),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Unable to open maps.')));
+    }
+  }
+
+  Future<void> _openDetails(
+      BuildContext tileContext, Map<String, dynamic> row) async {
+    final point = _point(row);
+    setState(() => _selected = row);
+    if (point != null) _map?.animateCamera(CameraUpdate.newLatLng(point));
+    final outside = row['within_service_area'] == false;
+    final areas = _allowedAreas(row);
+    final driver = row['driver_name']?.toString() ?? 'Driver';
+    final locationId = row['location_id']?.toString();
+    final sent = await showModalBottomSheet<bool>(
+      context: tileContext,
+      showDragHandle: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (sheetContext) => SafeArea(
+        child: FractionallySizedBox(
+          heightFactor: 0.82,
+          child: Column(
+            children: [
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+                  children: [
+                    Text('GPS update details',
+                        style: Theme.of(sheetContext).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    Text(driver,
+                        style: Theme.of(sheetContext).textTheme.titleMedium),
+                    const SizedBox(height: 12),
+                    _detail('Service area', _areaStatus(row),
+                        color: outside ? _warning : null),
+                    if (outside && areas.isNotEmpty)
+                      _detail('Allowed areas', areas),
+                    _detail('Recorded at',
+                        _time(row['observed_at'] ?? row['timestamp'])),
+                    if (point != null)
+                      _detail('Coordinates', _coordinates(point)),
+                    if (row['plate_no'] != null)
+                      _detail('Plate number', '${row['plate_no']}'),
+                    if (row['toda_body_number'] != null)
+                      _detail('Body number', '${row['toda_body_number']}'),
+                    if (row['association_name'] != null)
+                      _detail('TODA', '${row['association_name']}'),
+                    _detail('Route', _routeStatus(row)),
+                    _detail(
+                        'Activity',
+                        switch (row['source']) {
+                          'online_driver_location' => 'Online location update',
+                          'active_trip' => 'Trip location update',
+                          _ => 'GPS location update',
+                        }),
+                    if (row['trip_id'] != null)
+                      _detail('Trip ID', '${row['trip_id']}'),
+                    if (point != null)
+                      OutlinedButton.icon(
+                        onPressed: () => _openMaps(point),
+                        icon: const Icon(Icons.map_outlined),
+                        label: const Text('Open location in Maps'),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: row['can_message_driver'] == true && locationId != null
+                      ? FilledButton.icon(
+                          onPressed: () async {
+                            final delivered = await showDialog<bool>(
+                              context: sheetContext,
+                              barrierDismissible: false,
+                              builder: (_) => _GpsMessageDialog(
+                                locationId: locationId,
+                                driver: driver,
+                                draft: outside
+                                    ? 'Your GPS location was outside the TodaGo service area. Please return to the service area${areas.isEmpty ? '' : ' ($areas)'}.'
+                                    : '',
+                              ),
+                            );
+                            if (delivered == true && sheetContext.mounted) {
+                              Navigator.of(sheetContext).pop(true);
+                            }
+                          },
+                          icon: const Icon(Icons.mail_outline),
+                          label: const Text('Message driver'),
+                        )
+                      : const Text(
+                          'Messaging is unavailable for this GPS update.',
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (sent == true && mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Message sent to $driver.')));
+    }
+  }
+
+  Widget _detail(String label, String value, {Color? color}) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label,
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            SelectableText(value, style: TextStyle(color: color)),
+          ],
+        ),
+      );
+
+  Widget _locationCard(BuildContext tileContext, Map<String, dynamic> row) {
+    final outside = row['within_service_area'] == false;
+    final point = _point(row);
+    return Card(
+      color: outside ? _warningSurface : Colors.white,
+      shape: outside
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Color(0xFFF1A9A4)),
+            )
+          : null,
+      child: ListTile(
+        onTap: () => _openDetails(tileContext, row),
+        leading: Icon(
+          outside || row['route_deviation'] == true
+              ? Icons.warning_amber_rounded
+              : Icons.location_on_outlined,
+          color: outside ? _warning : null,
+        ),
+        title: Text('${row['driver_name'] ?? 'Driver'} · '
+            '${row['plate_no'] ?? row['toda_body_number'] ?? 'Tricycle'}'),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(_areaStatus(row),
+                  style: outside
+                      ? const TextStyle(
+                          color: _warning, fontWeight: FontWeight.bold)
+                      : null),
+              Text(_time(row['observed_at'] ?? row['timestamp'])),
+              if (point != null) Text(_coordinates(point)),
+              Text(_routeStatus(row)),
+            ],
+          ),
+        ),
+        trailing: const Icon(Icons.chevron_right),
+      ),
+    );
   }
 
   @override
@@ -326,28 +541,25 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
                             markers: {
                               Marker(
                                   markerId: const MarkerId('gps'),
-                                  position: point)
+                                  position: point,
+                                  icon: _selected?['within_service_area'] ==
+                                          false
+                                      ? BitmapDescriptor.defaultMarker
+                                      : BitmapDescriptor.defaultMarkerWithHue(
+                                          BitmapDescriptor.hueAzure))
                             },
                             zoomControlsEnabled: false,
                             myLocationButtonEnabled: false))),
                 const SizedBox(height: 8),
-                SelectableText(
-                    '${point.latitude.toStringAsFixed(6)}, ${point.longitude.toStringAsFixed(6)}'),
+                if (_selected?['within_service_area'] == false)
+                  const Text('Outside service area',
+                      style: TextStyle(
+                          color: _warning, fontWeight: FontWeight.bold)),
+                SelectableText(_coordinates(point)),
                 Text(_time(
                     _selected?['observed_at'] ?? _selected?['timestamp'])),
                 TextButton.icon(
-                    onPressed: () async {
-                      final opened = await launchUrl(
-                          Uri.https('www.google.com', '/maps/search/', {
-                            'api': '1',
-                            'query': '${point.latitude},${point.longitude}'
-                          }),
-                          mode: LaunchMode.externalApplication);
-                      if (!opened && context.mounted)
-                        ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Unable to open maps.')));
-                    },
+                    onPressed: () => _openMaps(point),
                     icon: const Icon(Icons.map_outlined),
                     label: const Text('Open location in Maps')),
               ],
@@ -379,25 +591,9 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
                 const Padding(
                     padding: EdgeInsets.all(12),
                     child: Text('No GPS updates in this period.')),
-              ..._locations.map((row) => Card(
-                      child: ListTile(
-                    onTap: () {
-                      final target = _point(row);
-                      setState(() => _selected = row);
-                      if (target != null)
-                        _map?.animateCamera(CameraUpdate.newLatLng(target));
-                    },
-                    leading: Icon(row['route_deviation'] == true ||
-                            row['within_service_area'] == false
-                        ? Icons.warning_amber_rounded
-                        : Icons.location_on_outlined),
-                    title: Text(
-                        '${row['driver_name'] ?? 'Driver'} · ${row['plate_no'] ?? row['toda_body_number'] ?? 'Tricycle'}'),
-                    subtitle: Text(
-                        '${_time(row['observed_at'] ?? row['timestamp'])}\n'
-                        '${row['latitude']}, ${row['longitude']}\n${_state(row)}'
-                        '${row['trip_id'] == null ? '' : '\nTrip: ${row['trip_id']}'}'),
-                  ))),
+              for (final row in _locations)
+                Builder(
+                    builder: (tileContext) => _locationCard(tileContext, row)),
               if (_loading)
                 const Center(
                     child: Padding(
@@ -411,4 +607,98 @@ class _GpsActivityScreenState extends State<GpsActivityScreen> {
           )),
     );
   }
+}
+
+class _GpsMessageDialog extends StatefulWidget {
+  const _GpsMessageDialog({
+    required this.locationId,
+    required this.driver,
+    required this.draft,
+  });
+
+  final String locationId;
+  final String driver;
+  final String draft;
+
+  @override
+  State<_GpsMessageDialog> createState() => _GpsMessageDialogState();
+}
+
+class _GpsMessageDialogState extends State<_GpsMessageDialog> {
+  late final TextEditingController _message =
+      TextEditingController(text: widget.draft);
+  bool _sending = false;
+  String? _error;
+  String? _requestId;
+  String? _submittedText;
+
+  Future<void> _send() async {
+    final text = _message.text.trim();
+    if (_sending || text.isEmpty) return;
+    if (_submittedText != text) {
+      final random = Random.secure();
+      _requestId = List.generate(
+              16, (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'))
+          .join();
+      _submittedText = text;
+    }
+    setState(() {
+      _sending = true;
+      _error = null;
+    });
+    final error = await MonitoringService.sendGpsMessage(
+        widget.locationId, text, _requestId!);
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      _error = error;
+    });
+    if (error == null) Navigator.of(context).pop(true);
+  }
+
+  @override
+  void dispose() {
+    _message.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+        canPop: !_sending,
+        child: AlertDialog(
+          title: const Text('Message driver'),
+          scrollable: true,
+          content: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('To: ${widget.driver}'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _message,
+                enabled: !_sending,
+                maxLength: 500,
+                minLines: 3,
+                maxLines: 5,
+                textCapitalization: TextCapitalization.sentences,
+                onChanged: (_) => setState(() => _error = null),
+                decoration: InputDecoration(
+                  labelText: 'Message',
+                  border: const OutlineInputBorder(),
+                  errorText: _error,
+                  errorMaxLines: 3,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: _sending ? null : () => Navigator.of(context).pop(),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed:
+                    _sending || _message.text.trim().isEmpty ? null : _send,
+                child: Text(_sending ? 'Sending…' : 'Send message')),
+          ],
+        ),
+      );
 }

@@ -4,7 +4,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'driver_alerts.dart';
 import 'driver_auth_service.dart';
+import 'driver_messages.dart';
 import 'map_service.dart';
 import 'trip_service.dart';
 import 'splash_screen.dart';
@@ -29,10 +31,14 @@ class DriverDashboardScreen extends StatefulWidget {
 }
 
 class _DriverDashboardScreenState extends State<DriverDashboardScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   bool _isOnline = false;
   bool _isUpdating = false;
   bool _isShowingPopup = false;
+  bool _messagesLoading = false;
+  bool _hasUnreadMessages = false;
+  bool _loggingOut = false;
+  int _availabilityRevision = 0;
   late AnimationController _pulse;
 
   String _driverName = 'Driver';
@@ -67,6 +73,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -74,6 +81,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _loadDriver();
     _loadTodayStats();
     _loadPeakHours();
+    _refreshMessages();
     _startStatsRealtime();
     _syncScheduledReservations();
     _scheduledSyncTimer = Timer.periodic(const Duration(minutes: 10), (_) {
@@ -81,7 +89,35 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshMessages();
+  }
+
+  Future<void> _refreshMessages() async {
+    if (!mounted || _messagesLoading || _loggingOut) return;
+    _messagesLoading = true;
+    final messages = await DriverMessages.fetch();
+    _messagesLoading = false;
+    if (!mounted || _loggingOut || messages == null) return;
+    final unread = messages.where((message) => message.unread).toList();
+    if (unread.isNotEmpty != _hasUnreadMessages) {
+      setState(() => _hasUnreadMessages = unread.isNotEmpty);
+    }
+    if (DriverAlerts.notifyUnreadMessages(
+        unread.map((message) => message.id))) {
+      _snack('New message from TodaGo Admin', AppColors.surfaceLight);
+    }
+  }
+
+  Future<void> _openMessages() async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const DriverMessagesScreen()));
+    _refreshMessages();
+  }
+
   Future<void> _loadDriver() async {
+    final revision = _availabilityRevision;
     final d = await DriverAuthService.fetchProfile();
     final photoPath = await ProfilePhotoService.getPhotoPath(
       ProfilePhotoService.driverPhotoKey,
@@ -96,15 +132,26 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _driverPhotoPath = serverPhoto ?? photoPath;
         _avgRating = _asDouble(d['avg_rating']);
         _totalTrips = _asInt(d['total_trips']);
-        _isOnline = ['online', 'on_trip'].contains(d['status']?.toString());
       });
-      if (_isOnline) {
-        _startPolling();
-        _startOnlineLocationSync();
-      } else {
-        _stopPolling();
-        _stopOnlineLocationSync();
-      }
+      _updateAvailabilityFromServer(d['status'], revision);
+    }
+  }
+
+  void _updateAvailabilityFromServer(Object? status, int revision) {
+    if (status == null ||
+        revision != _availabilityRevision ||
+        _isUpdating ||
+        _loggingOut) return;
+    final online = status == 'online' || status == 'on_trip';
+    if (online == _isOnline) return;
+    setState(() => _isOnline = online);
+    if (online) {
+      _startPolling();
+      _startOnlineLocationSync();
+    } else {
+      _stopPolling();
+      _stopOnlineLocationSync();
+      DriverAlerts.clearServiceArea();
     }
   }
 
@@ -122,6 +169,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       return;
     }
     setState(() => _isUpdating = true);
+    _availabilityRevision++;
     final newStatus = _isOnline ? 'offline' : 'online';
     final onlineLocation =
         newStatus == 'online' ? await MapService.getCurrentLocation() : null;
@@ -129,19 +177,26 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     final ok = await TripService.updateDriverStatus(newStatus,
         location: onlineLocation, onError: (message) => statusError = message);
     if (!mounted) return;
-    setState(() => _isUpdating = false);
+    setState(() {
+      _isUpdating = false;
+      _availabilityRevision++;
+    });
     if (ok) {
-      setState(() => _isOnline = !_isOnline);
-      await _loadTodayStats();
+      setState(() => _isOnline = newStatus == 'online');
       if (_isOnline) {
         _startPolling();
-        _startOnlineLocationSync(initialLocation: onlineLocation);
-        _snack('You are now ONLINE 🟢 — waiting for passengers', Colors.green);
+        _startOnlineLocationSync(
+            uploadedInitialLocation: onlineLocation != null);
+        if (DriverAlerts.outsideServiceArea.value == null) {
+          _snack(
+              'You are now ONLINE 🟢 — waiting for passengers', Colors.green);
+        }
       } else {
         _stopPolling();
         _stopOnlineLocationSync();
         _snack('You are now OFFLINE', Colors.grey[700]!);
       }
+      _loadTodayStats();
     } else {
       _snack(statusError ?? 'Could not update status. Check your connection.',
           AppColors.error);
@@ -161,14 +216,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _pollTimer = null;
   }
 
-  void _startOnlineLocationSync({LatLng? initialLocation}) {
+  void _startOnlineLocationSync({bool uploadedInitialLocation = false}) {
     _locationSyncSub?.cancel();
     _locationRefreshTimer?.cancel();
-    _lastLocationSync = null;
-
-    if (initialLocation != null) {
-      _syncOnlineLocation(initialLocation, force: true);
-    } else {
+    _lastLocationSync = uploadedInitialLocation ? DateTime.now() : null;
+    if (!uploadedInitialLocation) {
       MapService.getCurrentLocation().then((pos) {
         if (mounted && _isOnline && pos != null) {
           _syncOnlineLocation(pos, force: true);
@@ -282,7 +334,10 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _statsTimer?.cancel();
     _onlineTickTimer?.cancel();
     _statsTimer = Timer.periodic(const Duration(seconds: 10), (_) {
-      if (mounted) _loadTodayStats();
+      if (mounted) {
+        _loadTodayStats();
+        _refreshMessages();
+      }
     });
     _peakHoursTimer?.cancel();
     _peakHoursTimer = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -296,6 +351,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   Future<void> _loadTodayStats() async {
+    final revision = _availabilityRevision;
     final stats = await DriverAuthService.fetchTodayStats();
     if (stats == null || !mounted) return;
     setState(() {
@@ -307,11 +363,8 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       );
       _avgRating = _asDouble(stats['avg_rating'] ?? _avgRating);
       _totalTrips = _asInt(stats['total_trips'] ?? _totalTrips);
-      final status = stats['status']?.toString();
-      if (status != null && status.isNotEmpty) {
-        _isOnline = status == 'online' || status == 'on_trip';
-      }
     });
+    _updateAvailabilityFromServer(stats['status'], revision);
   }
 
   Future<void> _loadPeakHours() async {
@@ -328,6 +381,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   Future<void> _logout() async {
+    _loggingOut = true;
     _stopPolling();
     _stopOnlineLocationSync();
     if (_isOnline) await TripService.updateDriverStatus('offline');
@@ -429,6 +483,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scheduledSyncTimer?.cancel();
     _statsTimer?.cancel();
     _peakHoursTimer?.cancel();
@@ -609,6 +664,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
 
               const SizedBox(height: 16),
 
+              if (_isOnline)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 20),
+                  child: DriverServiceAreaWarning(),
+                ),
+
               // ── Stats bar ─────────────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -647,6 +708,21 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                 icon: const Icon(Icons.history_rounded, color: Colors.white70),
                 label: const Text('Past Trips · Ratings & Reports',
                     style: TextStyle(color: Colors.white70)),
+              ),
+              TextButton.icon(
+                onPressed: _openMessages,
+                icon: Icon(
+                  _hasUnreadMessages
+                      ? Icons.mark_email_unread_outlined
+                      : Icons.mail_outline,
+                  color: AppColors.primary,
+                ),
+                label: Text(
+                  _hasUnreadMessages
+                      ? 'Admin messages · New'
+                      : 'Admin messages',
+                  style: const TextStyle(color: AppColors.primary),
+                ),
               ),
 
               if (_isSuspended)

@@ -159,7 +159,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void _openGps([Map<String, dynamic>? report]) {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => GpsActivityScreen(
       driverId: report?['subject_id']?.toString(), tripId: report?['trip_id']?.toString(),
-      initialLocation: report == null ? null : _reportMetadata(report),
+      initialLocation: report == null ? null : {
+        ..._reportMetadata(report),
+        'driver_name': report['subject_name'],
+        'trip_id': report['trip_id'],
+        if (report['report_type'] == 'driver_outside_service_area') 'within_service_area': false,
+        if (report['report_type'] == 'driver_route_deviation') 'route_deviation': true,
+      },
     )));
   }
 
