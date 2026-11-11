@@ -176,7 +176,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       });
     }
 
-    _locationSyncSub = MapService.positionStream().listen(
+    _locationSyncSub = MapService.positionStream(driverTracking: true).listen(
       (pos) => _syncOnlineLocation(pos),
       onError: (_) {},
     );

@@ -356,8 +356,11 @@ void main() {
       await tester.enterText(fuel, '92.50');
       await tester.tap(find.text('Analytics'));
       await tester.pumpAndSettle();
-      expect(find.byType(TripAnalyticsChart), findsNWidgets(2));
+      expect(find.byType(TripAnalyticsChart), findsWidgets);
       expect(find.text('Requests by hour'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Trips by route'), 250,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
       expect(find.text('Trips by route'), findsOneWidget);
       expect(find.text('Fare Regulation'), findsNothing);
       await tester.tap(find.text('Applications'));

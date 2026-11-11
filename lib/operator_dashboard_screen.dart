@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'trip_analytics_chart.dart';
+import 'driver_performance_card.dart';
+import 'monitoring_service.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'operator_auth_service.dart';
@@ -24,6 +26,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
   Map<String, dynamic> _stats = {};
   List<Map<String, dynamic>> _routePerformance = [];
   List<Map<String, dynamic>> _peakHours = [];
+  List<Map<String, dynamic>>? _topDrivers;
   Timer? _refreshTimer;
   bool _isLoading = true;
 
@@ -49,6 +52,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
       OperatorAuthService.fetchStats(),
       OperatorAuthService.fetchRoutePerformance(),
       OperatorAuthService.fetchPeakHours(),
+      MonitoringService.fetchDrivers(operator: true),
     ]);
     if (!mounted) return;
     setState(() {
@@ -58,6 +62,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
           <Map<String, dynamic>>[];
       _peakHours = (results[3] as List<Map<String, dynamic>>?) ??
           <Map<String, dynamic>>[];
+      _topDrivers = results[4] as List<Map<String, dynamic>>?;
       _isLoading = false;
     });
   }
@@ -395,6 +400,9 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                     ],
                   ).animate().fadeIn(delay: 150.ms, duration: 400.ms),
 
+                  const SizedBox(height: 16),
+
+                  DriverPerformanceCard(drivers: _topDrivers),
                   const SizedBox(height: 16),
 
                   // Avg Rating card

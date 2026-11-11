@@ -1150,7 +1150,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     if (b['fare'] != null) {
       final f = double.tryParse(b['fare'].toString());
       fareDisplay =
-          f != null ? '₱${f.toStringAsFixed(0)}' : b['fare'].toString();
+          f != null ? PanaboFarePolicy.formatPeso(f) : b['fare'].toString();
     }
 
     return Container(

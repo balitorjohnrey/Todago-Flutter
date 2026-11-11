@@ -665,6 +665,7 @@ class _DestinationPickerScreenState extends State<DestinationPickerScreen>
         destinationLatLng: _destination,
         etaMinutes: _route?.etaMinutes,
         distanceKm: _route?.distanceKm,
+        routePoints: _route?.points ?? const [],
         initialServiceType: widget.initialServiceType,
       ),
       transitionDuration: const Duration(milliseconds: 400),

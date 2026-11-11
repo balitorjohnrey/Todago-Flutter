@@ -14,6 +14,7 @@ class FindingDriverScreen extends StatefulWidget {
   final String passengerFareType;
   final double otherFeeAmount;
   final String? otherFeeLabel;
+  final List<LatLng> routePoints;
   final String? bookingNotes;
   final String? pickupItemDescription;
   final String? pickupItemWeight;
@@ -34,6 +35,7 @@ class FindingDriverScreen extends StatefulWidget {
     this.passengerFareType = 'regular',
     this.otherFeeAmount = 0,
     this.otherFeeLabel,
+    this.routePoints = const [],
     this.bookingNotes,
     this.pickupItemDescription,
     this.pickupItemWeight,
@@ -95,6 +97,7 @@ class _FindingDriverScreenState extends State<FindingDriverScreen>
           passengerFareType: widget.passengerFareType,
           otherFeeAmount: widget.otherFeeAmount,
           otherFeeLabel: widget.otherFeeLabel,
+          routePoints: widget.routePoints,
           bookingNotes: widget.bookingNotes,
           pickupItemDescription: widget.pickupItemDescription,
           pickupItemWeight: widget.pickupItemWeight,

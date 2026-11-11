@@ -127,12 +127,22 @@ class MapService {
   }
 
   // ── Live position stream ──────────────────────────────────────────────────
-  static Stream<LatLng> positionStream() {
+  static Stream<LatLng> positionStream({bool driverTracking = false}) {
+    final LocationSettings settings = driverTracking && !kIsWeb &&
+            defaultTargetPlatform == TargetPlatform.android
+        ? AndroidSettings(
+            accuracy: LocationAccuracy.high,
+            distanceFilter: 0,
+            intervalDuration: const Duration(seconds: 5),
+            foregroundNotificationConfig: const ForegroundNotificationConfig(
+              notificationTitle: 'TodaGo driver GPS',
+              notificationText: 'Location tracking is active while you are online or on a trip.',
+              enableWakeLock: true,
+            ),
+          )
+        : const LocationSettings(accuracy: LocationAccuracy.high, distanceFilter: 8);
     return Geolocator.getPositionStream(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 8,
-      ),
+      locationSettings: settings,
     ).map((p) => LatLng(p.latitude, p.longitude));
   }
 

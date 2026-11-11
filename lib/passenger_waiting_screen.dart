@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'panabo_config.dart';
 import 'trip_service.dart';
 import 'live_trip_tracking_screen.dart';
 import 'passenger_home_screen.dart';
@@ -578,7 +579,7 @@ class _PassengerWaitingScreenState extends State<PassengerWaitingScreen>
                   _divV(),
                   _info('$_liveEta min', 'ETA', Icons.schedule_rounded),
                   _divV(),
-                  _info('₱${widget.fare.toStringAsFixed(0)}', 'Fare',
+                  _info(PanaboFarePolicy.formatPeso(widget.fare), 'Fare',
                       Icons.payments_rounded),
                 ]),
               ),

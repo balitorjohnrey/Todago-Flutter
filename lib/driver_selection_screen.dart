@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'panabo_config.dart';
 import 'reservation_notification_service.dart';
 import 'trip_service.dart';
 import 'live_trip_tracking_screen.dart';
@@ -16,6 +17,7 @@ class DriverSelectionScreen extends StatefulWidget {
   final String passengerFareType;
   final double otherFeeAmount;
   final String? otherFeeLabel;
+  final List<LatLng> routePoints;
   final String? bookingNotes;
   final String? pickupItemDescription;
   final String? pickupItemWeight;
@@ -36,6 +38,7 @@ class DriverSelectionScreen extends StatefulWidget {
     this.passengerFareType = 'regular',
     this.otherFeeAmount = 0,
     this.otherFeeLabel,
+    this.routePoints = const [],
     this.bookingNotes,
     this.pickupItemDescription,
     this.pickupItemWeight,
@@ -154,6 +157,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             passengerFareType: widget.passengerFareType,
             otherFeeAmount: widget.otherFeeAmount,
             otherFeeLabel: widget.otherFeeLabel,
+            routePoints: widget.routePoints,
             bookingNotes: widget.bookingNotes,
             pickupItemDescription: widget.pickupItemDescription,
             pickupItemWeight: widget.pickupItemWeight,
@@ -173,6 +177,7 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
             passengerFareType: widget.passengerFareType,
             otherFeeAmount: widget.otherFeeAmount,
             otherFeeLabel: widget.otherFeeLabel,
+            routePoints: widget.routePoints,
             bookingNotes: widget.bookingNotes,
             pickupItemDescription: widget.pickupItemDescription,
             pickupItemWeight: widget.pickupItemWeight,
@@ -641,8 +646,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
                 if (widget.otherFeeAmount > 0) ...[
                   const SizedBox(height: 6),
                   _summaryRow(
-                    'Other Fee',
-                    '${widget.otherFeeLabel ?? 'Extra'} PHP ${widget.otherFeeAmount.toStringAsFixed(0)}',
+                    'Additional Charge',
+                    '${widget.otherFeeLabel ?? 'Extra'} ${PanaboFarePolicy.formatPeso(widget.otherFeeAmount)}',
                   ),
                 ],
                 if ((widget.pickupItemDescription ?? '').isNotEmpty) ...[
@@ -794,6 +799,8 @@ class _DriverSelectionScreenState extends State<DriverSelectionScreen> {
         return 'Senior Citizen';
       case 'pwd':
         return 'PWD';
+      case 'pregnant':
+        return 'Pregnant';
       default:
         return 'Regular';
     }

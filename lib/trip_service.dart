@@ -67,6 +67,7 @@ class TripService {
     LatLng? destinationLatLng,
     double otherFeeAmount = 0,
     String? otherFeeLabel,
+    List<LatLng> routePoints = const [],
     String? bookingNotes,
     String? pickupItemDescription,
     String? pickupItemWeight,
@@ -87,6 +88,11 @@ class TripService {
               'passengerCount': passengerCount,
               'passengerFareType': passengerFareType,
               'otherFeeAmount': otherFeeAmount,
+              if (routePoints.length >= 2)
+                'routePoints': [
+                  for (final point in routePoints)
+                    {'lat': point.latitude, 'lng': point.longitude},
+                ],
               if (otherFeeLabel != null && otherFeeLabel.isNotEmpty)
                 'otherFeeLabel': otherFeeLabel,
               if (bookingNotes != null && bookingNotes.isNotEmpty)
@@ -129,6 +135,7 @@ class TripService {
     LatLng? destinationLatLng,
     double otherFeeAmount = 0,
     String? otherFeeLabel,
+    List<LatLng> routePoints = const [],
     String? bookingNotes,
     String? pickupItemDescription,
     String? pickupItemWeight,
@@ -149,6 +156,11 @@ class TripService {
               'passengerCount': passengerCount,
               'passengerFareType': passengerFareType,
               'otherFeeAmount': otherFeeAmount,
+              if (routePoints.length >= 2)
+                'routePoints': [
+                  for (final point in routePoints)
+                    {'lat': point.latitude, 'lng': point.longitude},
+                ],
               if (otherFeeLabel != null && otherFeeLabel.isNotEmpty)
                 'otherFeeLabel': otherFeeLabel,
               if (bookingNotes != null && bookingNotes.isNotEmpty)
@@ -389,6 +401,28 @@ class TripService {
       }
       return false;
     } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<bool> saveDesignatedRoute(String tripId,
+      {required String leg, required List<LatLng> points}) async {
+    if (tripId.isEmpty || points.length < 2) return false;
+    try {
+      final response = await http.put(
+        Uri.parse('$_baseUrl/$tripId/designated-route'),
+        headers: _headers(await _getDriverToken()),
+        body: jsonEncode({
+          'leg': leg,
+          'points': [
+            for (final point in points)
+              {'lat': point.latitude, 'lng': point.longitude},
+          ],
+        }),
+      ).timeout(const Duration(seconds: 10));
+      return response.statusCode == 200 &&
+          (jsonDecode(response.body) as Map<String, dynamic>)['success'] == true;
+    } catch (_) {
       return false;
     }
   }

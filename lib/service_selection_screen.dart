@@ -20,6 +20,7 @@ class ServiceSelectionScreen extends StatefulWidget {
   final int? etaMinutes;
   final double? distanceKm;
   final String? initialServiceType;
+  final List<LatLng> routePoints;
 
   const ServiceSelectionScreen({
     super.key,
@@ -30,6 +31,7 @@ class ServiceSelectionScreen extends StatefulWidget {
     this.etaMinutes,
     this.distanceKm,
     this.initialServiceType,
+    this.routePoints = const [],
   });
 
   @override
@@ -37,6 +39,14 @@ class ServiceSelectionScreen extends StatefulWidget {
 }
 
 class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
+  static const _fareTypeLabels = {
+    'regular': 'Regular',
+    'pwd': 'PWD',
+    'student': 'Student',
+    'senior': 'Senior',
+    'pregnant': 'Pregnant',
+  };
+
   int _selected = 0;
   bool _isLoading = false;
   List<Map<String, dynamic>> _onlineDrivers = [];
@@ -112,18 +122,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
 
   bool get _discountedPassenger => _passengerFareType != 'regular';
 
-  String get _passengerFareLabel {
-    switch (_passengerFareType) {
-      case 'student':
-        return 'Student';
-      case 'senior':
-        return 'Senior';
-      case 'pwd':
-        return 'PWD';
-      default:
-        return 'Regular';
-    }
-  }
+  String get _passengerFareLabel => _fareTypeLabels[_passengerFareType]!;
 
   @override
   void initState() {
@@ -215,7 +214,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         service['price'] = total;
         service['priceLabel'] = PanaboFarePolicy.formatPeso(total);
         service['priceSubLabel'] = _otherFeeAmount > 0
-            ? 'Includes ${PanaboFarePolicy.formatPeso(_otherFeeAmount)} item fee'
+            ? 'Includes ${PanaboFarePolicy.formatPeso(_otherFeeAmount)} ${_otherFeeLabel?.toLowerCase() ?? 'extra'}'
             : 'Regular pickup rate';
         service['passengers'] = 'Item pick-up';
       } else {
@@ -305,6 +304,7 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         passengerFareType: _passengerFareType,
         otherFeeAmount: _otherFeeAmount,
         otherFeeLabel: _otherFeeLabel,
+        routePoints: widget.routePoints,
         pickupItemDescription: _pickupItemController.text.trim(),
         pickupItemWeight: _pickupWeightController.text.trim(),
         bookingNotes: _driverNoteController.text.trim(),
@@ -367,7 +367,8 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     ));
   }
 
-  void _setPassengerFareType(String value) {
+  void _setPassengerFareType(String? value) {
+    if (value == null) return;
     setState(() {
       _passengerFareType = value;
       _applyOfficialFares();
@@ -424,10 +425,15 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     _dropoffPoints = points;
   }
 
-  void _setOtherFee(String? label, double amount) {
+  void _setOtherFee(String? label) {
+    if (_otherFeeLabel == label) return;
     setState(() {
       _otherFeeLabel = label;
-      _otherFeeAmount = amount < 0 ? 0 : amount;
+      _otherFeeAmount = switch (label) {
+        'Baggage' => 10,
+        'Heavy items' => 20,
+        _ => 0,
+      };
       _otherFeeController.text =
           _otherFeeAmount == 0 ? '' : _otherFeeAmount.toStringAsFixed(0);
       _applyOfficialFares();
@@ -438,7 +444,6 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     final amount = double.tryParse(value.trim()) ?? 0;
     setState(() {
       _otherFeeAmount = amount < 0 ? 0 : amount;
-      _otherFeeLabel = amount > 0 ? 'Custom fee' : null;
       _applyOfficialFares();
     });
   }
@@ -633,6 +638,11 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         discounted: true,
       ),
     );
+    final fareTypeStyle = GoogleFonts.poppins(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: AppColors.backgroundDark,
+    );
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -641,16 +651,9 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
         border: Border.all(color: const Color(0xFFE8EDF2)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-            child: Text('Fare Type',
-                style: GoogleFonts.poppins(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-          ),
-          Text(
+        Align(
+          alignment: Alignment.centerRight,
+          child: Text(
             _fareSettingsLoaded ? 'Fuel PHP $fuel/L' : 'Loading fare rate',
             style: GoogleFonts.poppins(
               fontSize: 10,
@@ -658,23 +661,31 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
               color: AppColors.textHint,
             ),
           ),
-        ]),
+        ),
         const SizedBox(height: 10),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            _fareTypeChip('regular', 'Regular'),
-            _fareTypeChip('student', 'Student'),
-            _fareTypeChip('senior', 'Senior'),
-            _fareTypeChip('pwd', 'PWD'),
+        DropdownButtonFormField<String>(
+          initialValue: _passengerFareType,
+          isExpanded: true,
+          dropdownColor: Colors.white,
+          iconEnabledColor: AppColors.backgroundDark,
+          style: fareTypeStyle,
+          decoration: _fieldDecoration('Select fare type').copyWith(
+            labelText: 'Fare Type',
+            labelStyle: fareTypeStyle,
+          ),
+          items: [
+            for (final entry in _fareTypeLabels.entries)
+              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
           ],
+          onChanged: _setPassengerFareType,
         ),
         const SizedBox(height: 10),
         Row(children: [
-          _smallRateBadge('Regular', regular),
+          _smallRateBadge('Regular base fare', regular,
+              selected: !_discountedPassenger),
           const SizedBox(width: 8),
-          _smallRateBadge('Discount', discounted),
+          _smallRateBadge('Discounted base fare', discounted,
+              selected: _discountedPassenger),
         ]),
         const SizedBox(height: 12),
         _otherFeeControls(),
@@ -738,78 +749,86 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
   }
 
   Widget _otherFeeControls() {
+    final inputStyle = GoogleFonts.poppins(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: AppColors.backgroundDark,
+    );
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Other Fee',
+      Text('Additional Charge',
           style: GoogleFonts.poppins(
             fontSize: 12,
             fontWeight: FontWeight.w800,
             color: AppColors.backgroundDark,
           )),
-      const SizedBox(height: 8),
-      Wrap(spacing: 8, runSpacing: 8, children: [
-        _feeChip('None', null, 0),
-        _feeChip('Baggage', 'Baggage', 10),
-        _feeChip('Heavy item', 'Heavy item', 20),
-        SizedBox(
-          width: 128,
-          height: 38,
+      const SizedBox(height: 12),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(
+          flex: 3,
+          child: DropdownButtonFormField<String>(
+            initialValue: _otherFeeLabel ?? 'None',
+            isExpanded: true,
+            dropdownColor: Colors.white,
+            iconEnabledColor: AppColors.backgroundDark,
+            style: inputStyle,
+            decoration: _fieldDecoration('Select a type').copyWith(
+              labelText: 'Charge type',
+              labelStyle: inputStyle,
+            ),
+            items: const ['None', 'Baggage', 'Heavy items', 'Tip', 'Others']
+                .map((label) => DropdownMenuItem(
+                      value: label,
+                      child: Text(label),
+                    ))
+                .toList(),
+            onChanged: (value) => _setOtherFee(value == 'None' ? null : value),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 2,
           child: TextField(
             controller: _otherFeeController,
+            enabled: _otherFeeLabel != null,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            textInputAction: TextInputAction.done,
+            cursorColor: AppColors.backgroundDark,
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              TextInputFormatter.withFunction((oldValue, newValue) {
+                if (!RegExp(r'^\d{0,5}(\.\d{0,2})?$').hasMatch(newValue.text)) {
+                  return oldValue;
+                }
+                final amount = double.tryParse(newValue.text) ?? 0;
+                return amount <= 10000 ? newValue : oldValue;
+              }),
             ],
             onChanged: _setCustomOtherFee,
-            decoration: InputDecoration(
-              hintText: 'Custom',
-              suffixText: 'PHP',
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: Color(0xFFE8EDF2)),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: const BorderSide(color: AppColors.primary),
-              ),
+            decoration: _fieldDecoration('0.00').copyWith(
+              labelText: 'Amount',
+              labelStyle: inputStyle,
+              prefixText: 'PHP ',
+              prefixStyle: inputStyle,
             ),
-            style: GoogleFonts.poppins(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
+            style: inputStyle,
           ),
         ),
       ]),
+      if (_otherFeeLabel == 'Tip') ...[
+        const SizedBox(height: 8),
+        Text('Tips are optional. Enter the amount you want to add.',
+            style: GoogleFonts.poppins(
+              fontSize: 11,
+              color: AppColors.textHint,
+            )),
+      ],
+      if (_otherFeeAmount > 0) ...[
+        const SizedBox(height: 8),
+        Text(
+          'Added to fare: $_otherFeeLabel - ${PanaboFarePolicy.formatPeso(_otherFeeAmount)}',
+          style: inputStyle,
+        ),
+      ],
     ]);
-  }
-
-  Widget _feeChip(String label, String? feeLabel, double amount) {
-    final selected = (_otherFeeLabel == feeLabel) &&
-        ((_otherFeeAmount - amount).abs() < 0.01);
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => _setOtherFee(feeLabel, amount),
-      showCheckmark: false,
-      selectedColor: AppColors.backgroundDark,
-      backgroundColor: Colors.white,
-      side: BorderSide(
-        color: selected ? AppColors.backgroundDark : const Color(0xFFE8EDF2),
-      ),
-      labelStyle: GoogleFonts.poppins(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: selected ? Colors.white : AppColors.backgroundDark,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    );
   }
 
   Widget _pickupItemControls() {
@@ -947,49 +966,46 @@ class _ServiceSelectionScreenState extends State<ServiceSelectionScreen> {
     ]);
   }
 
-  Widget _fareTypeChip(String value, String label) {
-    final selected = _passengerFareType == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => _setPassengerFareType(value),
-      showCheckmark: false,
-      selectedColor: AppColors.backgroundDark,
-      backgroundColor: Colors.white,
-      side: BorderSide(
-        color: selected ? AppColors.backgroundDark : const Color(0xFFE8EDF2),
-      ),
-      labelStyle: GoogleFonts.poppins(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: selected ? Colors.white : AppColors.backgroundDark,
-      ),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    );
-  }
-
-  Widget _smallRateBadge(String label, String value) => Expanded(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE8EDF2)),
+  Widget _smallRateBadge(String label, String value,
+          {required bool selected}) =>
+      Expanded(
+        child: Semantics(
+          container: true,
+          label: label,
+          value: value,
+          selected: selected,
+          excludeSemantics: true,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.backgroundDark : Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected
+                    ? AppColors.backgroundDark
+                    : const Color(0xFFE8EDF2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      color: selected ? Colors.white : AppColors.textHint,
+                    )),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: selected
+                          ? AppColors.primary
+                          : AppColors.backgroundDark,
+                    )),
+              ],
+            ),
           ),
-          child: Row(children: [
-            Text(label,
-                style: GoogleFonts.poppins(
-                  fontSize: 10,
-                  color: AppColors.textHint,
-                )),
-            const Spacer(),
-            Text(value,
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-          ]),
         ),
       );
 

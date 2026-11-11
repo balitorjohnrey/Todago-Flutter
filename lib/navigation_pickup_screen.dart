@@ -34,6 +34,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   Timer? _routeRefreshTimer;
   Timer? _tripPollTimer;
   DateTime? _lastLocationSync;
+  bool _pickupRouteRegistered = false;
+  bool _isSyncingLocation = false;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -107,7 +109,8 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       _pickupPoint = pickupPos;
     });
 
-    _syncDriverLocation(myPos, force: true);
+    await _syncDriverLocation(myPos, force: true);
+    if (!mounted) return;
     if (pickupPos != null) {
       _updateMarkers(myPos, pickupPos);
       await _fetchAndDrawRoute(myPos, pickupPos);
@@ -122,6 +125,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     // ── Periodic route refresh every 10 s as backup ──────────────────────
     _routeRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
       if (!mounted || _myLocation == null || _pickupPoint == null) return;
+      await _syncDriverLocation(_myLocation!, force: true);
       await _fetchAndDrawRoute(_myLocation!, _pickupPoint!);
     });
 
@@ -136,11 +140,11 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   // ── Route helper ──────────────────────────────────────────────────────────
   void _startLocationStream() {
     _locSub?.cancel();
-    _locSub = MapService.positionStream().listen((pos) async {
+    _locSub = MapService.positionStream(driverTracking: true).listen((pos) async {
       if (!mounted) return;
       setState(() => _myLocation = pos);
       _updateDriverMarker(pos);
-      _syncDriverLocation(pos);
+      await _syncDriverLocation(pos);
 
       if (_pickupPoint != null && !_isFetchingRoute) {
         await _fetchAndDrawRoute(pos, _pickupPoint!);
@@ -148,17 +152,23 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     });
   }
 
-  void _syncDriverLocation(LatLng pos, {bool force = false}) {
+  Future<void> _syncDriverLocation(LatLng pos, {bool force = false}) async {
     final tripId = widget.trip['trip_id']?.toString() ?? '';
-    if (tripId.isEmpty) return;
+    if (tripId.isEmpty || _isSyncingLocation) return;
     final now = DateTime.now();
     if (!force &&
         _lastLocationSync != null &&
         now.difference(_lastLocationSync!) < const Duration(seconds: 5)) {
       return;
     }
-    _lastLocationSync = now;
-    TripService.updateDriverLocation(tripId, pos);
+    _isSyncingLocation = true;
+    try {
+      if (await TripService.updateDriverLocation(tripId, pos)) {
+        _lastLocationSync = now;
+      }
+    } finally {
+      _isSyncingLocation = false;
+    }
   }
 
   Future<void> _fetchAndDrawRoute(LatLng from, LatLng to) async {
@@ -166,6 +176,12 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     _isFetchingRoute = true;
     try {
       final routes = await MapService.fetchRoutes(from, to);
+      if (mounted && routes.isNotEmpty && !_pickupRouteRegistered) {
+        _pickupRouteRegistered = await TripService.saveDesignatedRoute(
+          widget.trip['trip_id']?.toString() ?? '',
+          leg: 'pickup', points: routes.first.points,
+        );
+      }
       if (mounted) {
         setState(() {
           _route = routes.isEmpty ? null : routes.first;

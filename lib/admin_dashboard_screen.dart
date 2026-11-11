@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -10,6 +12,9 @@ import 'panabo_config.dart';
 import 'report_review_dialog.dart';
 import 'splash_screen.dart';
 import 'trip_analytics_chart.dart';
+import 'admin_monitoring_screens.dart';
+import 'driver_performance_card.dart';
+import 'monitoring_service.dart';
 
 class AdminDashboardScreen extends StatefulWidget {
   const AdminDashboardScreen({super.key});
@@ -28,6 +33,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   List<Map<String, dynamic>> _routePerformance = [];
   List<Map<String, dynamic>> _peakHours = [];
   List<Map<String, dynamic>> _reports = [];
+  List<Map<String, dynamic>>? _topDrivers;
+  Timer? _monitoringTimer;
+  bool _refreshingMonitoring = false;
+  final Set<String> _seenGpsAlerts = {};
   final Set<String> _updatingReports = {};
   FareSettings _fareSettings = const FareSettings();
 
@@ -43,10 +52,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _premiumPercentController = TextEditingController();
     _syncFareControllers(_fareSettings, disposeExisting: false);
     _load();
+    _monitoringTimer = Timer.periodic(const Duration(seconds: 15), (_) => _refreshMonitoring());
   }
 
   @override
   void dispose() {
+    _monitoringTimer?.cancel();
     _fuelPriceController.dispose();
     _premiumPercentController.dispose();
     for (final controller in _regularFareControllers) {
@@ -71,6 +82,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAuthService.fetchRoutePerformance(),
         AdminAuthService.fetchPeakHours(),
         AdminAuthService.fetchReports(),
+        MonitoringService.fetchDrivers(),
       ]);
       if (!mounted) return;
       final fareSettings =
@@ -86,8 +98,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             <Map<String, dynamic>>[];
         _reports = (results[5] as List<Map<String, dynamic>>?) ??
             <Map<String, dynamic>>[];
+        _topDrivers = results[6] as List<Map<String, dynamic>>?;
         _syncFareControllers(fareSettings);
       });
+      _notifyGpsAlerts();
     } catch (_) {
       if (!mounted) return;
       setState(() => _errorMessage = 'Unable to load admin dashboard.');
@@ -95,6 +109,67 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  Future<void> _refreshMonitoring() async {
+    if (!mounted || _isLoading || _refreshingMonitoring) return;
+    _refreshingMonitoring = true;
+    try {
+      final results = await Future.wait([
+        MonitoringService.fetchPendingReports(), AdminAuthService.fetchStats(),
+        MonitoringService.fetchDrivers(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        if (results[0] != null) _reports = results[0] as List<Map<String, dynamic>>;
+        if (results[1] != null) _stats = results[1] as Map<String, dynamic>;
+        if (results[2] != null) _topDrivers = results[2] as List<Map<String, dynamic>>;
+      });
+      _notifyGpsAlerts();
+    } finally { _refreshingMonitoring = false; }
+  }
+
+  bool _isGpsAlert(Map<String, dynamic> report) => report['reporter_role'] == 'system' && const [
+    'driver_outside_service_area', 'driver_route_deviation',
+  ].contains(report['report_type']);
+
+  Map<String, dynamic> _reportMetadata(Map<String, dynamic> report) {
+    final metadata = report['metadata'];
+    if (metadata is Map) return Map<String, dynamic>.from(metadata);
+    try { return Map<String, dynamic>.from(jsonDecode(metadata?.toString() ?? '{}') as Map); }
+    catch (_) { return {}; }
+  }
+
+  void _notifyGpsAlerts() {
+    final fresh = _reports.where((report) => _isGpsAlert(report) &&
+        _seenGpsAlerts.add(report['issue_id']?.toString() ?? '')).toList();
+    if (fresh.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final metadata = _reportMetadata(fresh.first);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        duration: const Duration(seconds: 8),
+        content: Text('GPS alert: ${fresh.first['subject_name'] ?? 'Driver'}'
+            '${metadata['lat'] == null ? '' : ' at ${metadata['lat']}, ${metadata['lng']}'}'
+            '${fresh.length > 1 ? ' (+${fresh.length - 1} more)' : ''}'),
+        action: SnackBarAction(label: 'View', onPressed: () => setState(() => _selectedSection = 0)),
+      ));
+    });
+  }
+
+  void _openGps([Map<String, dynamic>? report]) {
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => GpsActivityScreen(
+      driverId: report?['subject_id']?.toString(), tripId: report?['trip_id']?.toString(),
+      initialLocation: report == null ? null : _reportMetadata(report),
+    )));
+  }
+
+  Widget _monitoringLink(String title, String subtitle, IconData icon, VoidCallback onTap) => Card(
+    color: Colors.white,
+    child: ListTile(leading: Icon(icon, color: AppColors.backgroundDark),
+      title: Text(title, style: const TextStyle(color: AppColors.backgroundDark, fontWeight: FontWeight.bold)),
+      subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
+      trailing: const Icon(Icons.chevron_right, color: AppColors.backgroundDark), onTap: onTap),
+  );
 
   void _syncFareControllers(
     FareSettings settings, {
@@ -430,9 +505,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
-          if (_selectedSection == 0) _reportsCard(),
-          if (_selectedSection == 1) _fareCard(),
+          if (_reports.any(_isGpsAlert)) ...[
+            _monitoringLink('${_reports.where(_isGpsAlert).length} GPS alert${_reports.where(_isGpsAlert).length == 1 ? '' : 's'}',
+                'Route or service-area alerts need review.', Icons.warning_amber_rounded,
+                () => setState(() => _selectedSection = 0)),
+            const SizedBox(height: 12),
+          ],
+          if (_selectedSection == 0) ...[
+            _monitoringLink('GPS Activity', 'Locations and logged driver activity',
+                Icons.location_history, () => _openGps()),
+            const SizedBox(height: 12), _reportsCard(),
+          ],
+          if (_selectedSection == 1) ...[
+            _monitoringLink('Trip Additional Charges', 'Itemized tips, baggage, heavy items, and others',
+                Icons.receipt_long, () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const TripChargesScreen()))),
+            const SizedBox(height: 12), _fareCard(),
+          ],
           if (_selectedSection == 2) ...[
+            DriverPerformanceCard(drivers: _topDrivers),
+            const SizedBox(height: 16),
             _peakHoursCard(),
             const SizedBox(height: 16),
             _routePerformanceCard(),
@@ -568,6 +660,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 color: AppColors.backgroundDark,
               )),
         ],
+        if (_isGpsAlert(report)) ...[
+          const SizedBox(height: 8),
+          Text('Location: ${_reportMetadata(report)['lat'] ?? '-'}, ${_reportMetadata(report)['lng'] ?? '-'}',
+              style: const TextStyle(color: AppColors.backgroundDark, fontSize: 12)),
+          TextButton.icon(onPressed: () => _openGps(report),
+              icon: const Icon(Icons.map_outlined), label: const Text('View location and GPS log')),
+        ],
         const SizedBox(height: 10),
         Row(children: [
           Expanded(
@@ -604,6 +703,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   String _reportMeta(Map<String, dynamic> report) {
+    if (_isGpsAlert(report)) {
+      return 'Automatic GPS alert for ${report['subject_name'] ?? 'driver'}';
+    }
     final reporter = report['reporter_name']?.toString();
     final reporterRole = report['reporter_role']?.toString() ?? 'reporter';
     final subject = report['subject_name']?.toString();

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'app_theme.dart';
+import 'panabo_config.dart';
 import 'trip_service.dart';
 import 'passenger_home_screen.dart';
 import 'report_issue_dialog.dart';
@@ -348,7 +349,7 @@ class _RateDriverScreenState extends State<RateDriverScreen> {
                     children: [
                       _infoChip(Icons.flag_rounded, widget.destination),
                       _infoChip(Icons.payments_rounded,
-                          '₱${widget.fare.toStringAsFixed(0)}'),
+                          PanaboFarePolicy.formatPeso(widget.fare)),
                       if (widget.plateNo.isNotEmpty) ...[
                         _infoChip(Icons.directions_car_rounded, widget.plateNo),
                       ],

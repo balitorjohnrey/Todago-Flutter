@@ -423,8 +423,8 @@ class _RideRequestScreenState extends State<RideRequestScreen> {
                                   )),
                             ]),
                             const SizedBox(height: 10),
-                            _fareRow('Passenger Fare',
-                                '₱${fare.toStringAsFixed(2)}', Colors.white),
+                            _fareRow('Base fare',
+                                'PHP ${(fare - otherFee).toStringAsFixed(2)}', Colors.white),
                             if (otherFee > 0) ...[
                               const SizedBox(height: 6),
                               _fareRow(

@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'app_theme.dart';
+import 'panabo_config.dart';
 import 'contact_service.dart';
 import 'trip_service.dart';
 import 'driver_dashboard_screen.dart';
@@ -42,6 +43,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   DateTime? _lastRouteFetch;
   LatLng? _lastRouteFrom;
   LatLng? _lastRouteTo;
+  final Set<String> _registeredRouteLegs = {};
+  bool _isSyncingLocation = false;
 
   // ── Getters ──────────────────────────────────────────────────────────────
   String get _passengerName =>
@@ -214,6 +217,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _routeRefreshTimer =
           Timer.periodic(const Duration(seconds: 30), (_) async {
         if (!mounted || _myLocation == null || _destPoint == null) return;
+        await _syncDriverLocation(_myLocation!, force: true);
         await _fetchAndDrawRoute(_myLocation!, _destPoint!);
       });
       if ((_trip['trip_id']?.toString() ?? '').isNotEmpty) {
@@ -234,7 +238,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
       _destPoint = destPos;
     });
 
-    _syncDriverLocation(myPos, force: true);
+    await _syncDriverLocation(myPos, force: true);
+    if (!mounted) return;
     if (destPos != null) {
       _updateMarkers(myPos, destPos);
       await _fetchAndDrawRoute(myPos, destPos, force: true);
@@ -249,6 +254,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     // ── Periodic route refresh as backup ─────────────────────────────────
     _routeRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
       if (!mounted || _myLocation == null || _destPoint == null) return;
+      await _syncDriverLocation(_myLocation!, force: true);
       await _fetchAndDrawRoute(_myLocation!, _destPoint!);
     });
 
@@ -263,11 +269,11 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
   // ── Route helper ──────────────────────────────────────────────────────────
   void _startLocationStream() {
     _locSub?.cancel();
-    _locSub = MapService.positionStream().listen((pos) async {
+    _locSub = MapService.positionStream(driverTracking: true).listen((pos) async {
       if (!mounted) return;
       setState(() => _myLocation = pos);
       _updateDriverMarker(pos);
-      _syncDriverLocation(pos);
+      await _syncDriverLocation(pos);
 
       if (_destPoint != null && !_isFetchingRoute) {
         await _fetchAndDrawRoute(pos, _destPoint!);
@@ -275,17 +281,23 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     });
   }
 
-  void _syncDriverLocation(LatLng pos, {bool force = false}) {
+  Future<void> _syncDriverLocation(LatLng pos, {bool force = false}) async {
     final tripId = _trip['trip_id']?.toString() ?? '';
-    if (tripId.isEmpty) return;
+    if (tripId.isEmpty || _isSyncingLocation) return;
     final now = DateTime.now();
     if (!force &&
         _lastLocationSync != null &&
         now.difference(_lastLocationSync!) < const Duration(seconds: 5)) {
       return;
     }
-    _lastLocationSync = now;
-    TripService.updateDriverLocation(tripId, pos);
+    _isSyncingLocation = true;
+    try {
+      if (await TripService.updateDriverLocation(tripId, pos)) {
+        _lastLocationSync = now;
+      }
+    } finally {
+      _isSyncingLocation = false;
+    }
   }
 
   Future<void> _fetchAndDrawRoute(
@@ -297,8 +309,15 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     if (!force && !_shouldRefreshRoute(from, to)) return;
 
     _isFetchingRoute = true;
+    final routeLeg = 'dropoff:${_isSharedTrip ? _completedDropoffs : 0}';
     try {
       final routes = await MapService.fetchRoutes(from, to);
+      if (mounted && routes.isNotEmpty && !_registeredRouteLegs.contains(routeLeg)) {
+        final saved = await TripService.saveDesignatedRoute(
+          _trip['trip_id']?.toString() ?? '', leg: routeLeg, points: routes.first.points,
+        );
+        if (saved) _registeredRouteLegs.add(routeLeg);
+      }
       if (mounted) {
         _lastRouteFetch = DateTime.now();
         _lastRouteFrom = from;
@@ -909,7 +928,7 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                         _tripStat('${dist.toStringAsFixed(1)} km', 'Distance',
                             Icons.route_rounded, Colors.blue),
                         _divV(),
-                        _tripStat('₱${_driverEarnings.toStringAsFixed(0)}',
+                        _tripStat(PanaboFarePolicy.formatPeso(_driverEarnings),
                             'Earnings', Icons.payments_rounded, Colors.green),
                       ]),
                 ),
