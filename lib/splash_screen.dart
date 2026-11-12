@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'admin_auth_service.dart';
+import 'admin_cashouts_screen.dart';
+import 'admin_dashboard_screen.dart';
 import 'app_theme.dart';
 import 'auth_service.dart';
 import 'driver_auth_service.dart';
@@ -33,26 +36,26 @@ class _SplashScreenState extends State<SplashScreen> {
 
   Future<void> _initApp() async {
     await Future.delayed(const Duration(milliseconds: 1200));
-    if (mounted) setState(() => _showGetStarted = true);
+    if (!mounted) return;
 
-    final driverLoggedIn = await DriverAuthService.isLoggedIn();
-    if (driverLoggedIn && mounted) {
-      await Future.delayed(const Duration(milliseconds: 600));
-      _navigateTo(const DriverDashboardScreen());
-      return;
+    Widget? dashboard;
+    if (await DriverAuthService.isLoggedIn()) {
+      dashboard = const DriverDashboardScreen();
+    } else if (await OperatorAuthService.isLoggedIn()) {
+      dashboard = const OperatorDashboardScreen();
+    } else if (await AuthService.isLoggedIn(allowOffline: true)) {
+      dashboard = const PassengerHomeScreen();
+    } else if (await AdminAuthService.isLoggedIn()) {
+      dashboard = const AdminDashboardScreen();
+    } else if (await AdminAuthService.isLoggedIn(payoutAdmin: true)) {
+      dashboard = const AdminCashoutsScreen();
     }
+    if (!mounted) return;
 
-    final operatorLoggedIn = await OperatorAuthService.isLoggedIn();
-    if (operatorLoggedIn && mounted) {
-      await Future.delayed(const Duration(milliseconds: 600));
-      _navigateTo(const OperatorDashboardScreen());
-      return;
-    }
-
-    final passengerLoggedIn = await AuthService.isLoggedIn();
-    if (passengerLoggedIn && mounted) {
-      await Future.delayed(const Duration(milliseconds: 600));
-      _navigateTo(const PassengerHomeScreen());
+    if (dashboard == null) {
+      setState(() => _showGetStarted = true);
+    } else {
+      _navigateTo(dashboard);
     }
   }
 
@@ -135,9 +138,11 @@ class _SplashScreenState extends State<SplashScreen> {
                       duration: const Duration(milliseconds: 500),
                       curve: Curves.easeOut,
                       child: ElevatedButton(
-                        onPressed: () => _navigateTo(
-                          const RoleSelectionScreen(successMessage: ''),
-                        ),
+                        onPressed: _showGetStarted
+                            ? () => _navigateTo(
+                                  const RoleSelectionScreen(successMessage: ''),
+                                )
+                            : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           foregroundColor: AppColors.backgroundDark,

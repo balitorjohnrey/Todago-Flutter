@@ -29,8 +29,11 @@ Future<void> openReview(WidgetTester tester, Map<String, dynamic> report,
 void main() {
   for (final target in ['passenger', 'driver']) {
     testWidgets(
-        'admin can choose either $target penalty duration and include notes',
+        'admin must choose a $target penalty duration and can include notes',
         (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       ReportReviewDecision? decision;
       await openReview(
           tester,
@@ -42,25 +45,42 @@ void main() {
             'details': 'Full incident details for admin review.',
           },
           (result) => decision = result);
-      final standard =
-          target == 'passenger' ? 'Standard: 30 minutes' : 'Standard: 1 day';
-      final severe =
-          target == 'passenger' ? 'Severe: 1 hour' : 'Severe: 2 days';
+      final validate =
+          find.widgetWithText(FilledButton, 'Validate & apply penalty');
+      expect(tester.widget<FilledButton>(validate).onPressed, isNull);
       expect(
-          tester
-              .widget<ChoiceChip>(find.widgetWithText(ChoiceChip, standard))
-              .selected,
-          isTrue);
+        tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).map(
+              (chip) => (chip.label as Text).data,
+            ),
+        [
+          '1 hour',
+          '3 hours',
+          '5 hours',
+          '12 hours',
+          '24 hours',
+          '1 week',
+          'Permanent'
+        ],
+      );
       expect(
           find.text('Full incident details for admin review.'), findsOneWidget);
-      await tester.tap(find.text(severe));
+      final isDriver = target == 'driver';
+      final choice =
+          find.widgetWithText(ChoiceChip, isDriver ? 'Permanent' : '5 hours');
+      await tester.ensureVisible(choice);
+      await tester.tap(choice);
       await tester.pumpAndSettle();
-      await tester.enterText(
-          find.byType(TextField), 'Reviewed: severe incident');
-      await tester.tap(find.text('Validate & apply penalty'));
+      expect(tester.widget<ChoiceChip>(choice).selected, isTrue);
+      expect(
+          find.text(isDriver
+              ? 'This restriction has no expiry.'
+              : 'This restriction expires automatically.'),
+          findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Reviewed incident');
+      await tester.tap(validate);
       await tester.pumpAndSettle();
-      expect(decision?.severity, 'severe');
-      expect(decision?.notes, 'Reviewed: severe incident');
+      expect(decision?.duration, isDriver ? 'permanent' : '5h');
+      expect(decision?.notes, 'Reviewed incident');
     });
   }
 
@@ -101,9 +121,10 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Validate report'));
     await tester.pumpAndSettle();
     expect(decision, isNotNull);
+    expect(decision?.duration, isNull);
   });
 
-  test('admin API transmits the selected severity and review notes', () async {
+  test('admin API transmits the selected duration and review notes', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     const channel =
         MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
@@ -116,7 +137,7 @@ void main() {
       final result = await AdminAuthService.updateReportStatus(
         issueId: 'incident-1',
         status: 'validated',
-        penaltySeverity: 'severe',
+        penaltyDuration: 'permanent',
         adminNotes: 'Reviewed',
       );
       expect(result.success, isTrue);
@@ -128,7 +149,7 @@ void main() {
                   request.headers['Authorization'], 'Bearer admin-test-token');
               expect(jsonDecode(request.body), {
                 'status': 'validated',
-                'penaltySeverity': 'severe',
+                'penaltyDuration': 'permanent',
                 'adminNotes': 'Reviewed',
               });
               return http.Response('{"success":true}', 200);

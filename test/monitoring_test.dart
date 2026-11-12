@@ -14,7 +14,9 @@ import 'package:todago/app_theme.dart';
 import 'package:todago/driver_alerts.dart';
 import 'package:todago/driver_dashboard_screen.dart';
 import 'package:todago/operator_dashboard_screen.dart';
+import 'package:todago/operator_drivers_screen.dart';
 import 'package:todago/passenger_home_screen.dart';
+import 'package:todago/splash_screen.dart';
 import 'package:todago/trip_message_screens.dart';
 import 'package:todago/trip_service.dart';
 import 'support/test_fonts.dart';
@@ -238,6 +240,52 @@ void main() {
               }
               return _fallback(request);
             }));
+  });
+
+  testWidgets(
+      'operator menu opens on a phone and logout requires confirmation',
+      (tester) async {
+    const storage = FlutterSecureStorage();
+    FlutterSecureStorage.setMockInitialValues({
+      'operator_auth_token': 'operator-token',
+    });
+    await http.runWithClient(() async {
+      await _open(tester, const OperatorDashboardScreen(),
+          size: const Size(390, 844));
+      final menu = find.byTooltip('Open operator menu');
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      final drawer = find.byType(Drawer);
+      expect(drawer, findsOneWidget);
+
+      await tester.tap(find.descendant(
+          of: drawer, matching: find.text('Driver Management')));
+      await tester.pumpAndSettle();
+      expect(find.byType(OperatorDriversScreen), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.arrow_back_ios_rounded));
+      await tester.pumpAndSettle();
+
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.descendant(
+          of: drawer, matching: find.text('Log out')));
+      await tester.pumpAndSettle();
+      expect(find.text('Log out?'), findsOneWidget);
+      await _tap(tester, 'Cancel');
+      expect(await storage.read(key: 'operator_auth_token'), 'operator-token');
+      expect(find.byType(OperatorDashboardScreen), findsOneWidget);
+
+      await _tap(tester, 'Log out');
+      expect(find.text('Log out?'), findsOneWidget);
+      await tester.tap(find.descendant(
+          of: find.byType(AlertDialog), matching: find.text('Log out')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 1300));
+      await tester.pumpAndSettle();
+      expect(await storage.read(key: 'operator_auth_token'), isNull);
+      expect(find.byType(SplashScreen), findsOneWidget);
+      expect(find.byType(OperatorDashboardScreen), findsNothing);
+    }, () => MockClient((request) async => _fallback(request)));
   });
 
   testWidgets(

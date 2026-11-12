@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'driver_wallet_service.dart';
 import 'driver_wallet_screen.dart' show cashOutMoney;
 import 'admin_auth_service.dart';
-import 'splash_screen.dart';
+import 'logout_confirmation.dart';
 
 class AdminCashoutsScreen extends StatefulWidget {
   const AdminCashoutsScreen({super.key, this.fetchRequests, this.submitReview});
@@ -176,14 +176,8 @@ class _AdminCashoutsScreenState extends State<AdminCashoutsScreen> {
                 tooltip: 'Sign out',
                 onPressed: _busy
                     ? null
-                    : () async {
-                        await AdminAuthService.logout();
-                        if (!context.mounted) return;
-                        Navigator.of(context).pushAndRemoveUntil(
-                            MaterialPageRoute(
-                                builder: (_) => const SplashScreen()),
-                            (_) => false);
-                      },
+                    : () => confirmLogout(context,
+                        onConfirmed: AdminAuthService.logout),
                 icon: const Icon(Icons.logout)),
           ]),
       body: _loading

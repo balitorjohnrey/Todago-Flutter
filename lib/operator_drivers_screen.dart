@@ -394,15 +394,21 @@ class _OperatorDriversScreenState extends State<OperatorDriversScreen> {
   Widget _buildFooter() => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         color: Colors.white,
-        child: Row(children: [
-          Text('Showing ${_filtered.length} drivers',
-              style:
-                  GoogleFonts.poppins(fontSize: 12, color: AppColors.textHint)),
-          const Spacer(),
-          _footerBadge('$_pendingCount Pending', AppColors.primary),
-          const SizedBox(width: 8),
-          _footerBadge('$_activeCount Active', AppColors.success),
-        ]),
+        child: OverflowBar(
+          alignment: MainAxisAlignment.spaceBetween,
+          overflowAlignment: OverflowBarAlignment.start,
+          spacing: 8,
+          overflowSpacing: 8,
+          children: [
+            Text('Showing ${_filtered.length} drivers',
+                style: GoogleFonts.poppins(
+                    fontSize: 12, color: AppColors.textHint)),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              _footerBadge('$_pendingCount Pending', AppColors.primary),
+              _footerBadge('$_activeCount Active', AppColors.success),
+            ]),
+          ],
+        ),
       );
 
   Widget _filterTab2(String label, int idx) {

@@ -16,7 +16,7 @@ import 'rate_driver_screen.dart';
 import 'service_selection_screen.dart';
 import 'trip_message_screens.dart';
 import 'trip_service.dart';
-import 'splash_screen.dart';
+import 'logout_confirmation.dart';
 import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
 import 'profile_photo_service.dart';
@@ -43,6 +43,9 @@ class PassengerHomeScreen extends StatefulWidget {
 
 class _PassengerHomeScreenState extends State<PassengerHomeScreen>
     with WidgetsBindingObserver {
+  Future<void> _logout() =>
+      confirmLogout(context, onConfirmed: AuthService.logout);
+
   int _selectedTab = 0;
   Map<String, dynamic>? _user;
   String? _passengerPhotoPath;
@@ -1968,14 +1971,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
             width: double.infinity,
             height: 50,
             child: OutlinedButton(
-              onPressed: () async {
-                await AuthService.logout();
-                if (!mounted) return;
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const SplashScreen()),
-                  (_) => false,
-                );
-              },
+              onPressed: _logout,
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: AppColors.error),
                 shape: RoundedRectangleBorder(
@@ -1983,7 +1979,7 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                 ),
               ),
               child: Text(
-                'Logout',
+                'Log out',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -2093,20 +2089,13 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
           width: double.infinity,
           height: 50,
           child: OutlinedButton(
-            onPressed: () async {
-              await AuthService.logout();
-              if (!mounted) return;
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const SplashScreen()),
-                (_) => false,
-              );
-            },
+            onPressed: _logout,
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.error),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
             ),
-            child: Text('Logout',
+            child: Text('Log out',
                 style: GoogleFonts.poppins(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,

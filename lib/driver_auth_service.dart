@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'driver_alerts.dart';
+import 'saved_session.dart';
 
 class DriverAuthResponse {
   final bool success;
@@ -182,6 +183,8 @@ class DriverAuthService {
     await _storage.delete(key: 'operator_data');
     await _storage.delete(key: 'admin_auth_token');
     await _storage.delete(key: 'admin_data');
+    await _storage.delete(key: 'payout_admin_auth_token');
+    await _storage.delete(key: 'payout_admin_data');
     await _storage.write(key: _driverTokenKey, value: token);
     if (driver != null) {
       await _storage.write(key: _driverDataKey, value: jsonEncode(driver));
@@ -193,8 +196,6 @@ class DriverAuthService {
     await _storage.delete(key: _driverTokenKey);
     await _storage.delete(key: _driverDataKey);
   }
-
-  static Future<void> clearSession() async => _clearSession();
 
   static Future<String?> getToken() async =>
       await _storage.read(key: _driverTokenKey);
@@ -218,6 +219,7 @@ class DriverAuthService {
         },
       ).timeout(const Duration(seconds: 10));
 
+      if (await getToken() != token) return null;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final driver = data['driver'] as Map<String, dynamic>?;
@@ -322,31 +324,12 @@ class DriverAuthService {
     }
   }
 
-  static Future<bool> isLoggedIn() async {
-    final token = await getToken();
-    if (token == null || token.isEmpty) return false;
-
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/me'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['success'] == true;
-      }
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        await _clearSession();
-      }
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
+  static Future<bool> isLoggedIn() => validateSavedSession(
+        endpoint: Uri.parse('$_baseUrl/me'),
+        readToken: getToken,
+        clearSession: _clearSession,
+        allowOffline: true,
+      );
 
   static Future<void> logout() async {
     DriverAlerts.clearServiceArea();

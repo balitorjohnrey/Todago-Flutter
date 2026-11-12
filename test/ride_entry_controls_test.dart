@@ -406,6 +406,41 @@ void main() {
             }));
   });
 
+  testWidgets('a permanent ride suspension is shown without an expiry date',
+      (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    FlutterSecureStorage.setMockInitialValues(
+        {'driver_auth_token': 'driver-session'});
+    const restriction = {
+      'permanent': true,
+      'restrictedUntil': null,
+      'message': 'An admin-validated report has permanently suspended you.',
+    };
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+          theme: AppTheme.theme, home: const DriverDashboardScreen()));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('SUSPENDED'), findsOneWidget);
+      expect(find.text('You are permanently suspended from accepting new rides.'),
+          findsOneWidget);
+      await tester.tap(find.text('GO ONLINE'));
+      await tester.pump();
+      expect(find.text(restriction['message'] as String), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async => http.Response(
+            jsonEncode({
+              'success': true,
+              'driver': {'status': 'offline', 'ride_restriction': restriction},
+              'stats': {'ride_restriction': restriction},
+              'trips': [],
+              'hours': [],
+            }),
+            200)));
+  });
+
   testWidgets(
       'driver settings opens safely and cancelling logout keeps session',
       (tester) async {

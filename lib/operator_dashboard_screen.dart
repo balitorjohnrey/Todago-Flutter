@@ -6,12 +6,11 @@ import 'trip_analytics_chart.dart';
 import 'driver_performance_card.dart';
 import 'monitoring_service.dart';
 import 'app_theme.dart';
-import 'auth_service.dart';
+import 'logout_confirmation.dart';
 import 'operator_auth_service.dart';
 import 'operator_fleet_map_screen.dart';
 import 'operator_drivers_screen.dart';
 import 'report_issue_dialog.dart';
-import 'splash_screen.dart';
 
 class OperatorDashboardScreen extends StatefulWidget {
   const OperatorDashboardScreen({super.key});
@@ -108,14 +107,8 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
     return '${speed.toStringAsFixed(1)} km/h';
   }
 
-  Future<void> _logout() async {
-    await AuthService.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SplashScreen()),
-      (_) => false,
-    );
-  }
+  Future<void> _logout() =>
+      confirmLogout(context, onConfirmed: OperatorAuthService.logout);
 
   void _onFleetMap() {
     _pushOperatorTool(const OperatorFleetMapScreen());
@@ -148,10 +141,39 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
     ));
   }
 
+  Widget _buildDrawer() => Drawer(
+        child: SafeArea(
+          child: Builder(
+            builder: (drawerContext) => ListView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              children: [
+                for (final (icon, label, action) in [
+                  (Icons.map_rounded, 'Live Fleet Map', _onFleetMap),
+                  (Icons.manage_accounts_rounded, 'Driver Management',
+                      _onDriverManagement),
+                  (Icons.report_problem_rounded, 'Report an Issue',
+                      _onReportIssue),
+                  (Icons.logout_rounded, 'Log out', _logout),
+                ])
+                  ListTile(
+                    leading: Icon(icon),
+                    title: Text(label),
+                    onTap: () {
+                      Scaffold.of(drawerContext).closeDrawer();
+                      action();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      drawer: _buildDrawer(),
       body: Column(
         children: [
           // ── Dark Top Header ──────────────────────────────────────────────────
@@ -165,16 +187,18 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                   children: [
                     Row(
                       children: [
-                        GestureDetector(
-                          onTap: () => Scaffold.of(context).openDrawer(),
-                          child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: AppColors.surface,
-                              borderRadius: BorderRadius.circular(10),
+                        Builder(
+                          builder: (buttonContext) => IconButton(
+                            onPressed: () =>
+                                Scaffold.of(buttonContext).openDrawer(),
+                            tooltip: 'Open operator menu',
+                            style: IconButton.styleFrom(
+                              backgroundColor: AppColors.surface,
+                              minimumSize: const Size.square(48),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
                             ),
-                            child: const Icon(Icons.menu_rounded,
+                            icon: const Icon(Icons.menu_rounded,
                                 color: Colors.white, size: 20),
                           ),
                         ),
@@ -423,12 +447,14 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                                 const Icon(Icons.star_rounded,
                                     color: AppColors.backgroundDark, size: 18),
                                 const SizedBox(width: 6),
-                                Text('Avg Passenger Rating',
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.backgroundDark,
-                                    )),
+                                Flexible(
+                                  child: Text('Avg Passenger Rating',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.backgroundDark,
+                                      )),
+                                ),
                               ]),
                               const SizedBox(height: 8),
                               Text(
@@ -531,7 +557,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
                       Expanded(
                           child: _actionCard(
                         icon: Icons.logout_rounded,
-                        label: 'Logout',
+                        label: 'Log out',
                         onTap: _logout,
                         isDestructive: true,
                       )),

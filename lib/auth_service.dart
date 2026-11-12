@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'saved_session.dart';
 
 class AuthResponse {
   final bool success;
@@ -205,6 +206,8 @@ class AuthService {
     await _storage.delete(key: 'operator_data');
     await _storage.delete(key: 'admin_auth_token');
     await _storage.delete(key: 'admin_data');
+    await _storage.delete(key: 'payout_admin_auth_token');
+    await _storage.delete(key: 'payout_admin_data');
     await _storage.write(key: _tokenKey, value: token);
     if (user != null) {
       await _storage.write(key: _userKey, value: jsonEncode(user));
@@ -215,12 +218,6 @@ class AuthService {
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _userKey);
     await _storage.delete(key: _roleKey);
-    await _storage.delete(key: 'driver_auth_token');
-    await _storage.delete(key: 'driver_data');
-    await _storage.delete(key: 'operator_auth_token');
-    await _storage.delete(key: 'operator_data');
-    await _storage.delete(key: 'admin_auth_token');
-    await _storage.delete(key: 'admin_data');
   }
 
   static Future<void> saveRole(String role) async {
@@ -251,6 +248,7 @@ class AuthService {
         },
       ).timeout(const Duration(seconds: 10));
 
+      if (await getToken() != token) return null;
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final user = data['user'] as Map<String, dynamic>?;
@@ -269,31 +267,13 @@ class AuthService {
     }
   }
 
-  static Future<bool> isLoggedIn() async {
-    final token = await getToken();
-    if (token == null || token.isEmpty) return false;
-
-    try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/me'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      ).timeout(const Duration(seconds: 10));
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data['success'] == true;
-      }
-      if (response.statusCode == 401 || response.statusCode == 403) {
-        await _clearSession();
-      }
-      return false;
-    } catch (_) {
-      return false;
-    }
-  }
+  static Future<bool> isLoggedIn({bool allowOffline = false}) =>
+      validateSavedSession(
+        endpoint: Uri.parse('$_baseUrl/me'),
+        readToken: getToken,
+        clearSession: _clearSession,
+        allowOffline: allowOffline,
+      );
 
   static Future<Map<String, dynamic>?> updateProfilePhoto(
       String? profilePhotoUrl) async {

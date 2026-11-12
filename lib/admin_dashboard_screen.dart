@@ -10,7 +10,7 @@ import 'app_theme.dart';
 import 'fare_settings_service.dart';
 import 'panabo_config.dart';
 import 'report_review_dialog.dart';
-import 'splash_screen.dart';
+import 'logout_confirmation.dart';
 import 'trip_analytics_chart.dart';
 import 'admin_monitoring_screens.dart';
 import 'driver_performance_card.dart';
@@ -297,7 +297,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     final result = await AdminAuthService.updateReportStatus(
       issueId: issueId,
       status: status,
-      penaltySeverity: decision?.severity,
+      penaltyDuration: decision?.duration,
       adminNotes: decision?.notes,
     );
     if (!mounted) return;
@@ -309,14 +309,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     if (result.success) await _load();
   }
 
-  Future<void> _logout() async {
-    await AdminAuthService.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SplashScreen()),
-      (_) => false,
-    );
-  }
+  Future<void> _logout() =>
+      confirmLogout(context, onConfirmed: AdminAuthService.logout);
 
   void _showSnack(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(

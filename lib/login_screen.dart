@@ -70,8 +70,6 @@ class _LoginScreenState extends State<LoginScreen> {
         (_) => false,
       );
     } else {
-      await AuthService.logout();
-      if (!mounted) return;
       setState(() => _errorMessage = result.message);
     }
   }

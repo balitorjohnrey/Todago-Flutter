@@ -3,6 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import 'fare_settings_service.dart';
+import 'saved_session.dart';
 
 class AdminAuthResponse {
   final bool success;
@@ -28,6 +29,8 @@ class AdminAuthService {
   static const _storage = FlutterSecureStorage();
   static const _adminTokenKey = 'admin_auth_token';
   static const _adminDataKey = 'admin_data';
+  static const _payoutTokenKey = 'payout_admin_auth_token';
+  static const _payoutDataKey = 'payout_admin_data';
 
   static Future<AdminAuthResponse> login({required String secret}) async {
     try {
@@ -48,12 +51,18 @@ class AdminAuthService {
           token is String &&
           token.isNotEmpty) {
         final payoutAdmin = data['admin']?['role'] == 'payout_admin';
+        await _storage.delete(key: 'auth_token');
+        await _storage.delete(key: 'user_data');
+        await _storage.delete(key: 'user_role');
+        await _storage.delete(key: 'driver_auth_token');
+        await _storage.delete(key: 'driver_data');
+        await _storage.delete(key: 'operator_auth_token');
+        await _storage.delete(key: 'operator_data');
         await _storage.write(
-            key: payoutAdmin ? 'payout_admin_auth_token' : _adminTokenKey,
-            value: token);
+            key: payoutAdmin ? _payoutTokenKey : _adminTokenKey, value: token);
         if (data['admin'] != null) {
           await _storage.write(
-            key: payoutAdmin ? 'payout_admin_data' : _adminDataKey,
+            key: payoutAdmin ? _payoutDataKey : _adminDataKey,
             value: jsonEncode(data['admin']),
           );
         }
@@ -80,7 +89,16 @@ class AdminAuthService {
 
   static Future<String?> getToken() => _storage.read(key: _adminTokenKey);
   static Future<String?> getPayoutToken() =>
-      _storage.read(key: 'payout_admin_auth_token');
+      _storage.read(key: _payoutTokenKey);
+
+  static Future<bool> isLoggedIn({bool payoutAdmin = false}) =>
+      validateSavedSession(
+        endpoint: Uri.parse(
+            '$_baseUrl/${payoutAdmin ? 'driver-cashouts' : 'stats'}'),
+        readToken: payoutAdmin ? getPayoutToken : getToken,
+        clearSession: () => _clearSession(payoutAdmin: payoutAdmin),
+        allowOffline: true,
+      );
 
   static Future<Map<String, String>> _headers() async {
     final token = await getToken();
@@ -230,7 +248,7 @@ class AdminAuthService {
     required String issueId,
     required String status,
     String? adminNotes,
-    String? penaltySeverity,
+    String? penaltyDuration,
   }) async {
     try {
       final response = await http
@@ -239,7 +257,7 @@ class AdminAuthService {
             headers: await _headers(),
             body: jsonEncode({
               'status': status,
-              if (penaltySeverity != null) 'penaltySeverity': penaltySeverity,
+              if (penaltyDuration != null) 'penaltyDuration': penaltyDuration,
               if (adminNotes != null && adminNotes.isNotEmpty)
                 'adminNotes': adminNotes,
             }),
@@ -310,10 +328,13 @@ class AdminAuthService {
     }
   }
 
+  static Future<void> _clearSession({required bool payoutAdmin}) async {
+    await _storage.delete(key: payoutAdmin ? _payoutTokenKey : _adminTokenKey);
+    await _storage.delete(key: payoutAdmin ? _payoutDataKey : _adminDataKey);
+  }
+
   static Future<void> logout() async {
-    await _storage.delete(key: _adminTokenKey);
-    await _storage.delete(key: _adminDataKey);
-    await _storage.delete(key: 'payout_admin_auth_token');
-    await _storage.delete(key: 'payout_admin_data');
+    await _clearSession(payoutAdmin: false);
+    await _clearSession(payoutAdmin: true);
   }
 }

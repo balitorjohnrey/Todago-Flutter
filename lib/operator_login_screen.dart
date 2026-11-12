@@ -24,12 +24,6 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
   String? _errorMessage;
 
   @override
-  void initState() {
-    super.initState();
-    OperatorAuthService.clearSession();
-  }
-
-  @override
   void dispose() {
     _todaIdCtrl.dispose();
     _emailCtrl.dispose();
@@ -87,7 +81,6 @@ class _OperatorLoginScreenState extends State<OperatorLoginScreen> {
         statusToken: result.verificationStatusToken,
         callbackUrl: result.verificationCallbackUrl,
       );
-      await OperatorAuthService.clearSession();
       if (!mounted) return;
       setState(() => _errorMessage = verificationPassed
           ? 'Identity verification passed. You can log in again.'

@@ -10,7 +10,7 @@ import 'driver_messages.dart';
 import 'map_service.dart';
 import 'trip_message_screens.dart';
 import 'trip_service.dart';
-import 'splash_screen.dart';
+import 'logout_confirmation.dart';
 import 'ride_request_screen.dart';
 import 'navigation_pickup_screen.dart';
 import 'ai_chat_screen.dart';
@@ -48,11 +48,14 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   Map<String, dynamic>? _driverProfile;
   Map<String, dynamic>? _rideRestriction;
 
-  bool get _isSuspended {
-    final until = DateTime.tryParse(
-        _rideRestriction?['restrictedUntil']?.toString() ?? '');
-    return until != null && until.isAfter(DateTime.now());
-  }
+  bool get _isPermanentlySuspended => _rideRestriction?['permanent'] == true;
+
+  DateTime? get _suspendedUntil => DateTime.tryParse(
+      _rideRestriction?['restrictedUntil']?.toString() ?? '');
+
+  bool get _isSuspended =>
+      _isPermanentlySuspended ||
+      (_suspendedUntil?.isAfter(DateTime.now()) ?? false);
 
   double _avgRating = 0.0;
   int _totalTrips = 0;
@@ -387,11 +390,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     _stopOnlineLocationSync();
     if (_isOnline) await TripService.updateDriverStatus('offline');
     await DriverAuthService.logout();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const SplashScreen()),
-      (_) => false,
-    );
   }
 
   Future<void> _openSettings() async {
@@ -446,23 +444,11 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       case _DriverSettingsAction.help:
         _openChat();
       case _DriverSettingsAction.logout:
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) => AlertDialog(
-            title: const Text('Log out?'),
-            content: const Text(
-                'You will go offline and return to the welcome screen.'),
-            actions: [
-              TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: const Text('Cancel')),
-              TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  child: const Text('Log out')),
-            ],
-          ),
+        await confirmLogout(
+          context,
+          message: 'You will go offline and return to the welcome screen.',
+          onConfirmed: _logout,
         );
-        if (confirmed == true && mounted) await _logout();
       case null:
         break;
     }
@@ -699,7 +685,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                   child: Text(
-                    'Ride suspension ends ${DateTime.parse(_rideRestriction!['restrictedUntil'].toString()).toLocal().toString().split('.').first}. You cannot accept new rides until then.',
+                    _isPermanentlySuspended
+                        ? 'You are permanently suspended from accepting new rides.'
+                        : 'Ride suspension ends ${_suspendedUntil!.toLocal().toString().split('.').first}. You cannot accept new rides until then.',
                     style: const TextStyle(
                         color: Colors.orangeAccent, fontSize: 13),
                     textAlign: TextAlign.center,

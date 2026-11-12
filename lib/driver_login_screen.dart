@@ -25,12 +25,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
   String? _errorMessage;
 
   @override
-  void initState() {
-    super.initState();
-    DriverAuthService.clearSession();
-  }
-
-  @override
   void dispose() {
     _associationCtrl.dispose();
     _licenseCtrl.dispose();
@@ -91,7 +85,6 @@ class _DriverLoginScreenState extends State<DriverLoginScreen> {
         statusToken: result.verificationStatusToken,
         callbackUrl: result.verificationCallbackUrl,
       );
-      await DriverAuthService.clearSession();
       if (!mounted) return;
       setState(() => _errorMessage = verificationPassed
           ? 'Identity verification passed. You can log in again.'

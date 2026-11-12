@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 class ReportReviewDecision {
-  final String severity;
+  final String? duration;
   final String notes;
 
-  const ReportReviewDecision(this.severity, this.notes);
+  const ReportReviewDecision(this.duration, this.notes);
 }
 
 class ReportReviewDialog extends StatefulWidget {
@@ -17,8 +17,18 @@ class ReportReviewDialog extends StatefulWidget {
 }
 
 class _ReportReviewDialogState extends State<ReportReviewDialog> {
+  static const _durations = {
+    '1h': '1 hour',
+    '3h': '3 hours',
+    '5h': '5 hours',
+    '12h': '12 hours',
+    '24h': '24 hours',
+    '1w': '1 week',
+    'permanent': 'Permanent',
+  };
+
   final _notes = TextEditingController();
-  String _severity = 'standard';
+  String? _duration;
 
   String? get _target {
     final reporter = widget.report['reporter_role'];
@@ -44,6 +54,8 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
     final missingAccount = target != null &&
         (widget.report['subject_id']?.toString().isEmpty ?? true);
     final passenger = target == 'passenger';
+    final canValidate =
+        target == null || (!missingAccount && _duration != null);
     return AlertDialog(
       title: const Text('Validate report'),
       content: SingleChildScrollView(
@@ -63,33 +75,37 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
               const SizedBox(height: 20),
               Text(
                   passenger
-                      ? 'Passenger booking cooldown'
+                      ? 'Passenger booking restriction'
                       : 'Driver ride suspension',
                   style: const TextStyle(fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              const Text('Choose the duration based on the incident severity.'),
+              const Text('Choose a duration.'),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
+                runSpacing: 4,
                 children: [
-                  ChoiceChip(
-                    label: Text(
-                        passenger ? 'Standard: 30 minutes' : 'Standard: 1 day'),
-                    selected: _severity == 'standard',
-                    onSelected: (_) => setState(() => _severity = 'standard'),
-                  ),
-                  ChoiceChip(
-                    label:
-                        Text(passenger ? 'Severe: 1 hour' : 'Severe: 2 days'),
-                    selected: _severity == 'severe',
-                    onSelected: (_) => setState(() => _severity = 'severe'),
-                  ),
+                  for (final duration in _durations.entries)
+                    ChoiceChip(
+                      label: Text(duration.value),
+                      selected: _duration == duration.key,
+                      onSelected: missingAccount
+                          ? null
+                          : (selected) => setState(
+                              () => _duration = selected ? duration.key : null),
+                    ),
                 ],
               ),
               const SizedBox(height: 8),
               Text(passenger
-                  ? 'All new ride bookings will be blocked from validation until the cooldown expires automatically.'
-                  : 'The driver will be hidden from available drivers and cannot accept new rides until the suspension expires automatically. An already accepted trip can still be finished.'),
+                  ? 'The passenger will be blocked from booking new rides.'
+                  : 'The driver will be hidden from available drivers and blocked from accepting new rides. They can still finish a trip they already accepted.'),
+              if (_duration != null) ...[
+                const SizedBox(height: 8),
+                Text(_duration == 'permanent'
+                    ? 'This restriction has no expiry.'
+                    : 'This restriction expires automatically.'),
+              ],
               if (missingAccount) ...[
                 const SizedBox(height: 12),
                 const Text(
@@ -117,11 +133,11 @@ class _ReportReviewDialogState extends State<ReportReviewDialog> {
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('Cancel')),
         FilledButton(
-          onPressed: missingAccount
-              ? null
-              : () => Navigator.of(context).pop(
-                    ReportReviewDecision(_severity, _notes.text.trim()),
-                  ),
+          onPressed: canValidate
+              ? () => Navigator.of(context).pop(
+                    ReportReviewDecision(_duration, _notes.text.trim()),
+                  )
+              : null,
           child: Text(
               target == null ? 'Validate report' : 'Validate & apply penalty'),
         ),
