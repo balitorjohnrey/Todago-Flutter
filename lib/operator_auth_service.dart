@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'push_notifications.dart';
 import 'saved_session.dart';
 
 class OperatorAuthResponse {
@@ -183,9 +185,11 @@ class OperatorAuthService {
     if (operator != null) {
       await _storage.write(key: _operatorDataKey, value: jsonEncode(operator));
     }
+    PushNotifications.setSession(token);
   }
 
   static Future<void> _clearSession() async {
+    unawaited(PushNotifications.clearSession(getToken));
     await _storage.delete(key: _operatorTokenKey);
     await _storage.delete(key: _operatorDataKey);
   }
@@ -414,5 +418,8 @@ class OperatorAuthService {
       );
 
   // Clear all tokens on logout so no stale sessions remain.
-  static Future<void> logout() async => await _storage.deleteAll();
+  static Future<void> logout() async {
+    await PushNotifications.clearSession(getToken);
+    await _storage.deleteAll();
+  }
 }

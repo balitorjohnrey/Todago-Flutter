@@ -14,3 +14,37 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## Mobile push notifications
+
+TodaGo's API runs on Railway. PostgreSQL stores trips, push device registrations,
+and queued alerts. Firebase Cloud Messaging (FCM) delivers the notifications to
+phones. Use the same Firebase project for the mobile app and the backend's FCM
+credentials.
+
+1. Create a project in the [Firebase console](https://console.firebase.google.com/)
+   and enable the [Firebase Cloud Messaging API](https://firebase.google.com/docs/cloud-messaging/send/v1-api).
+2. In Firebase, open **Project settings → Service accounts → Generate new private key**.
+   On the Railway **backend service**, add `FCM_SERVICE_ACCOUNT_JSON` under
+   **Variables** with the entire contents of that JSON file. Keep the key in
+   Railway's private variables. Deploy the backend revision that contains push
+   support. The backend creates the push tables in the existing PostgreSQL
+   database on startup. `TODAGO_PICKUP_PUSH_RADIUS_METERS` defaults to 300 meters
+   of straight-line distance from the pickup point.
+3. Register the Android app `com.example.todago_flutter` in Firebase. Place its
+   `google-services.json` in `android/app/` before building the APK. Use Flutter
+   3.41.9 with the current Android Gradle configuration.
+4. For iOS, register the bundle identifier used to sign Runner
+   (`com.example.todagoFlutter` by default). Add `GoogleService-Info.plist` to the
+   Runner target in Xcode, enable the Push Notifications capability, and upload
+   the APNs key in Firebase. Follow the
+   [Firebase Apple setup](https://firebase.google.com/docs/cloud-messaging/flutter/get-started).
+5. Install the configured app on test phones, sign in, and allow notifications.
+   Book a ride from the passenger phone. After the driver accepts, switch the
+   passenger phone to another app while the driver approaches the pickup point.
+   Expect a **Your driver is nearby** banner on the passenger phone once the
+   driver's GPS is within range. Check that further GPS updates do not repeat the
+   alert and that unrelated accounts receive nothing.
+
+Use Android's **TodaGo updates** notification channel with pop-up banners
+enabled, or enable **Banners** for TodaGo in iOS notification settings.

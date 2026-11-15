@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'push_notifications.dart';
 import 'saved_session.dart';
 
 class AuthResponse {
@@ -212,9 +214,11 @@ class AuthService {
     if (user != null) {
       await _storage.write(key: _userKey, value: jsonEncode(user));
     }
+    PushNotifications.setSession(token);
   }
 
   static Future<void> _clearSession() async {
+    unawaited(PushNotifications.clearSession(getToken));
     await _storage.delete(key: _tokenKey);
     await _storage.delete(key: _userKey);
     await _storage.delete(key: _roleKey);
@@ -306,5 +310,8 @@ class AuthService {
     }
   }
 
-  static Future<void> logout() async => await _storage.deleteAll();
+  static Future<void> logout() async {
+    await PushNotifications.clearSession(getToken);
+    await _storage.deleteAll();
+  }
 }

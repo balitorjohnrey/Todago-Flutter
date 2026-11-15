@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'driver_alerts.dart';
+import 'push_notifications.dart';
 import 'saved_session.dart';
 
 class DriverAuthResponse {
@@ -189,10 +191,12 @@ class DriverAuthService {
     if (driver != null) {
       await _storage.write(key: _driverDataKey, value: jsonEncode(driver));
     }
+    PushNotifications.setSession(token);
   }
 
   static Future<void> _clearSession() async {
     DriverAlerts.clearServiceArea();
+    unawaited(PushNotifications.clearSession(getToken));
     await _storage.delete(key: _driverTokenKey);
     await _storage.delete(key: _driverDataKey);
   }
@@ -333,6 +337,7 @@ class DriverAuthService {
 
   static Future<void> logout() async {
     DriverAlerts.clearServiceArea();
+    await PushNotifications.clearSession(getToken);
     await _storage.deleteAll();
   }
 }

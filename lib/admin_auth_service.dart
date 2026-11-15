@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
 import 'fare_settings_service.dart';
+import 'push_notifications.dart';
 import 'saved_session.dart';
 
 class AdminAuthResponse {
@@ -66,6 +68,7 @@ class AdminAuthService {
             value: jsonEncode(data['admin']),
           );
         }
+        PushNotifications.setSession(token);
         return AdminAuthResponse(
           success: true,
           message: data['message'] ?? 'Admin login successful',
@@ -329,12 +332,22 @@ class AdminAuthService {
   }
 
   static Future<void> _clearSession({required bool payoutAdmin}) async {
-    await _storage.delete(key: payoutAdmin ? _payoutTokenKey : _adminTokenKey);
+    final key = payoutAdmin ? _payoutTokenKey : _adminTokenKey;
+    unawaited(PushNotifications.clearSession(
+      payoutAdmin ? getPayoutToken : getToken,
+    ));
+    await _storage.delete(key: key);
     await _storage.delete(key: payoutAdmin ? _payoutDataKey : _adminDataKey);
   }
 
   static Future<void> logout() async {
-    await _clearSession(payoutAdmin: false);
-    await _clearSession(payoutAdmin: true);
+    await Future.wait([
+      PushNotifications.clearSession(getToken),
+      PushNotifications.clearSession(getPayoutToken),
+    ]);
+    await _storage.delete(key: _adminTokenKey);
+    await _storage.delete(key: _adminDataKey);
+    await _storage.delete(key: _payoutTokenKey);
+    await _storage.delete(key: _payoutDataKey);
   }
 }

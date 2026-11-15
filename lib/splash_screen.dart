@@ -12,6 +12,7 @@ import 'driver_dashboard_screen.dart';
 import 'operator_auth_service.dart';
 import 'operator_dashboard_screen.dart';
 import 'passenger_home_screen.dart';
+import 'push_notifications.dart';
 import 'role_selection_screen.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -39,18 +40,25 @@ class _SplashScreenState extends State<SplashScreen> {
     if (!mounted) return;
 
     Widget? dashboard;
+    String? token;
     if (await DriverAuthService.isLoggedIn()) {
       dashboard = const DriverDashboardScreen();
+      token = await DriverAuthService.getToken();
     } else if (await OperatorAuthService.isLoggedIn()) {
       dashboard = const OperatorDashboardScreen();
+      token = await OperatorAuthService.getToken();
     } else if (await AuthService.isLoggedIn(allowOffline: true)) {
       dashboard = const PassengerHomeScreen();
+      token = await AuthService.getToken();
     } else if (await AdminAuthService.isLoggedIn()) {
       dashboard = const AdminDashboardScreen();
+      token = await AdminAuthService.getToken();
     } else if (await AdminAuthService.isLoggedIn(payoutAdmin: true)) {
       dashboard = const AdminCashoutsScreen();
+      token = await AdminAuthService.getPayoutToken();
     }
     if (!mounted) return;
+    if (token != null) PushNotifications.setSession(token);
 
     if (dashboard == null) {
       setState(() => _showGetStarted = true);
