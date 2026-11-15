@@ -32,8 +32,8 @@ credentials.
    database on startup. `TODAGO_PICKUP_PUSH_RADIUS_METERS` defaults to 300 meters
    of straight-line distance from the pickup point.
 3. Register the Android app `com.example.todago_flutter` in Firebase. Place its
-   `google-services.json` in `android/app/` before building the APK. Use Flutter
-   3.41.9 with the current Android Gradle configuration.
+   `google-services.json` in `android/app/`, then run
+   `flutter build apk --release` with Flutter 3.50.
 4. For iOS, register the bundle identifier used to sign Runner
    (`com.example.todagoFlutter` by default). Add `GoogleService-Info.plist` to the
    Runner target in Xcode, enable the Push Notifications capability, and upload

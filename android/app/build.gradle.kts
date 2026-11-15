@@ -1,3 +1,5 @@
+import com.android.build.api.variant.LibraryAndroidComponentsExtension
+
 buildscript {
     if (file("google-services.json").isFile) {
         repositories {
@@ -21,19 +23,17 @@ if (file("google-services.json").isFile) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+val appCompileSdk = flutter.compileSdkVersion
+
 android {
     namespace = "com.example.todago_flutter"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = appCompileSdk
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-    }
-
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
     defaultConfig {
@@ -48,6 +48,21 @@ android {
         release {
             signingConfig = signingConfigs.getByName("debug")
         }
+    }
+}
+
+// Some Flutter plugins declare an older compile SDK than their Android dependencies require.
+rootProject.subprojects {
+    pluginManager.withPlugin("com.android.library") {
+        extensions.getByType<LibraryAndroidComponentsExtension>().finalizeDsl { library ->
+            library.compileSdk = maxOf(library.compileSdk ?: 0, appCompileSdk)
+        }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 
