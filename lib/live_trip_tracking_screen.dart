@@ -29,7 +29,7 @@ class LiveTripTrackingScreen extends StatefulWidget {
 
   /// Destination coordinates passed from DestinationPickerScreen → ServiceSelectionScreen
   /// → PassengerWaitingScreen → here. Used to draw the route once the driver
-  /// arrives at the pickup location and the trip phase switches to "riding".
+  /// confirms boarding and the trip phase switches to "riding".
   final LatLng? destinationLatLng;
 
   const LiveTripTrackingScreen({
@@ -59,6 +59,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   MapRoute? _route;
   String _tripStatus = 'accepted';
   bool _isFetchingRoute = false;
+  bool _isPolling = false;
 
   // ── Phase ─────────────────────────────────────────────────────────────────
   // 'approaching' : driver navigating to the passenger pickup point
@@ -108,6 +109,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   String get _paymentStatus =>
       _latestTrip?['payment_status']?.toString() ?? 'unpaid';
   bool get _hasArrivedAtDestination => _tripStatus == 'arrived';
+  bool get _driverAtPickup => _latestTrip?['pickup_arrived_at'] != null;
   bool get _isOnlinePayment => _paymentMethod != 'cash';
   bool get _isPaymentPaid => _paymentStatus == 'paid';
   String get _paymentLabel => _paymentOptions.firstWhere(
@@ -136,6 +138,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
     // Initial: driver approaching → show driver + passenger markers, route driver→passenger
     await _pollTrip();
+    if (!mounted || _tripStatus == 'completed' || _tripStatus == 'cancelled') {
+      return;
+    }
 
     // ── Live passenger position stream ────────────────────────────────────
     _locSub = MapService.positionStream().listen((pos) async {
@@ -178,14 +183,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
   // ── Poll trip status & driver position ───────────────────────────────────
   Future<void> _pollTrip() async {
+    if (_isPolling) return;
+    _isPolling = true;
     try {
-      final trip = await TripService.getActiveTrip();
-      if (!mounted) return;
-      if (trip == null) {
-        _pollTimer?.cancel();
-        _checkIfCompleted();
-        return;
-      }
+      final trip = await TripService.getTripById(widget.tripId);
+      if (!mounted || trip == null) return;
       setState(() => _latestTrip = Map<String, dynamic>.from(trip));
 
       // Update text fields from server
@@ -229,8 +231,8 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
           return;
         }
         if (status == 'cancelled') {
-          _pollTimer?.cancel();
-          _showCancelled();
+          _stopTimers();
+          _showCancelled(trip['cancellation_reason'] == 'passenger_no_show');
           return;
         }
       }
@@ -253,7 +255,11 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
           }
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Keep polling through temporary connection errors.
+    } finally {
+      _isPolling = false;
+    }
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
@@ -437,19 +443,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
     ));
   }
 
-  Future<void> _checkIfCompleted() async {
-    try {
-      final history = await TripService.getCommuterHistory();
-      if (!mounted) return;
-      if (history.isNotEmpty && history.first['status'] == 'completed') {
-        _navigateToRating();
-        return;
-      }
-    } catch (_) {}
-    _showCancelled();
-  }
-
-  void _showCancelled() => showDialog(
+  void _showCancelled(bool passengerNoShow) => showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
@@ -457,7 +451,10 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Text('Trip Cancelled',
                 style: GoogleFonts.poppins(fontWeight: FontWeight.w700)),
-            content: Text('The driver cancelled. Please book again.',
+            content: Text(
+                passengerNoShow
+                    ? 'Your driver cancelled after waiting at the pickup point. You can book another ride.'
+                    : 'The driver cancelled. Please book again.',
                 style: GoogleFonts.poppins(fontSize: 14)),
             actions: [
               ElevatedButton(
@@ -734,7 +731,9 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
       case 'requested':
         return 'Waiting for driver to accept...';
       case 'accepted':
-        return 'Driver is on the way!';
+        return _driverAtPickup
+            ? 'Your driver is at the pickup point'
+            : 'Driver is on the way!';
       case 'pickup':
         return 'Driver arrived at pickup!';
       case 'ongoing':
@@ -855,18 +854,23 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                     ],
                   ),
                   child: Row(children: [
-                    _etaItem(
-                      _phase == 'riding' ? 'To Destination' : 'ETA',
-                      _liveEtaText,
-                      Icons.schedule_rounded,
-                    ),
-                    const SizedBox(width: 24),
-                    _etaItem(
-                      'Distance',
-                      _liveDistText,
-                      Icons.straighten_rounded,
-                    ),
-                    const Spacer(),
+                    if (_phase == 'riding' || !_driverAtPickup) ...[
+                      Expanded(
+                        child: _etaItem(
+                          _phase == 'riding' ? 'To Destination' : 'ETA',
+                          _liveEtaText,
+                          Icons.schedule_rounded,
+                        ),
+                      ),
+                      Expanded(
+                        child: _etaItem(
+                          'Distance',
+                          _liveDistText,
+                          Icons.straighten_rounded,
+                        ),
+                      ),
+                    ] else
+                      const Spacer(),
                     // Re-centre button
                     GestureDetector(
                       onTap: () {
@@ -1271,16 +1275,18 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
   Widget _etaItem(String label, String value, IconData icon) => Row(children: [
         Icon(icon, size: 16, color: AppColors.textHint),
         const SizedBox(width: 6),
-        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label,
-              style:
-                  GoogleFonts.poppins(fontSize: 10, color: AppColors.textHint)),
-          Text(value,
-              style: GoogleFonts.poppins(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark)),
-        ]),
+        Flexible(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label,
+                style: GoogleFonts.poppins(
+                    fontSize: 10, color: AppColors.textHint)),
+            Text(value,
+                style: GoogleFonts.poppins(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.backgroundDark)),
+          ]),
+        ),
       ]);
 
   Future<void> _messageDriver() async {

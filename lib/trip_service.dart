@@ -307,14 +307,29 @@ class TripService {
 
   // ── Driver: update trip status ────────────────────────────────────────────
   static Future<Map<String, dynamic>> updateTripStatus(
-      String tripId, String status) async {
+    String tripId,
+    String status, {
+    String? reason,
+  }) =>
+      _updateDriverTrip('$tripId/status', {
+        'status': status,
+        if (reason != null) 'reason': reason,
+      });
+
+  static Future<Map<String, dynamic>> markPickupArrival(String tripId) =>
+      _updateDriverTrip('$tripId/pickup-arrival');
+
+  static Future<Map<String, dynamic>> _updateDriverTrip(
+    String path, [
+    Map<String, String>? body,
+  ]) async {
     try {
       final token = await _getDriverToken();
       final response = await http
           .put(
-            Uri.parse('$_baseUrl/$tripId/status'),
+            Uri.parse('$_baseUrl/$path'),
             headers: _headers(token),
-            body: jsonEncode({'status': status}),
+            body: body == null ? null : jsonEncode(body),
           )
           .timeout(const Duration(seconds: 10));
       return jsonDecode(response.body) as Map<String, dynamic>;

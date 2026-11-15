@@ -10,7 +10,9 @@ import 'package:google_fonts/src/google_fonts_variant.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:todago/active_trip_driver_screen.dart';
+import 'package:todago/driver_dashboard_screen.dart';
 import 'package:todago/driver_trip_history_screen.dart';
+import 'package:todago/live_trip_tracking_screen.dart';
 import 'package:todago/navigation_pickup_screen.dart';
 import 'package:todago/rate_driver_screen.dart';
 import 'package:todago/rate_passenger_screen.dart';
@@ -89,9 +91,11 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
             channel,
-            (call) async => call.arguments['key'] == 'driver_auth_token'
-                ? 'driver-token'
-                : 'passenger-token');
+            (call) async => switch (call.arguments['key']) {
+                  'driver_auth_token' => 'driver-token',
+                  'auth_token' => 'passenger-token',
+                  _ => null,
+                });
   });
   tearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -366,6 +370,135 @@ void main() {
                   }),
                   200);
             }));
+  });
+
+  testWidgets('driver can keep waiting or cancel after marking pickup arrival',
+      (tester) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const location = MethodChannel('flutter.baseflow.com/geolocator');
+    const updates = MethodChannel('flutter.baseflow.com/geolocator_updates');
+    messenger.setMockMethodCallHandler(location, (_) async => false);
+    messenger.setMockMethodCallHandler(updates, (_) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(location, null);
+      messenger.setMockMethodCallHandler(updates, null);
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var cancellations = 0;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: NavigationPickupScreen(trip: {
+          ..._trip,
+          'status': 'accepted',
+          'payment_status': 'unpaid',
+        }),
+      ));
+      await tester.pump(const Duration(milliseconds: 16));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('Cancel Booking'), findsNothing);
+      await tester.tap(find.text('Arrived at Pickup'));
+      await tester.pump();
+      expect(find.text('WAITING FOR PASSENGER'), findsOneWidget);
+      expect(find.text('Confirm Pickup'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel Booking'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Keep waiting'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(cancellations, 0);
+      expect(find.text('Cancel Booking'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel Booking'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text('Yes, cancel'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(cancellations, 1);
+      expect(find.byType(DriverDashboardScreen), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    }, () => MockClient((request) async {
+          if (request.url.path.endsWith('/pickup-arrival')) {
+            expect(request.method, 'PUT');
+            return http.Response('{"success":true}', 200);
+          }
+          if (request.url.path.endsWith('/status') && request.method == 'PUT') {
+            expect(jsonDecode(request.body), {
+              'status': 'cancelled',
+              'reason': 'passenger_no_show',
+            });
+            cancellations++;
+            return http.Response('{"success":true}', 200);
+          }
+          return http.Response('{"success":false}', 404);
+        }));
+  });
+
+  testWidgets('passenger tracking shows arrival and the no-show cancellation',
+      (tester) async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const location = MethodChannel('flutter.baseflow.com/geolocator');
+    const updates = MethodChannel('flutter.baseflow.com/geolocator_updates');
+    messenger.setMockMethodCallHandler(location, (_) async => false);
+    messenger.setMockMethodCallHandler(updates, (_) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(location, null);
+      messenger.setMockMethodCallHandler(updates, null);
+    });
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    var cancelled = false;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(const MaterialApp(
+        home: LiveTripTrackingScreen(
+          tripId: 'trip-1',
+          driverName: 'Driver One',
+          driverRating: 5,
+          todaBodyNumber: '1',
+          plateNo: '123',
+          etaMinutes: null,
+          distanceKm: null,
+        ),
+      ));
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('Your driver is at the pickup point'), findsOneWidget);
+      expect(find.text('Cancel Trip'), findsOneWidget);
+
+      cancelled = true;
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Trip Cancelled'), findsOneWidget);
+      expect(
+        find.textContaining('Your driver cancelled after waiting at the pickup point'),
+        findsOneWidget,
+      );
+      await tester.pumpWidget(const SizedBox());
+    }, () => MockClient((request) async {
+          expect(request.url.path, '/api/trips/trip-1');
+          return http.Response(
+            jsonEncode({
+              'success': true,
+              'trip': {
+                ..._trip,
+                'payment_status': 'unpaid',
+                'pickup_arrived_at': '2026-11-09T02:39:00Z',
+                'status': cancelled ? 'cancelled' : 'accepted',
+                if (cancelled) 'cancellation_reason': 'passenger_no_show',
+              },
+            }),
+            200,
+          );
+        }));
   });
 
   for (final completion in ['collection', 'polling']) {

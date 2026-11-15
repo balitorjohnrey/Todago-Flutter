@@ -13,6 +13,8 @@ import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
 import 'route_display.dart';
 
+enum _PickupAction { arrive, confirm, cancel }
+
 class NavigationPickupScreen extends StatefulWidget {
   final Map<String, dynamic> trip;
   const NavigationPickupScreen({super.key, required this.trip});
@@ -26,7 +28,9 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   LatLng? _myLocation;
   LatLng? _pickupPoint;
   MapRoute? _route;
-  bool _isConfirming = false;
+  _PickupAction? _pickupAction;
+  bool _hasArrived = false;
+  bool _isLeaving = false;
   bool _isFetchingRoute = false;
 
   Set<Marker> _markers = {};
@@ -40,6 +44,10 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   bool _isSyncingLocation = false;
 
   // ── Getters ──────────────────────────────────────────────────────────────
+  String get _tripId => widget.trip['trip_id']?.toString() ?? '';
+  bool get _isItemPickup => widget.trip['service_type'] == 'pickup';
+  bool get _canUpdateTrip =>
+      _tripId.isNotEmpty && _pickupAction == null && !_isLeaving;
   String get _passengerName =>
       widget.trip['commuter_name']?.toString() ?? 'Passenger';
   String? get _passengerPhone => widget.trip['commuter_phone']?.toString();
@@ -64,13 +72,20 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
   @override
   void initState() {
     super.initState();
+    _hasArrived = widget.trip['pickup_arrived_at'] != null;
+    if (_tripId.isNotEmpty) {
+      _tripPollTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _pollTripStatus(),
+      );
+    }
     _init();
   }
 
   // ── Initialization ────────────────────────────────────────────────────────
   Future<void> _init() async {
     final loc = await MapService.getCurrentLocation();
-    if (!mounted) return;
+    if (!mounted || _isLeaving) return;
 
     if (loc == null) {
       final pickupLat =
@@ -86,12 +101,6 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
         if (!mounted || _myLocation == null || _pickupPoint == null) return;
         await _fetchAndDrawRoute(_myLocation!, _pickupPoint!);
       });
-      if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
-        _tripPollTimer = Timer.periodic(
-          const Duration(seconds: 5),
-          (_) => _pollTripStatus(),
-        );
-      }
       return;
     }
     final myPos = loc;
@@ -112,10 +121,11 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     });
 
     await _syncDriverLocation(myPos, force: true);
-    if (!mounted) return;
+    if (!mounted || _isLeaving) return;
     if (pickupPos != null) {
       _updateMarkers(myPos, pickupPos);
       await _fetchAndDrawRoute(myPos, pickupPos);
+      if (!mounted || _isLeaving) return;
       _fitBounds(myPos, pickupPos);
     } else {
       _updateDriverMarker(myPos);
@@ -130,19 +140,13 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       await _syncDriverLocation(_myLocation!, force: true);
       await _fetchAndDrawRoute(_myLocation!, _pickupPoint!);
     });
-
-    if ((widget.trip['trip_id']?.toString() ?? '').isNotEmpty) {
-      _tripPollTimer = Timer.periodic(
-        const Duration(seconds: 5),
-        (_) => _pollTripStatus(),
-      );
-    }
   }
 
   // ── Route helper ──────────────────────────────────────────────────────────
   void _startLocationStream() {
     _locSub?.cancel();
-    _locSub = MapService.positionStream(driverTracking: true).listen((pos) async {
+    _locSub =
+        MapService.positionStream(driverTracking: true).listen((pos) async {
       if (!mounted) return;
       setState(() => _myLocation = pos);
       _updateDriverMarker(pos);
@@ -248,29 +252,35 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
 
   @override
   void dispose() {
-    _locSub?.cancel();
-    _routeRefreshTimer?.cancel();
-    _tripPollTimer?.cancel();
+    _stopTracking();
     _mapCtrl?.dispose();
     super.dispose();
   }
 
+  void _stopTracking() {
+    _locSub?.cancel();
+    _routeRefreshTimer?.cancel();
+    _tripPollTimer?.cancel();
+  }
+
   Future<void> _pollTripStatus() async {
-    final tripId = widget.trip['trip_id']?.toString() ?? '';
-    if (tripId.isEmpty || !mounted) return;
-    final trip = await TripService.getTripById(tripId, forDriver: true);
-    if (!mounted || trip == null) return;
-    if (trip['status']?.toString() == 'cancelled') {
-      _showPassengerCancelled();
+    if (!mounted || !_canUpdateTrip) return;
+    final trip = await TripService.getTripById(_tripId, forDriver: true);
+    if (!mounted || !_canUpdateTrip || trip == null) return;
+    if (trip['status'] == 'cancelled') {
+      if (trip['cancellation_reason'] == 'passenger_no_show') {
+        _bookingCancelled();
+      } else {
+        await _showPassengerCancelled();
+      }
+    } else if (!_hasArrived && trip['pickup_arrived_at'] != null) {
+      setState(() => _hasArrived = true);
     }
   }
 
   Future<void> _showPassengerCancelled() async {
-    _locSub?.cancel();
-    _routeRefreshTimer?.cancel();
-    _tripPollTimer?.cancel();
-    await TripService.updateDriverStatus('online', location: _myLocation);
-    if (!mounted) return;
+    _isLeaving = true;
+    _stopTracking();
     await showDialog(
       context: context,
       barrierDismissible: false,
@@ -296,33 +306,105 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
       ),
     );
     if (!mounted) return;
+    _goToDashboard();
+  }
+
+  void _goToDashboard() {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const DriverDashboardScreen()),
       (_) => false,
     );
   }
 
-  Future<void> _confirmPickup() async {
-    final tripId = widget.trip['trip_id']?.toString() ?? '';
-    if (_isConfirming || tripId.isEmpty) return;
+  void _bookingCancelled() {
+    _isLeaving = true;
+    _stopTracking();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Booking cancelled. You’re online for new requests.')),
+    );
+    _goToDashboard();
+  }
 
-    setState(() => _isConfirming = true);
-    if (_myLocation != null) _syncDriverLocation(_myLocation!, force: true);
-    final result = await TripService.updateTripStatus(tripId, 'ongoing');
+  void _showPickupError(Map<String, dynamic> result, String fallback) {
+    setState(() => _pickupAction = null);
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(result['message']?.toString() ?? fallback),
+      backgroundColor: AppColors.error,
+    ));
+  }
+
+  Future<void> _markArrival() async {
+    if (!_canUpdateTrip) return;
+    setState(() => _pickupAction = _PickupAction.arrive);
+    final result = await TripService.markPickupArrival(_tripId);
     if (!mounted) return;
     if (result['success'] != true) {
-      setState(() => _isConfirming = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            result['message']?.toString() ?? 'Could not confirm pickup.'),
-        backgroundColor: AppColors.error,
-      ));
+      _showPickupError(result, 'Could not mark pickup arrival.');
+      return;
+    }
+    setState(() {
+      _hasArrived = true;
+      _pickupAction = null;
+    });
+  }
+
+  Future<void> _cancelBooking() async {
+    if (!_canUpdateTrip || !_hasArrived) return;
+    setState(() => _pickupAction = _PickupAction.cancel);
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel booking?'),
+        content: const Text(
+          'Cancel if the passenger hasn’t boarded after you’ve waited at the pickup point.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep waiting'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Yes, cancel'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (confirm != true) {
+      setState(() => _pickupAction = null);
+      return;
+    }
+    final result = await TripService.updateTripStatus(
+      _tripId,
+      'cancelled',
+      reason: 'passenger_no_show',
+    );
+    if (!mounted) return;
+    if (result['success'] != true) {
+      _showPickupError(result, 'Could not cancel the booking.');
+      return;
+    }
+    _bookingCancelled();
+  }
+
+  Future<void> _confirmPickup() async {
+    if (!_canUpdateTrip) return;
+    setState(() => _pickupAction = _PickupAction.confirm);
+    if (_myLocation != null) _syncDriverLocation(_myLocation!, force: true);
+    final result = await TripService.updateTripStatus(_tripId, 'ongoing');
+    if (!mounted) return;
+    if (result['success'] != true) {
+      _showPickupError(result, 'Could not confirm pickup.');
       return;
     }
 
-    final latestTrip = await TripService.getTripById(tripId, forDriver: true);
+    final latestTrip = await TripService.getTripById(_tripId, forDriver: true);
     if (!mounted) return;
-    setState(() => _isConfirming = false);
+    _isLeaving = true;
+    _stopTracking();
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       pageBuilder: (_, __, ___) => ActiveTripDriverScreen(
           trip: latestTrip ?? {...widget.trip, 'status': 'ongoing'}),
@@ -337,6 +419,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     // Always use live route data for ETA/distance
     final eta = _route?.etaMinutes ?? 2;
     final dist = _route?.distanceKm ?? 0.8;
+    final isConfirming = _pickupAction == _PickupAction.confirm;
 
     return Scaffold(
       body: Stack(children: [
@@ -403,7 +486,9 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                               color: AppColors.backgroundDark, size: 14),
                           const SizedBox(width: 4),
                           Text(
-                            'NAVIGATING TO PICKUP',
+                            _hasArrived
+                                ? 'WAITING FOR PASSENGER'
+                                : 'NAVIGATING TO PICKUP',
                             style: GoogleFonts.poppins(
                               fontSize: 10,
                               fontWeight: FontWeight.w800,
@@ -413,35 +498,37 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                           ),
                         ]),
                       ),
-                      const SizedBox(height: 12),
                       // Live distance + ETA from _route
-                      Row(children: [
-                        _navStat(
-                          '${dist.toStringAsFixed(1)} km',
-                          'Distance',
-                        ),
-                        const SizedBox(width: 24),
-                        _navStat('$eta min', 'ETA'),
-                        const Spacer(),
-                        // My-location re-center button
-                        GestureDetector(
-                          onTap: () {
-                            if (_myLocation != null && _pickupPoint != null) {
-                              _fitBounds(_myLocation!, _pickupPoint!);
-                            }
-                          },
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F2F5),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(Icons.my_location_rounded,
-                                size: 18, color: Colors.black54),
+                      if (!_hasArrived) ...[
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          _navStat(
+                            '${dist.toStringAsFixed(1)} km',
+                            'Distance',
                           ),
-                        ),
-                      ]),
+                          const SizedBox(width: 24),
+                          _navStat('$eta min', 'ETA'),
+                          const Spacer(),
+                          // My-location re-center button
+                          GestureDetector(
+                            onTap: () {
+                              if (_myLocation != null && _pickupPoint != null) {
+                                _fitBounds(_myLocation!, _pickupPoint!);
+                              }
+                            },
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF0F2F5),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.my_location_rounded,
+                                  size: 18, color: Colors.black54),
+                            ),
+                          ),
+                        ]),
+                      ],
                       const SizedBox(height: 8),
                       Row(children: [
                         const Icon(Icons.location_on_rounded,
@@ -574,12 +661,14 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                   child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _tripStat('$eta min', 'ETA', Icons.schedule_rounded,
-                            AppColors.primary),
-                        _divV(),
-                        _tripStat('${dist.toStringAsFixed(1)} km', 'Distance',
-                            Icons.route_rounded, Colors.blue),
-                        _divV(),
+                        if (!_hasArrived) ...[
+                          _tripStat('$eta min', 'ETA', Icons.schedule_rounded,
+                              AppColors.primary),
+                          _divV(),
+                          _tripStat('${dist.toStringAsFixed(1)} km', 'Distance',
+                              Icons.route_rounded, Colors.blue),
+                          _divV(),
+                        ],
                         _tripStat('₱${_fare.toStringAsFixed(0)}', 'Fare',
                             Icons.payments_rounded, Colors.green),
                       ]),
@@ -587,7 +676,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                 const SizedBox(height: 16),
 
                 Text(
-                  widget.trip['service_type'] == 'pickup'
+                  _isItemPickup
                       ? 'Confirm when you have the item.'
                       : 'Confirm when everyone is on board.',
                   style: GoogleFonts.poppins(
@@ -599,16 +688,16 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: _isConfirming ? null : _confirmPickup,
+                    onPressed: _canUpdateTrip ? _confirmPickup : null,
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _isConfirming
+                      backgroundColor: isConfirming
                           ? AppColors.backgroundDark.withOpacity(0.7)
                           : AppColors.backgroundDark,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16)),
                       elevation: 0,
                     ),
-                    child: _isConfirming
+                    child: isConfirming
                         ? const SizedBox(
                             width: 22,
                             height: 22,
@@ -631,6 +720,21 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                               ]),
                   ),
                 ),
+                if (!_isItemPickup)
+                  TextButton(
+                    onPressed: !_canUpdateTrip
+                        ? null
+                        : _hasArrived
+                            ? _cancelBooking
+                            : _markArrival,
+                    style: TextButton.styleFrom(
+                      foregroundColor: _hasArrived
+                          ? AppColors.error
+                          : AppColors.backgroundDark,
+                    ),
+                    child: Text(
+                        _hasArrived ? 'Cancel Booking' : 'Arrived at Pickup'),
+                  ),
               ]),
             ),
           ).animate().slideY(
