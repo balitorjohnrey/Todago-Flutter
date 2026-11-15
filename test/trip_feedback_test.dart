@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:todago/active_trip_driver_screen.dart';
 import 'package:todago/driver_trip_history_screen.dart';
+import 'package:todago/navigation_pickup_screen.dart';
 import 'package:todago/rate_driver_screen.dart';
 import 'package:todago/rate_passenger_screen.dart';
 import 'package:todago/report_issue_dialog.dart';
@@ -261,7 +262,7 @@ void main() {
             }));
   });
 
-  testWidgets('past driver trips keep report and rating actions for paid rides',
+  testWidgets('past driver trips show ride timing and keep feedback actions',
       (tester) async {
     tester.view.physicalSize = const Size(360, 800);
     tester.view.devicePixelRatio = 1;
@@ -271,9 +272,13 @@ void main() {
       await tester
           .pumpWidget(const MaterialApp(home: DriverTripHistoryScreen()));
       await tester.pumpAndSettle();
+      expect(find.textContaining('Picked up '), findsOneWidget);
+      expect(find.textContaining('Dropped off '), findsOneWidget);
+      expect(find.text('Trip duration 12 min 30 sec'), findsOneWidget);
+      expect(find.text('Ride timing unavailable'), findsOneWidget);
       expect(find.text('Your passenger rating: 4/5'), findsOneWidget);
       expect(find.text('View Rating'), findsOneWidget);
-      expect(find.text('Report Passenger'), findsOneWidget);
+      expect(find.text('Report Passenger'), findsNWidgets(2));
       expect(find.text('Unpaid Passenger'), findsNothing);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -282,7 +287,18 @@ void main() {
             jsonEncode({
               'success': true,
               'trips': [
-                {..._trip, 'passenger_rating_score': 4},
+                {
+                  ..._trip,
+                  'passenger_rating_score': 4,
+                  'picked_up_at': '2026-11-09T02:40:00Z',
+                  'dropped_off_at': '2026-11-09T02:52:30Z',
+                  'end_timestamp': '2026-11-09T03:00:00Z',
+                },
+                {
+                  ..._trip,
+                  'trip_id': 'trip-older',
+                  'commuter_name': 'Past Passenger',
+                },
                 {
                   ..._trip,
                   'trip_id': 'trip-unpaid',
@@ -292,6 +308,64 @@ void main() {
               ],
             }),
             200)));
+  });
+
+  testWidgets('confirming pickup starts the ride after the server accepts it',
+      (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const location = MethodChannel('flutter.baseflow.com/geolocator');
+    const updates = MethodChannel('flutter.baseflow.com/geolocator_updates');
+    messenger.setMockMethodCallHandler(location, (_) async => false);
+    messenger.setMockMethodCallHandler(updates, (_) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(location, null);
+      messenger.setMockMethodCallHandler(updates, null);
+    });
+    var attempts = 0;
+    await http.runWithClient(() async {
+      await tester.pumpWidget(MaterialApp(
+        home: NavigationPickupScreen(trip: {..._trip, 'status': 'accepted'}),
+      ));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 600));
+      final confirmPickup = find.widgetWithText(ElevatedButton, 'Confirm Pickup');
+      await tester.tap(confirmPickup);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Could not start ride'), findsOneWidget);
+      expect(find.byType(ActiveTripDriverScreen), findsNothing);
+      ScaffoldMessenger.of(tester.element(find.byType(NavigationPickupScreen)))
+          .removeCurrentSnackBar();
+      await tester.pump();
+      await tester.tap(confirmPickup);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.byType(ActiveTripDriverScreen), findsOneWidget);
+      expect(attempts, 2);
+      await tester.pumpWidget(const SizedBox());
+    },
+        () => MockClient((request) async {
+              if (request.url.path.endsWith('/status')) {
+                expect(request.method, 'PUT');
+                expect(jsonDecode(request.body)['status'], 'ongoing');
+                if (++attempts == 1) {
+                  return http.Response(
+                      '{"success":false,"message":"Could not start ride"}',
+                      409);
+                }
+                return http.Response('{"success":true}', 200);
+              }
+              return http.Response(
+                  jsonEncode({
+                    'success': true,
+                    'trip': {..._trip, 'status': 'ongoing'},
+                  }),
+                  200);
+            }));
   });
 
   for (final completion in ['collection', 'polling']) {
@@ -318,13 +392,16 @@ void main() {
           ..._trip,
           'status': 'arrived',
           'payment_status': 'unpaid',
-          'payment_method': 'cash'
+          'payment_method': 'cash',
+          'picked_up_at': '2026-11-09T02:40:00Z',
+          'dropped_off_at': '2026-11-09T02:52:30Z',
         };
         await tester.pumpWidget(MaterialApp(
             home: ActiveTripDriverScreen(trip: activeTrip)));
         await tester.pump(const Duration(seconds: 1));
         await tester.pump(const Duration(milliseconds: 500));
         expect(find.byType(RatePassengerScreen), findsNothing);
+        expect(find.text('Trip duration 12 min 30 sec'), findsOneWidget);
         if (completion == 'collection') {
           await tester.ensureVisible(find.text('Collect Payment'));
           await tester.pump(const Duration(milliseconds: 500));

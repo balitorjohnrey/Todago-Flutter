@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'rate_passenger_screen.dart';
 import 'report_issue_dialog.dart';
 import 'trip_service.dart';
+import 'trip_timing.dart';
 
 class DriverTripHistoryScreen extends StatefulWidget {
   const DriverTripHistoryScreen({super.key});
@@ -73,6 +74,8 @@ class _DriverTripHistoryScreenState extends State<DriverTripHistoryScreen> {
                                         .split('.')
                                         .first ??
                                     ''),
+                                const SizedBox(height: 8),
+                                TripTiming(trip: trip),
                                 if (trip['passenger_rating_score'] != null) ...[
                                   const SizedBox(height: 8),
                                   Text(

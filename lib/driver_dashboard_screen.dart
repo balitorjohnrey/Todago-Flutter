@@ -372,7 +372,7 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   Future<void> _loadPeakHours() async {
-    final hours = await DriverAuthService.fetchPeakHours();
+    final hours = await DriverAuthService.fetchPeakHours(limit: 24);
     if (!mounted) return;
     setState(() => _peakHours = hours);
   }

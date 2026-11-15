@@ -80,7 +80,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         AdminAuthService.fetchIndependentDrivers(),
         AdminAuthService.fetchFareSettings(),
         AdminAuthService.fetchRoutePerformance(),
-        AdminAuthService.fetchPeakHours(),
+        AdminAuthService.fetchPeakHours(limit: 24),
         AdminAuthService.fetchReports(),
         MonitoringService.fetchDrivers(),
       ]);
@@ -718,6 +718,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Widget _peakHoursCard() {
+    final busiestHours = _peakHours.take(6).toList();
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -771,14 +772,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         else ...[
           TripAnalyticsChart(data: _peakHours, peakHours: true),
           const SizedBox(height: 8),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('View hourly details',
-                style:
-                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-            children: List.generate(
-              _peakHours.length,
-              (index) => _peakHourRow(_peakHours[index], index),
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              key: const PageStorageKey('admin-hour-details'),
+              tilePadding: EdgeInsets.zero,
+              title: const Text('View busiest hours',
+                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+              children: List.generate(
+                busiestHours.length,
+                (index) => _peakHourRow(busiestHours[index], index),
+              ),
             ),
           ),
         ],
@@ -885,14 +889,17 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         else ...[
           TripAnalyticsChart(data: _routePerformance),
           const SizedBox(height: 8),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('View route details',
-                style:
-                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-            children: List.generate(
-              _routePerformance.length,
-              (index) => _routePerformanceRow(_routePerformance[index], index),
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              key: const PageStorageKey('admin-route-details'),
+              tilePadding: EdgeInsets.zero,
+              title: const Text('View route details',
+                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+              children: List.generate(
+                _routePerformance.length,
+                (index) => _routePerformanceRow(_routePerformance[index], index),
+              ),
             ),
           ),
         ],

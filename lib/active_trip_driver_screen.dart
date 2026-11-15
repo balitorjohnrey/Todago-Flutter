@@ -9,6 +9,7 @@ import 'panabo_config.dart';
 import 'contact_service.dart';
 import 'trip_message_screens.dart';
 import 'trip_service.dart';
+import 'trip_timing.dart';
 import 'driver_alerts.dart';
 import 'driver_dashboard_screen.dart';
 import 'map_service.dart';
@@ -503,7 +504,8 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
     if (tripId.isEmpty) return;
 
     setState(() => _isDroppingPassenger = true);
-    final result = await TripService.markSharedPassengerDropped(tripId);
+    final result =
+        await TripService.markSharedPassengerDropped(tripId, _completedDropoffs);
     if (!mounted) return;
     setState(() => _isDroppingPassenger = false);
 
@@ -936,7 +938,17 @@ class _ActiveTripDriverScreenState extends State<ActiveTripDriverScreen> {
                             'Earnings', Icons.payments_rounded, Colors.green),
                       ]),
                 ),
-                 const SizedBox(height: 16),
+                const SizedBox(height: 16),
+
+                if (_hasArrivedAtDestination ||
+                    _trip['dropped_off_at'] != null) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child:
+                        TripTiming(trip: _trip, color: AppColors.backgroundDark),
+                  ),
+                  const SizedBox(height: 12),
+                ],
 
                 Container(
                   padding:

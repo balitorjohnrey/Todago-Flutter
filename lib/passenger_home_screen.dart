@@ -16,6 +16,7 @@ import 'rate_driver_screen.dart';
 import 'service_selection_screen.dart';
 import 'trip_message_screens.dart';
 import 'trip_service.dart';
+import 'trip_timing.dart';
 import 'logout_confirmation.dart';
 import 'ai_chat_screen.dart';
 import 'profile_avatar.dart';
@@ -1251,6 +1252,11 @@ class _PassengerHomeScreenState extends State<PassengerHomeScreen>
                     fontWeight: FontWeight.w800,
                     color: AppColors.backgroundDark)),
           ]),
+
+          if (isCompleted || status == 'arrived') ...[
+            const SizedBox(height: 12),
+            TripTiming(trip: b, color: AppColors.backgroundDark),
+          ],
 
           // ── Rating ──────────────────────────────────────────────────────
           if (isPast && isCompleted) ...[

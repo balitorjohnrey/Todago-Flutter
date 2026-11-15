@@ -8,6 +8,7 @@ import 'app_theme.dart';
 import 'contact_service.dart';
 import 'trip_message_screens.dart';
 import 'trip_service.dart';
+import 'trip_timing.dart';
 import 'passenger_home_screen.dart';
 import 'rate_driver_screen.dart';
 import 'map_service.dart';
@@ -212,9 +213,7 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
 
       final status = trip['status']?.toString() ?? '';
 
-      // ── Phase switch: 'pickup' = driver confirmed arrival at passenger ─
-      // Switch to riding phase immediately so the map shows
-      // current location → destination.
+      // Show the route to the destination once the driver confirms pickup.
       if ((status == 'pickup' || status == 'ongoing' || status == 'arrived') &&
           _phase == 'approaching') {
         setState(() => _tripStatus = status);
@@ -1086,6 +1085,15 @@ class _LiveTripTrackingScreenState extends State<LiveTripTrackingScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
+
+                if (_latestTrip case final trip? when _hasArrivedAtDestination ||
+                    trip['dropped_off_at'] != null) ...[
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TripTiming(trip: trip, color: AppColors.backgroundDark),
+                  ),
+                  const SizedBox(height: 10),
+                ],
 
                 if (_hasArrivedAtDestination) ...[
                   SizedBox(

@@ -335,11 +335,12 @@ void main() {
     );
   });
 
-  testWidgets('admin sections are separate and analytics renders bar charts',
+  testWidgets('admin sections are separate and analytics renders both charts',
       (tester) async {
     tester.view.physicalSize = const Size(360, 780);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
+    String? requestedHourLimit;
     await http.runWithClient(() async {
       await tester.pumpWidget(MaterialApp(
           theme: AppTheme.theme, home: const AdminDashboardScreen()));
@@ -358,6 +359,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(TripAnalyticsChart), findsWidgets);
       expect(find.text('Requests by hour'), findsOneWidget);
+      expect(requestedHourLimit, '24');
       await tester.scrollUntilVisible(find.text('Trips by route'), 250,
           scrollable: find.byType(Scrollable).first);
       await tester.pumpAndSettle();
@@ -375,6 +377,9 @@ void main() {
     },
         () => MockClient((request) async {
               final path = request.url.path;
+              if (path.endsWith('/peak-hours')) {
+                requestedHourLimit = request.url.queryParameters['limit'];
+              }
               return http.Response(
                   jsonEncode({
                     'success': true,
@@ -385,6 +390,7 @@ void main() {
                     if (path.endsWith('/peak-hours'))
                       'hours': [
                         {
+                          'hour_of_day': 9,
                           'hour_label': '9 AM - 10 AM',
                           'total_requests': 10,
                           'completed_trips': 7,

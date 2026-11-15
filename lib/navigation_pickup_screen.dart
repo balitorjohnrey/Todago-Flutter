@@ -302,22 +302,30 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
     );
   }
 
-  Future<void> _confirmArrival() async {
-    setState(() => _isConfirming = true);
+  Future<void> _confirmPickup() async {
     final tripId = widget.trip['trip_id']?.toString() ?? '';
-    if (tripId.isNotEmpty) {
-      if (_myLocation != null) _syncDriverLocation(_myLocation!, force: true);
-      await TripService.updateTripStatus(tripId, 'pickup');
+    if (_isConfirming || tripId.isEmpty) return;
+
+    setState(() => _isConfirming = true);
+    if (_myLocation != null) _syncDriverLocation(_myLocation!, force: true);
+    final result = await TripService.updateTripStatus(tripId, 'ongoing');
+    if (!mounted) return;
+    if (result['success'] != true) {
+      setState(() => _isConfirming = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            result['message']?.toString() ?? 'Could not confirm pickup.'),
+        backgroundColor: AppColors.error,
+      ));
+      return;
     }
+
+    final latestTrip = await TripService.getTripById(tripId, forDriver: true);
     if (!mounted) return;
     setState(() => _isConfirming = false);
-    final latestTrip = tripId.isNotEmpty
-        ? await TripService.getTripById(tripId, forDriver: true)
-        : null;
-    if (!mounted) return;
     Navigator.of(context).pushReplacement(PageRouteBuilder(
-      pageBuilder: (_, __, ___) =>
-          ActiveTripDriverScreen(trip: latestTrip ?? widget.trip),
+      pageBuilder: (_, __, ___) => ActiveTripDriverScreen(
+          trip: latestTrip ?? {...widget.trip, 'status': 'ongoing'}),
       transitionDuration: const Duration(milliseconds: 500),
       transitionsBuilder: (_, anim, __, child) =>
           FadeTransition(opacity: anim, child: child),
@@ -578,12 +586,20 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // Confirm Arrival button
+                Text(
+                  widget.trip['service_type'] == 'pickup'
+                      ? 'Confirm when you have the item.'
+                      : 'Confirm when everyone is on board.',
+                  style: GoogleFonts.poppins(
+                      fontSize: 12, color: AppColors.textHint),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
                 SizedBox(
                   width: double.infinity,
                   height: 52,
                   child: ElevatedButton(
-                    onPressed: _isConfirming ? null : _confirmArrival,
+                    onPressed: _isConfirming ? null : _confirmPickup,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isConfirming
                           ? AppColors.backgroundDark.withOpacity(0.7)
@@ -605,7 +621,7 @@ class _NavigationPickupScreenState extends State<NavigationPickupScreen> {
                                     color: AppColors.primary, size: 20),
                                 const SizedBox(width: 8),
                                 Text(
-                                  'Confirm Arrival at Pickup',
+                                  'Confirm Pickup',
                                   style: GoogleFonts.poppins(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,

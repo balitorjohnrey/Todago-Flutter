@@ -324,13 +324,14 @@ class TripService {
   }
 
   static Future<Map<String, dynamic>> markSharedPassengerDropped(
-      String tripId) async {
+      String tripId, int dropoffIndex) async {
     try {
       final token = await _getDriverToken();
       final response = await http
           .post(
             Uri.parse('$_baseUrl/$tripId/dropoff'),
             headers: _headers(token),
+            body: jsonEncode({'dropoffIndex': dropoffIndex}),
           )
           .timeout(const Duration(seconds: 10));
       return jsonDecode(response.body) as Map<String, dynamic>;

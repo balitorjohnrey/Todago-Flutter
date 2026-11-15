@@ -50,7 +50,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
       OperatorAuthService.fetchProfile(),
       OperatorAuthService.fetchStats(),
       OperatorAuthService.fetchRoutePerformance(),
-      OperatorAuthService.fetchPeakHours(),
+      OperatorAuthService.fetchPeakHours(limit: 24),
       MonitoringService.fetchDrivers(operator: true),
     ]);
     if (!mounted) return;
@@ -583,6 +583,7 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
   }
 
   Widget _peakHoursCard() {
+    final busiestHours = _peakHours.take(6).toList();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(18),
@@ -641,14 +642,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
           )
         else ...[
           TripAnalyticsChart(data: _peakHours, peakHours: true),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('View hourly details',
-                style:
-                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-            children: List.generate(
-              _peakHours.length,
-              (index) => _peakHourRow(_peakHours[index], index),
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              key: const PageStorageKey('operator-hour-details'),
+              tilePadding: EdgeInsets.zero,
+              title: const Text('View busiest hours',
+                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+              children: List.generate(
+                busiestHours.length,
+                (index) => _peakHourRow(busiestHours[index], index),
+              ),
             ),
           ),
         ],
@@ -760,14 +764,17 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
           )
         else ...[
           TripAnalyticsChart(data: _routePerformance),
-          ExpansionTile(
-            tilePadding: EdgeInsets.zero,
-            title: const Text('View route details',
-                style:
-                    TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-            children: List.generate(
-              _routePerformance.length,
-              (index) => _routePerformanceRow(_routePerformance[index], index),
+          Material(
+            type: MaterialType.transparency,
+            child: ExpansionTile(
+              key: const PageStorageKey('operator-route-details'),
+              tilePadding: EdgeInsets.zero,
+              title: const Text('View route details',
+                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
+              children: List.generate(
+                _routePerformance.length,
+                (index) => _routePerformanceRow(_routePerformance[index], index),
+              ),
             ),
           ),
         ],
