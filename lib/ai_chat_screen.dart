@@ -4,10 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'app_theme.dart';
 import 'book_destination_button.dart';
 import 'booking_destination.dart';
+import 'faq_service.dart';
 import 'live_map_screen.dart';
 import 'location_query.dart';
 import 'map_service.dart';
@@ -20,6 +22,7 @@ class _Msg {
   final DateTime time;
   final String? routeQuery;
   final BookingDestination? bookingDestination;
+  final FaqEntry? faq;
 
   _Msg({
     required this.id,
@@ -28,22 +31,9 @@ class _Msg {
     this.isTyping = false,
     this.routeQuery,
     this.bookingDestination,
+    this.faq,
     DateTime? time,
   }) : time = time ?? DateTime.now();
-}
-
-class _FaqItem {
-  final String question;
-  final String answer;
-  final List<String> keywords;
-  final Set<String> roles;
-
-  const _FaqItem({
-    required this.question,
-    required this.answer,
-    required this.keywords,
-    required this.roles,
-  });
 }
 
 class AIChatScreen extends StatefulWidget {
@@ -74,101 +64,9 @@ class _AIChatScreenState extends State<AIChatScreen>
   bool _showChips = true;
   late AnimationController _pulse;
 
-  static const List<_FaqItem> _faqs = [
-    _FaqItem(
-      question: 'How do I book a ride?',
-      answer:
-          'Tap Book Now, choose your destination, confirm the route and fare, choose a service type, then select a driver. You can track the trip after the request is accepted.',
-      keywords: ['book', 'ride', 'request', 'destination', 'driver'],
-      roles: {'passenger'},
-    ),
-    _FaqItem(
-      question: 'How do I cancel a trip?',
-      answer:
-          'Open the active trip or waiting screen and tap Cancel Trip. If a driver was already assigned, TodaGo notifies the driver and releases them for other rides.',
-      keywords: ['cancel', 'cancellation', 'trip', 'ride'],
-      roles: {'passenger'},
-    ),
-    _FaqItem(
-      question: 'How do fares work?',
-      answer:
-          'TodaGo shows the estimated fare before confirmation. The fare is based on the route distance, service type, and minimum base fare. Cash is currently the default payment flow in the app.',
-      keywords: ['fare', 'price', 'pricing', 'cost', 'payment'],
-      roles: {'passenger', 'driver'},
-    ),
-    _FaqItem(
-      question: 'How do I rate my driver?',
-      answer:
-          'After a completed trip, the rating screen appears. Choose 1 to 5 stars, select quick feedback tags, and submit. You can also rate completed trips from Past Trips if you skipped it.',
-      keywords: ['rate', 'rating', 'stars', 'feedback', 'review'],
-      roles: {'passenger'},
-    ),
-    _FaqItem(
-      question: 'Where can I see my past trips?',
-      answer:
-          'Go to Bookings, then open the Past tab. Pull down to refresh if your latest completed or cancelled trip is not visible yet.',
-      keywords: ['past', 'history', 'bookings', 'completed', 'cancelled'],
-      roles: {'passenger'},
-    ),
-    _FaqItem(
-      question: 'How do I upload a profile picture?',
-      answer:
-          'Open Profile and tap your avatar or Upload Photo. Choose an image from your gallery. The app syncs it to your account so it stays after login.',
-      keywords: ['profile', 'picture', 'photo', 'avatar', 'upload'],
-      roles: {'passenger', 'driver'},
-    ),
-    _FaqItem(
-      question: 'How do I go online as a driver?',
-      answer:
-          'On the driver dashboard, tap the large GO ONLINE button. When it turns green, you are available and TodaGo checks for incoming ride requests.',
-      keywords: ['online', 'offline', 'available', 'driver', 'go online'],
-      roles: {'driver'},
-    ),
-    _FaqItem(
-      question: 'How do I accept a ride request?',
-      answer:
-          'When a ride request popup appears, review the pickup, destination, fare, and service type. Tap ACCEPT to take the ride or DECLINE if you cannot take it.',
-      keywords: ['accept', 'request', 'decline', 'popup', 'ride'],
-      roles: {'driver'},
-    ),
-    _FaqItem(
-      question: 'How do driver earnings work?',
-      answer:
-          'Driver earnings are shown after completing a trip. The payout summary uses the passenger fare for that completed ride.',
-      keywords: ['earnings', 'income', 'payout', 'fare'],
-      roles: {'driver'},
-    ),
-    _FaqItem(
-      question: 'How do I complete a trip?',
-      answer:
-          'After pickup, follow the active trip screen. When the passenger reaches the destination, tap Arrived at Destination, then Collect Payment after cash or TodaGo online payment is settled.',
-      keywords: ['complete', 'finish', 'end', 'trip', 'destination', 'payment'],
-      roles: {'driver'},
-    ),
-    _FaqItem(
-      question: 'How can I improve my driver rating?',
-      answer:
-          'Arrive on time, confirm the passenger name, drive safely, keep the vehicle clean, and politely remind passengers they can rate the trip after completion.',
-      keywords: ['improve', 'rating', 'low', 'stars', 'feedback'],
-      roles: {'driver'},
-    ),
-    _FaqItem(
-      question: 'What should I do if something goes wrong?',
-      answer:
-          'For app issues, check your internet connection, refresh the current screen, and try again. For trip safety or account problems, contact TodaGo support or your operator.',
-      keywords: ['problem', 'issue', 'error', 'support', 'help', 'wrong'],
-      roles: {'passenger', 'driver'},
-    ),
-  ];
-
-  List<String> get _chips =>
-      _roleFaqs.take(7).map((faq) => faq.question).toList();
-
-  List<_FaqItem> get _roleFaqs {
-    final role = widget.userType.toLowerCase();
-    if (role != 'passenger' && role != 'driver') return _faqs;
-    return _faqs.where((faq) => faq.roles.contains(role)).toList();
-  }
+  List<String> get _chips => FaqService.quickQuestions(widget.userType)
+      .map((faq) => faq.question)
+      .toList();
 
   @override
   void initState() {
@@ -242,13 +140,22 @@ class _AIChatScreenState extends State<AIChatScreen>
     if (!mounted) return;
 
     final explicitLocation = locationQueryFromMessage(text);
-    final faqAnswer = explicitLocation == null ? _answerFaq(text) : null;
-    final location = explicitLocation ??
-        (faqAnswer == _fallbackAnswer() && looksLikeStandalonePlace(text)
+    // Place names can contain a broad FAQ term, such as "Maya Hotel".
+    // Overriding an explicit place request needs a specific FAQ phrase.
+    final faq = FaqService.match(text, widget.userType,
+        minKeywordWords: explicitLocation == null ? 1 : 2);
+    final location = explicitLocation != null &&
+            (faq == null || faq.category == 'directions')
+        ? explicitLocation
+        : faq == null && looksLikeStandalonePlace(text)
             ? text
-            : null);
+            : null;
     final response = location == null
-        ? _Msg(id: UniqueKey().toString(), text: faqAnswer!, isUser: false)
+        ? _Msg(
+            id: UniqueKey().toString(),
+            text: faq?.answer ?? FaqService.fallbackAnswer(widget.userType),
+            isUser: false,
+            faq: faq)
         : await _routeReply(location);
     if (!mounted) return;
     setState(() {
@@ -314,45 +221,6 @@ class _AIChatScreenState extends State<AIChatScreen>
     );
   }
 
-  String _answerFaq(String question) {
-    final normalized = _normalize(question);
-    if (normalized.isEmpty) return _fallbackAnswer();
-
-    _FaqItem? best;
-    var bestScore = 0;
-    for (final faq in _roleFaqs) {
-      var score = 0;
-      final faqQuestion = _normalize(faq.question);
-      if (faqQuestion == normalized) score += 8;
-      if (faqQuestion.contains(normalized) ||
-          normalized.contains(faqQuestion)) {
-        score += 4;
-      }
-      for (final keyword in faq.keywords) {
-        final cleanKeyword = _normalize(keyword);
-        if (normalized.contains(cleanKeyword)) score += 2;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        best = faq;
-      }
-    }
-
-    if (best != null && bestScore >= 2) return best.answer;
-    return _fallbackAnswer();
-  }
-
-  String _fallbackAnswer() {
-    final topics = _roleFaqs.take(4).map((faq) => faq.question).join(', ');
-    return 'I can only answer TodaGo FAQs. Try asking about: $topics.';
-  }
-
-  String _normalize(String value) => value
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-
   Future<void> _toggleMic() async {
     if (!_speechReady) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -404,6 +272,68 @@ class _AIChatScreenState extends State<AIChatScreen>
     final minute = time.minute.toString().padLeft(2, '0');
     final ampm = time.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $ampm';
+  }
+
+  Future<void> _showSources(FaqEntry faq) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.65,
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text('Answer sources',
+                  style: Theme.of(sheetContext).textTheme.titleLarge),
+              const SizedBox(height: 10),
+              Text(faq.question),
+              const SizedBox(height: 10),
+              Text(
+                  'Reviewed ${faq.reviewedAt}. External FAQ topics and guidance '
+                  'are adapted to TodaGo. Other providers\' policies apply to '
+                  'their own services.'),
+              const SizedBox(height: 12),
+              for (final reference in FaqService.referencesFor(faq))
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(reference.title),
+                  subtitle: Text(
+                      '${reference.author} (${reference.dateLabel})\n'
+                      '${reference.usage == 'methodology' ? 'Methodology reference' : 'Adaptation topic'}: ${reference.topic}'),
+                  trailing: const Icon(Icons.open_in_new, size: 18),
+                  onTap: () async {
+                    var opened = false;
+                    try {
+                      opened = await launchUrl(Uri.parse(reference.url),
+                          mode: LaunchMode.externalApplication);
+                    } catch (_) {
+                      // Offer the exact link if the device has no URL handler.
+                    }
+                    if (!opened && sheetContext.mounted) {
+                      await showDialog<void>(
+                        context: sheetContext,
+                        builder: (dialogContext) => AlertDialog(
+                          title: const Text('Open source link'),
+                          content: SelectableText(reference.url),
+                          actions: [
+                            TextButton(
+                                onPressed: () => Navigator.pop(dialogContext),
+                                child: const Text('Close')),
+                          ],
+                        ),
+                      );
+                    }
+                  },
+                ),
+              TextButton(
+                  onPressed: () => Navigator.pop(sheetContext),
+                  child: const Text('Close')),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -589,6 +519,14 @@ class _AIChatScreenState extends State<AIChatScreen>
                           height: 1.45,
                         ),
                       ),
+                      if (msg.faq != null) ...[
+                        const SizedBox(height: 4),
+                        TextButton.icon(
+                          onPressed: () => _showSources(msg.faq!),
+                          icon: const Icon(Icons.menu_book_outlined, size: 16),
+                          label: const Text('Sources'),
+                        ),
+                      ],
                       if (msg.routeQuery != null) ...[
                         const SizedBox(height: 8),
                         TextButton.icon(

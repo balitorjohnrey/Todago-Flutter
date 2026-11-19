@@ -1,5 +1,24 @@
 # todago_flutter
 
+## FAQ knowledge base
+
+The chatbot includes 100 role-aware FAQ entries adapted from online FAQ/help
+collections, with direct source links, APA citations, and review dates. Each
+matched answer has a Sources button. The canonical content is maintained in
+`../todago_backend/src/data/faqs.json` and `faq_online_sources.json`;
+`lib/data/faq_dataset.g.dart` is their
+generated offline copy. From the backend directory, run `npm run faq:sync`
+after editing the JSON and `npm run faq:check` to check parity. See
+[FAQ dataset and sources](../todago_backend/FAQ_DATASET.md) for provenance,
+matching behavior, and validation commands. The app's quick questions include
+**Where do the FAQ answers come from?** for every role.
+
+The [APA bibliography](../todago_backend/docs/FAQ_REFERENCES_APA.md),
+[per-question source map](../todago_backend/docs/FAQ_SOURCE_MAP.md), and
+[CSV dataset](../todago_backend/docs/faq_dataset.csv) are generated with the
+Flutter copy. External providers' fees, deadlines, and policies are not adopted
+as TodaGo rules.
+
 A new Flutter project.
 
 ## Getting Started

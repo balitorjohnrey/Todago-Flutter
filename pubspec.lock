@@ -500,10 +500,10 @@ packages:
     dependency: transitive
     description:
       name: google_maps_flutter_android
-      sha256: f1eb5ffa34ba41f8591e53ce439f78af179a506e8386a1297d0ecd202e05c734
+      sha256: "09b971089ea70ecd47af4751aebfea57c1a437326ad095022e600dc9cbedb3b0"
       url: "https://pub.dev"
     source: hosted
-    version: "2.19.8"
+    version: "2.19.11"
   google_maps_flutter_ios:
     dependency: transitive
     description:
@@ -588,10 +588,10 @@ packages:
     dependency: transitive
     description:
       name: image_picker_android
-      sha256: d5b3e1774af29c9ab00103afb0d4614070f924d2e0057ac867ec98800114793f
+      sha256: "695b6a97b6a1de3525d2c4747302ee727a19910294d8161527d67aaea85e36af"
       url: "https://pub.dev"
     source: hosted
-    version: "0.8.13+17"
+    version: "0.8.13+18"
   image_picker_for_web:
     dependency: transitive
     description:
@@ -940,10 +940,10 @@ packages:
     dependency: transitive
     description:
       name: shared_preferences_android
-      sha256: e8d4762b1e2e8578fc4d0fd548cebf24afd24f49719c08974df92834565e2c53
+      sha256: "67724122431ea01d9318ad1ce08b6ca79f77a38366826f01a45a8ac61b693a01"
       url: "https://pub.dev"
     source: hosted
-    version: "2.4.23"
+    version: "2.4.24"
   shared_preferences_foundation:
     dependency: transitive
     description:
@@ -1001,10 +1001,10 @@ packages:
     dependency: "direct main"
     description:
       name: speech_to_text
-      sha256: "75587f7400f485fdf166beacd471549d98fe5d58e634f708916bb65dec05d6a4"
+      sha256: f2fabd017b5cb07f4e06d496b2d4b957e39534bc848f92b1e6acac80a10f4967
       url: "https://pub.dev"
     source: hosted
-    version: "7.4.0"
+    version: "7.5.0"
   speech_to_text_platform_interface:
     dependency: transitive
     description:
@@ -1097,10 +1097,10 @@ packages:
     dependency: transitive
     description:
       name: url_launcher_android
-      sha256: "17bc677f0b301615530dd1d67e0a9828cafa2d0b6b6eae4cd3679b7eac4a273c"
+      sha256: "8a46fcbcd5b865e87053fc5096101d12f56f3fe352c42aa621e7fec9290054b7"
       url: "https://pub.dev"
     source: hosted
-    version: "6.3.30"
+    version: "6.3.31"
   url_launcher_ios:
     dependency: transitive
     description:
@@ -1247,4 +1247,4 @@ packages:
     version: "3.1.3"
 sdks:
   dart: ">=3.13.0-0 <4.0.0"
-  flutter: ">=3.38.4"
+  flutter: ">=3.44.0"
