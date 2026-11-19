@@ -50,6 +50,13 @@ class MonitoringService {
     return data == null ? null : records(data['reports']);
   }
 
+  static Future<Map<String, dynamic>?> fetchReportHistory(
+          {String status = 'all', int offset = 0}) =>
+      _get('admin/reports/history', query: {'status': status, 'offset': '$offset'});
+
+  static Future<Map<String, dynamic>?> fetchReportReviews(String issueId) =>
+      _get('admin/reports/${Uri.encodeComponent(issueId)}/history');
+
   static Future<Map<String, dynamic>?> fetchCharges(
           {String? label, int offset = 0, int days = 30}) =>
       _get('admin/monitoring/charges', query: {

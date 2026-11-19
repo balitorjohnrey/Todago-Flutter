@@ -341,18 +341,50 @@ class OperatorAuthService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchPeakHours({
+  static Future<List<Map<String, dynamic>>?> fetchDestinationPerformance({
     int days = 30,
+  }) async {
+    try {
+      final token = await getToken();
+      if (token == null || token.isEmpty) return null;
+
+      final response = await http.get(
+        Uri.parse('$_baseUrl/analytics/destinations').replace(
+          queryParameters: {
+            'days': days.toString(),
+          },
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 12));
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final routes = data['destinations'] as List<dynamic>? ?? [];
+        return routes.whereType<Map<String, dynamic>>().toList();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>?> fetchPeakHours({
+    int days = 30,
+    String period = 'hour',
     int limit = 6,
   }) async {
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return [];
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
         Uri.parse('$_baseUrl/analytics/peak-hours').replace(
           queryParameters: {
             'days': days.toString(),
+            'period': period,
             'limit': limit.toString(),
           },
         ),
@@ -367,9 +399,9 @@ class OperatorAuthService {
         final hours = data['hours'] as List<dynamic>? ?? [];
         return hours.whereType<Map<String, dynamic>>().toList();
       }
-      return [];
+      return null;
     } catch (_) {
-      return [];
+      return null;
     }
   }
 

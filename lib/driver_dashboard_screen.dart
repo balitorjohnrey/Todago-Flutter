@@ -21,7 +21,7 @@ import 'reservation_notification_service.dart';
 import 'report_issue_dialog.dart';
 import 'driver_trip_history_screen.dart';
 import 'driver_wallet_screen.dart';
-import 'trip_analytics_chart.dart';
+import 'ride_trends_card.dart';
 
 enum _DriverSettingsAction { profile, history, help, logout }
 
@@ -62,12 +62,9 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   int _tripsToday = 0;
   int _onlineSecondsToday = 0;
   double _earningsToday = 0.0;
-  List<Map<String, dynamic>> _peakHours = [];
-
   Timer? _pollTimer;
   Timer? _scheduledSyncTimer;
   Timer? _statsTimer;
-  Timer? _peakHoursTimer;
   Timer? _onlineTickTimer;
   Timer? _locationRefreshTimer;
   StreamSubscription<LatLng>? _locationSyncSub;
@@ -84,7 +81,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     )..repeat(reverse: true);
     _loadDriver();
     _loadTodayStats();
-    _loadPeakHours();
     _refreshMessages();
     _startStatsRealtime();
     _syncScheduledReservations();
@@ -343,10 +339,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
         _refreshMessages();
       }
     });
-    _peakHoursTimer?.cancel();
-    _peakHoursTimer = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) _loadPeakHours();
-    });
     _onlineTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted && _isOnline) {
         setState(() => _onlineSecondsToday++);
@@ -369,12 +361,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
       _totalTrips = _asInt(stats['total_trips'] ?? _totalTrips);
     });
     _updateAvailabilityFromServer(stats['status'], revision);
-  }
-
-  Future<void> _loadPeakHours() async {
-    final hours = await DriverAuthService.fetchPeakHours(limit: 24);
-    if (!mounted) return;
-    setState(() => _peakHours = hours);
   }
 
   String _formatDuration(int seconds) {
@@ -473,7 +459,6 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
     WidgetsBinding.instance.removeObserver(this);
     _scheduledSyncTimer?.cancel();
     _statsTimer?.cancel();
-    _peakHoursTimer?.cancel();
     _onlineTickTimer?.cancel();
     _stopPolling();
     _stopOnlineLocationSync();
@@ -879,37 +864,12 @@ class _DriverDashboardScreenState extends State<DriverDashboardScreen>
   }
 
   // ── Reusable widgets ──────────────────────────────────────────────────────
-  Widget _peakHoursSummary() {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(children: [
-        const Icon(Icons.access_time_filled_rounded,
-            color: AppColors.primary, size: 16),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text('Peak Hour Analysis',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              )),
-        ),
-        Text('30 days',
-            style: GoogleFonts.poppins(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: Colors.white38,
-            )),
-      ]),
-      const SizedBox(height: 10),
-      if (_peakHours.isEmpty)
-        Text('No peak hour data yet',
-            style: GoogleFonts.poppins(fontSize: 11, color: Colors.white38))
-      else
-        TripAnalyticsChart(data: _peakHours, peakHours: true, dark: true),
-    ]);
-  }
+  Widget _peakHoursSummary() => RideTrendsCard(
+        scope: 'Your rides',
+        dark: true,
+        load: (period, days) => DriverAuthService.fetchPeakHours(
+            period: period, days: days, limit: 24),
+      );
 
   Widget _iconBox(IconData icon, VoidCallback? onTap) => GestureDetector(
         onTap: onTap,

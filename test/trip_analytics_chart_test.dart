@@ -24,15 +24,15 @@ void main() {
         ]),
       ),
     ));
-    expect(find.text('Requests by hour'), findsOneWidget);
-    expect(find.text('Other requests'), findsOneWidget);
+    expect(find.text('Rides by hour'), findsOneWidget);
+    expect(find.text('Other requests'), findsNothing);
     expect(
         find.bySemanticsLabel(
-            'Average per hour. Completed 0.42, Cancelled 0.13, Other requests 0.08.'),
+            'Average per hour. Completed 0.42, Cancelled 0.13.'),
         findsOneWidget);
     expect(
         find.bySemanticsLabel(
-            '9 AM – 10 AM, 10 requests, 6 completed, 2 cancelled, 2 other requests'),
+            '9 AM – 10 AM, 8 rides, 6 completed, 2 cancelled'),
         findsOneWidget);
 
     final plot =
@@ -40,12 +40,12 @@ void main() {
     await tester
         .tapAt(Offset(plot.left + plot.width * 10.5 / 24, plot.center.dy));
     await tester.pump();
-    expect(find.bySemanticsLabel(RegExp('^10 AM – 11 AM, 5 requests')),
+    expect(find.bySemanticsLabel(RegExp('^10 AM – 11 AM, 5 rides')),
         findsOneWidget);
 
     await tester.tap(find.byTooltip('Next hour'));
     await tester.pump();
-    expect(find.bySemanticsLabel(RegExp('^11 AM – 12 PM, 0 requests')),
+    expect(find.bySemanticsLabel(RegExp('^11 AM – 12 PM, 0 rides')),
         findsOneWidget);
     expect(find.text('0 completed'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -81,13 +81,13 @@ void main() {
         find.bySemanticsLabel(
             'Average per route. Completed 5.50, Cancelled 4.00.'),
         findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('^Terminal to College, 10 trips')),
+    expect(find.bySemanticsLabel(RegExp('^Terminal to College, 10 rides')),
         findsOneWidget);
     await tester.tap(find.byTooltip('Next route'));
     await tester.pump();
     expect(
         find.bySemanticsLabel(
-            'Market to City Hall, 9 trips, 3 completed, 6 cancelled'),
+            'Market to City Hall, 9 rides, 3 completed, 6 cancelled'),
         findsOneWidget);
     expect(tester.takeException(), isNull);
     semantics.dispose();
@@ -134,7 +134,7 @@ void main() {
             body: TripAnalyticsChart(data: [
       {'route_from': 'Terminal', 'route_to': 'College', 'total_trips': 0},
     ]))));
-    expect(find.text('No trip data to chart yet'), findsOneWidget);
+    expect(find.text('No completed or cancelled rides yet'), findsOneWidget);
     expect(find.byKey(const ValueKey('trip-analytics-plot')), findsNothing);
     expect(tester.takeException(), isNull);
   });

@@ -265,18 +265,20 @@ class DriverAuthService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchPeakHours({
+  static Future<List<Map<String, dynamic>>?> fetchPeakHours({
     int days = 30,
+    String period = 'hour',
     int limit = 3,
   }) async {
     try {
       final token = await getToken();
-      if (token == null || token.isEmpty) return [];
+      if (token == null || token.isEmpty) return null;
 
       final response = await http.get(
         Uri.parse('$_baseUrl/analytics/peak-hours').replace(
           queryParameters: {
             'days': days.toString(),
+            'period': period,
             'limit': limit.toString(),
           },
         ),
@@ -291,9 +293,9 @@ class DriverAuthService {
         final hours = data['hours'] as List<dynamic>? ?? [];
         return hours.whereType<Map<String, dynamic>>().toList();
       }
-      return [];
+      return null;
     } catch (_) {
-      return [];
+      return null;
     }
   }
 

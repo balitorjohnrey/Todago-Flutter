@@ -172,8 +172,34 @@ class AdminAuthService {
     }
   }
 
-  static Future<List<Map<String, dynamic>>> fetchPeakHours({
+  static Future<List<Map<String, dynamic>>?> fetchDestinationPerformance({
     int days = 30,
+  }) async {
+    try {
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/analytics/destinations').replace(
+              queryParameters: {
+                'days': days.toString(),
+              },
+            ),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 12));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      if (response.statusCode == 200 && data['success'] == true) {
+        final routes = data['destinations'] as List<dynamic>? ?? [];
+        return routes.whereType<Map<String, dynamic>>().toList();
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<List<Map<String, dynamic>>?> fetchPeakHours({
+    int days = 30,
+    String period = 'hour',
     int limit = 6,
   }) async {
     try {
@@ -182,6 +208,7 @@ class AdminAuthService {
             Uri.parse('$_baseUrl/analytics/peak-hours').replace(
               queryParameters: {
                 'days': days.toString(),
+                'period': period,
                 'limit': limit.toString(),
               },
             ),
@@ -193,9 +220,9 @@ class AdminAuthService {
         final hours = data['hours'] as List<dynamic>? ?? [];
         return hours.whereType<Map<String, dynamic>>().toList();
       }
-      return [];
+      return null;
     } catch (_) {
-      return [];
+      return null;
     }
   }
 
@@ -276,6 +303,23 @@ class AdminAuthService {
         success: false,
         message: 'Connection failed. Check your internet.',
       );
+    }
+  }
+
+  static Future<AdminAuthResponse> undoReportPenalty({
+    required String issueId,
+    required String reason,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_baseUrl/reports/${Uri.encodeComponent(issueId)}/undo-penalty'),
+        headers: await _headers(), body: jsonEncode({'reason': reason}),
+      ).timeout(const Duration(seconds: 15));
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      return AdminAuthResponse(success: response.statusCode == 200 && data['success'] == true,
+        message: data['message'] ?? 'Unable to undo the penalty');
+    } catch (_) {
+      return AdminAuthResponse(success: false, message: 'Connection failed. Please retry.');
     }
   }
 

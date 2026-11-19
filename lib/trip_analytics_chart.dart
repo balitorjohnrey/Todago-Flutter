@@ -5,12 +5,16 @@ import 'package:flutter/material.dart';
 
 import 'app_theme.dart';
 
-typedef _TripBucket = ({String label, int completed, int cancelled, int other});
+typedef _TripBucket = ({
+  String label,
+  String axisLabel,
+  int completed,
+  int cancelled
+});
 
 enum _TripStatus {
   completed('Completed', Color(0xFF007BC2), Color(0xFF66C5FF)),
-  cancelled('Cancelled', Color(0xFFCF443D), Color(0xFFFF8078)),
-  other('Other requests', Color(0xFFB77500), AppColors.primary);
+  cancelled('Cancelled', Color(0xFFCF443D), Color(0xFFFF8078));
 
   const _TripStatus(this.label, this.lightColor, this.darkColor);
 
@@ -23,12 +27,10 @@ enum _TripStatus {
   int count(_TripBucket bucket) => switch (this) {
         completed => bucket.completed,
         cancelled => bucket.cancelled,
-        other => bucket.other,
       };
 }
 
-int _total(_TripBucket bucket) =>
-    bucket.completed + bucket.cancelled + bucket.other;
+int _total(_TripBucket bucket) => bucket.completed + bucket.cancelled;
 
 int _count(Object? value) {
   final number = num.tryParse(value?.toString() ?? '');
@@ -50,14 +52,14 @@ int? _hourOfDay(Map<String, dynamic> row) {
   return int.parse(match[1]!) % 12 + (match[2]!.toUpperCase() == 'PM' ? 12 : 0);
 }
 
-_TripBucket _bucket(Map<String, dynamic> row, String label, String totalKey) {
+_TripBucket _bucket(Map<String, dynamic> row, String label, String axisLabel) {
   final completed = _count(row['completed_trips']);
   final cancelled = _count(row['cancelled_trips']);
   return (
     label: label,
+    axisLabel: axisLabel,
     completed: completed,
     cancelled: cancelled,
-    other: math.max(0, _count(row[totalKey]) - completed - cancelled),
   );
 }
 
@@ -70,7 +72,7 @@ List<_TripBucket> _hourBuckets(List<Map<String, dynamic>> rows) {
   }
   return List.generate(24, (hour) {
     final label = '${_clockLabel(hour)} – ${_clockLabel((hour + 1) % 24)}';
-    return _bucket(byHour[hour] ?? const {}, label, 'total_requests');
+    return _bucket(byHour[hour] ?? const {}, label, _clockLabel(hour));
   });
 }
 
@@ -85,12 +87,14 @@ class TripAnalyticsChart extends StatefulWidget {
   final List<Map<String, dynamic>> data;
   final bool peakHours;
   final bool dark;
+  final String period;
 
   const TripAnalyticsChart({
     super.key,
     required this.data,
     this.peakHours = false,
     this.dark = false,
+    this.period = 'hour',
   });
 
   @override
@@ -104,30 +108,33 @@ class _TripAnalyticsChartState extends State<TripAnalyticsChart> {
   Widget build(BuildContext context) {
     final hourly = widget.peakHours;
     final dark = widget.dark;
-    final buckets = hourly
+    final buckets = hourly && widget.period == 'hour'
         ? _hourBuckets(widget.data)
-        : [
-            for (final row in widget.data)
-              _bucket(
-                  row,
-                  '${row['route_from'] ?? 'Pickup'} to '
-                      '${row['route_to'] ?? 'Destination'}',
-                  'total_trips'),
-          ];
+        : hourly
+            ? [
+                for (final row in widget.data)
+                  _bucket(row, '${row['period_label']}', '${row['axis_label']}')
+              ]
+            : [
+                for (final row in widget.data)
+                  _bucket(
+                      row,
+                      '${row['route_from'] ?? 'Pickup'} to '
+                          '${row['route_to'] ?? 'Destination'}',
+                      '#${widget.data.indexOf(row) + 1}'),
+              ];
     final textColor = dark ? Colors.white : AppColors.backgroundDark;
     final hintColor = dark ? const Color(0xFFBDC9DD) : const Color(0xFF526879);
     final hintStyle = DefaultTextStyle.of(context)
         .style
         .copyWith(color: hintColor, fontSize: 11);
     if (!buckets.any((bucket) => _total(bucket) > 0)) {
-      return Text('No ${hourly ? 'request' : 'trip'} data to chart yet',
-          style: hintStyle);
+      return Text('No completed or cancelled rides yet', style: hintStyle);
     }
 
     final series = [
       _TripStatus.completed,
       _TripStatus.cancelled,
-      if (buckets.any((bucket) => bucket.other > 0)) _TripStatus.other,
     ];
     final averages = [
       for (final status in series)
@@ -151,15 +158,15 @@ class _TripAnalyticsChartState extends State<TripAnalyticsChart> {
     }
     selectedIndex = math.max(0, selectedIndex);
     final selected = buckets[selectedIndex];
-    final unit = hourly ? 'hour' : 'route';
+    final unit = hourly ? widget.period : 'route';
     final total = _total(selected);
-    final totalUnit = hourly ? 'request' : 'trip';
+    const totalUnit = 'ride';
     final selectedTotal =
         '${formatCount(total)} $totalUnit${total == 1 ? '' : 's'}';
     final selectedCounts = [
       for (final status in series)
         '${formatCount(status.count(selected))} '
-            '${status == _TripStatus.other && selected.other == 1 ? 'other request' : status.label.toLowerCase()}',
+            '${status.label.toLowerCase()}',
     ];
     final averageLabel = [
       for (var i = 0; i < series.length; i++)
@@ -179,7 +186,7 @@ class _TripAnalyticsChartState extends State<TripAnalyticsChart> {
     final height = plotHeight + fontHeight * 2.6 + 8;
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(hourly ? 'Requests by hour' : 'Trips by route',
+      Text(hourly ? 'Rides by $unit' : 'Trips by route',
           style: TextStyle(
               color: textColor, fontSize: 13, fontWeight: FontWeight.w700)),
       const SizedBox(height: 8),
@@ -229,6 +236,7 @@ class _TripAnalyticsChartState extends State<TripAnalyticsChart> {
                     maximum: tickCount * step,
                     selectedIndex: selectedIndex,
                     hourly: hourly,
+                    clockAxis: hourly && widget.period == 'hour',
                     dark: dark,
                     axisStyle: hintStyle,
                     textScaler: textScaler,
@@ -343,6 +351,7 @@ class _TripChartPainter extends CustomPainter {
     required this.maximum,
     required this.selectedIndex,
     required this.hourly,
+    required this.clockAxis,
     required this.dark,
     required this.axisStyle,
     required this.textScaler,
@@ -357,6 +366,7 @@ class _TripChartPainter extends CustomPainter {
   final int maximum;
   final int selectedIndex;
   final bool hourly;
+  final bool clockAxis;
   final bool dark;
   final TextStyle axisStyle;
   final TextScaler textScaler;
@@ -412,7 +422,7 @@ class _TripChartPainter extends CustomPainter {
         textScaler.scale(axisStyle.fontSize!) / axisStyle.fontSize!;
     final routeLabelStep =
         math.max(1, (26 * labelScale * buckets.length / plot.width).ceil());
-    final labels = hourly
+    final labels = clockAxis
         ? switch (plot.width / labelScale) {
             >= 310 => [0, 4, 8, 12, 16, 20, 23],
             >= 190 => [0, 6, 12, 18],
@@ -421,8 +431,7 @@ class _TripChartPainter extends CustomPainter {
           }
         : [for (var i = 0; i < buckets.length; i += routeLabelStep) i];
     for (final i in labels) {
-      _label(canvas, hourly ? _clockLabel(i) : '#${i + 1}',
-          Offset(_x(i), labelTop),
+      _label(canvas, buckets[i].axisLabel, Offset(_x(i), labelTop),
           topAligned: true,
           maxWidth: plot.width / labels.length,
           minX: plot.left,
@@ -446,7 +455,7 @@ class _TripChartPainter extends CustomPainter {
       if (status == _TripStatus.completed) {
         canvas.drawPath(path, paint);
       } else {
-        final dash = status == _TripStatus.cancelled ? 5.0 : 2.0;
+        const dash = 5.0;
         for (final metric in path.computeMetrics()) {
           for (var start = 0.0; start < metric.length; start += dash + 4) {
             canvas.drawPath(
@@ -518,6 +527,7 @@ class _TripChartPainter extends CustomPainter {
       averageWidth != oldDelegate.averageWidth ||
       selectedIndex != oldDelegate.selectedIndex ||
       hourly != oldDelegate.hourly ||
+      clockAxis != oldDelegate.clockAxis ||
       dark != oldDelegate.dark ||
       axisStyle != oldDelegate.axisStyle ||
       textScaler != oldDelegate.textScaler ||

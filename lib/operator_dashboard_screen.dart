@@ -2,7 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'trip_analytics_chart.dart';
+import 'destination_performance_map.dart';
+import 'ride_trends_card.dart';
 import 'driver_performance_card.dart';
 import 'monitoring_service.dart';
 import 'app_theme.dart';
@@ -23,8 +24,6 @@ class OperatorDashboardScreen extends StatefulWidget {
 class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
   Map<String, dynamic>? _operator;
   Map<String, dynamic> _stats = {};
-  List<Map<String, dynamic>> _routePerformance = [];
-  List<Map<String, dynamic>> _peakHours = [];
   List<Map<String, dynamic>>? _topDrivers;
   Timer? _refreshTimer;
   bool _isLoading = true;
@@ -49,19 +48,13 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
     final results = await Future.wait([
       OperatorAuthService.fetchProfile(),
       OperatorAuthService.fetchStats(),
-      OperatorAuthService.fetchRoutePerformance(),
-      OperatorAuthService.fetchPeakHours(limit: 24),
       MonitoringService.fetchDrivers(operator: true),
     ]);
     if (!mounted) return;
     setState(() {
       _operator = results[0] as Map<String, dynamic>?;
       _stats = (results[1] as Map<String, dynamic>?) ?? {};
-      _routePerformance = (results[2] as List<Map<String, dynamic>>?) ??
-          <Map<String, dynamic>>[];
-      _peakHours = (results[3] as List<Map<String, dynamic>>?) ??
-          <Map<String, dynamic>>[];
-      _topDrivers = results[4] as List<Map<String, dynamic>>?;
+      _topDrivers = results[2] as List<Map<String, dynamic>>?;
       _isLoading = false;
     });
   }
@@ -81,30 +74,6 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
   String _money(dynamic value) {
     final amount = _asDouble(value);
     return 'PHP ${amount.toStringAsFixed(0)}';
-  }
-
-  String _durationLabel(dynamic value) {
-    final minutes = _asDouble(value);
-    if (minutes <= 0) return '-';
-    if (minutes < 60) {
-      final decimals = minutes < 10 && minutes % 1 != 0 ? 1 : 0;
-      return '${minutes.toStringAsFixed(decimals)} min';
-    }
-    final hours = minutes ~/ 60;
-    final mins = (minutes % 60).round();
-    return mins == 0 ? '${hours}h' : '${hours}h ${mins}m';
-  }
-
-  String _distanceLabel(dynamic value) {
-    final distance = _asDouble(value);
-    if (distance <= 0) return '-';
-    return '${distance.toStringAsFixed(1)} km';
-  }
-
-  String _speedLabel(dynamic value) {
-    final speed = _asDouble(value);
-    if (speed <= 0) return '-';
-    return '${speed.toStringAsFixed(1)} km/h';
   }
 
   Future<void> _logout() =>
@@ -582,300 +551,16 @@ class _OperatorDashboardScreenState extends State<OperatorDashboardScreen> {
     );
   }
 
-  Widget _peakHoursCard() {
-    final busiestHours = _peakHours.take(6).toList();
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: Colors.orange.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.access_time_filled_rounded,
-                color: Colors.orange, size: 21),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Peak Hour Analysis',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.backgroundDark,
-                  )),
-              Text('Busiest request hours for your TODA',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                  )),
-            ]),
-          ),
-          _routePill('30 DAYS', Colors.orange),
-        ]),
-        const SizedBox(height: 14),
-        if (_peakHours.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text('No peak hour data yet',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: Colors.grey[500],
-                )),
-          )
-        else ...[
-          TripAnalyticsChart(data: _peakHours, peakHours: true),
-          Material(
-            type: MaterialType.transparency,
-            child: ExpansionTile(
-              key: const PageStorageKey('operator-hour-details'),
-              tilePadding: EdgeInsets.zero,
-              title: const Text('View busiest hours',
-                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-              children: List.generate(
-                busiestHours.length,
-                (index) => _peakHourRow(busiestHours[index], index),
-              ),
-            ),
-          ),
-        ],
-      ]),
-    );
-  }
+  Widget _peakHoursCard() => RideTrendsCard(
+        scope: 'Your TODA',
+        load: (period, days) => OperatorAuthService.fetchPeakHours(
+            period: period, days: days, limit: 24),
+      );
 
-  Widget _peakHourRow(Map<String, dynamic> hour, int index) {
-    final label = hour['hour_label']?.toString() ?? 'Hour';
-    final completion = _asDouble(hour['completion_rate']);
-    return Container(
-      padding: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 12),
-      decoration: BoxDecoration(
-        border: index == 0
-            ? null
-            : const Border(top: BorderSide(color: Color(0xFFF0F2F5))),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Expanded(
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-          ),
-          _routePill('#${index + 1}', Colors.orange),
-        ]),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 14,
-          runSpacing: 8,
-          children: [
-            _routeMetric(Icons.local_taxi_rounded, 'Requests',
-                '${_asInt(hour['total_requests'])}'),
-            _routeMetric(Icons.verified_rounded, 'Completed',
-                '${_asInt(hour['completed_trips'])}'),
-            _routeMetric(Icons.cancel_rounded, 'Cancelled',
-                '${_asInt(hour['cancelled_trips'])}'),
-            _routeMetric(Icons.percent_rounded, 'Completion',
-                '${completion.toStringAsFixed(0)}%'),
-            _routeMetric(Icons.payments_rounded, 'Revenue',
-                _money(hour['gross_revenue'])),
-          ],
-        ),
-      ]),
-    );
-  }
-
-  Widget _routePerformanceCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: AppColors.backgroundDark.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.alt_route_rounded,
-                color: AppColors.backgroundDark, size: 21),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child:
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Route Performance Analysis',
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.backgroundDark,
-                  )),
-              Text('Top routes from your TODA trips',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 11,
-                    color: Colors.grey[500],
-                  )),
-            ]),
-          ),
-          _routePill('30 DAYS', AppColors.primary),
-        ]),
-        const SizedBox(height: 14),
-        if (_routePerformance.isEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Text('No route performance data yet',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  color: Colors.grey[500],
-                )),
-          )
-        else ...[
-          TripAnalyticsChart(data: _routePerformance),
-          Material(
-            type: MaterialType.transparency,
-            child: ExpansionTile(
-              key: const PageStorageKey('operator-route-details'),
-              tilePadding: EdgeInsets.zero,
-              title: const Text('View route details',
-                  style: TextStyle(fontSize: 12, color: AppColors.backgroundDark)),
-              children: List.generate(
-                _routePerformance.length,
-                (index) => _routePerformanceRow(_routePerformance[index], index),
-              ),
-            ),
-          ),
-        ],
-      ]),
-    );
-  }
-
-  Widget _routePerformanceRow(Map<String, dynamic> route, int index) {
-    final from = route['route_from']?.toString() ?? 'Pickup';
-    final to = route['route_to']?.toString() ?? 'Destination';
-    final completion = _asDouble(route['completion_rate']);
-    final healthColor = completion >= 85
-        ? AppColors.success
-        : completion >= 65
-            ? Colors.orange
-            : AppColors.error;
-    final healthLabel = completion >= 85
-        ? 'Strong'
-        : completion >= 65
-            ? 'Watch'
-            : 'Low';
-
-    return Container(
-      padding: EdgeInsets.only(top: index == 0 ? 0 : 12, bottom: 12),
-      decoration: BoxDecoration(
-        border: index == 0
-            ? null
-            : const Border(top: BorderSide(color: Color(0xFFF0F2F5))),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(
-            child: Text('$from to $to',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.backgroundDark,
-                )),
-          ),
-          const SizedBox(width: 8),
-          _routePill(healthLabel, healthColor),
-        ]),
-        const SizedBox(height: 10),
-        Wrap(
-          spacing: 14,
-          runSpacing: 8,
-          children: [
-            _routeMetric(Icons.route_rounded, 'Trips',
-                '${_asInt(route['completed_trips'])}/${_asInt(route['total_trips'])}'),
-            _routeMetric(Icons.verified_rounded, 'Completion',
-                '${completion.toStringAsFixed(0)}%'),
-            _routeMetric(Icons.cancel_rounded, 'Cancelled',
-                '${_asInt(route['cancelled_trips'])}'),
-            _routeMetric(Icons.timer_rounded, 'Avg Time',
-                _durationLabel(route['avg_trip_minutes'])),
-            _routeMetric(Icons.speed_rounded, 'Avg Speed',
-                _speedLabel(route['avg_speed_kmh'])),
-            _routeMetric(Icons.straighten_rounded, 'Distance',
-                _distanceLabel(route['avg_distance_km'])),
-            _routeMetric(Icons.payments_rounded, 'Revenue',
-                _money(route['gross_revenue'])),
-          ],
-        ),
-      ]),
-    );
-  }
-
-  Widget _routeMetric(IconData icon, String label, String value) {
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 15, color: Colors.grey[500]),
-      const SizedBox(width: 5),
-      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(label,
-            style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[500])),
-        Text(value,
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              color: AppColors.backgroundDark,
-            )),
-      ]),
-    ]);
-  }
-
-  Widget _routePill(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(label,
-          style: GoogleFonts.poppins(
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            color: color,
-          )),
-    );
-  }
+  Widget _routePerformanceCard() => DestinationPerformanceCard(
+        scope: 'Your TODA',
+        load: () => OperatorAuthService.fetchDestinationPerformance(),
+      );
 
   Widget _statCard({
     required IconData icon,
